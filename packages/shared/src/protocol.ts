@@ -37,7 +37,13 @@ export const healthResponseSchema = z.object({
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export const API_ERROR_CODES = ['bad-request', 'not-found', 'rate-limited', 'internal'] as const;
+export const API_ERROR_CODES = [
+  'bad-request',
+  'forbidden',
+  'not-found',
+  'rate-limited',
+  'internal',
+] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 export const apiErrorSchema = z.object({

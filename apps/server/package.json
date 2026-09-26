@@ -1,0 +1,35 @@
+{
+  "name": "@collabcode/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup && node --eval \"require('node:fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@collabcode/shared": "*",
+    "@hocuspocus/extension-database": "^4.7.0",
+    "@hocuspocus/server": "^4.7.0",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "postgres": "^3.4.9",
+    "yjs": "^13.6.33",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "^4.7.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "pino-pretty": "^13.1.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.20.6"
+  }
+}
