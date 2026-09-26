@@ -1,5 +1,11 @@
 .DS_Store
 node_modules/
+dist/
+coverage/
 .env
 .env.*
 !.env.example
+*.tsbuildinfo
+playwright-report/
+test-results/
+.vite/
