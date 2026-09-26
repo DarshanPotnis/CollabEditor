@@ -15,3 +15,8 @@ export function createProjectId(): string {
 export function createNodeId(): string {
   return generate();
 }
+
+/** Identifies a guest across their tabs and in awareness. */
+export function createUserId(): string {
+  return generate();
+}
