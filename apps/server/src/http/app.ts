@@ -12,11 +12,19 @@ import { sendApiError } from './errors.js';
 import { createHealthRouter } from './routes/health.js';
 import { createProjectsRouter } from './routes/projects.js';
 
+/** Projects one IP may create per minute in production. */
+export const DEFAULT_PROJECT_CREATE_LIMIT = 20;
+
 export type CreateAppDeps = {
   allowedOrigins: string[];
   repo: ProjectsRepo;
   logger: Logger;
   startedAt?: number;
+  /**
+   * Raised by the end-to-end harness, which creates many projects from one IP
+   * in quick succession. Production uses the default.
+   */
+  projectCreateLimitPerMinute?: number;
 };
 
 /**
@@ -42,6 +50,7 @@ export function createApp({
   repo,
   logger,
   startedAt = Date.now(),
+  projectCreateLimitPerMinute = DEFAULT_PROJECT_CREATE_LIMIT,
 }: CreateAppDeps): Express {
   const app = express();
 
@@ -61,7 +70,10 @@ export function createApp({
   app.use(express.json({ limit: '16kb' }));
 
   app.use(createHealthRouter(startedAt));
-  app.use('/api', createProjectsRouter({ repo, logger }));
+  app.use(
+    '/api',
+    createProjectsRouter({ repo, logger, createLimitPerMinute: projectCreateLimitPerMinute }),
+  );
 
   app.use((_req, res) => {
     sendApiError(res, 'not-found', 'No such endpoint.');

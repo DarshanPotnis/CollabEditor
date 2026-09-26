@@ -15,6 +15,8 @@ import { sendApiError } from '../errors.js';
 export type ProjectsRouterDeps = {
   repo: ProjectsRepo;
   logger: Logger;
+  /** Projects one IP may create per minute. */
+  createLimitPerMinute: number;
 };
 
 function toSummary(record: ProjectRecord): ProjectSummary {
@@ -27,12 +29,16 @@ function toSummary(record: ProjectRecord): ProjectSummary {
   };
 }
 
-export function createProjectsRouter({ repo, logger }: ProjectsRouterDeps): Router {
+export function createProjectsRouter({
+  repo,
+  logger,
+  createLimitPerMinute,
+}: ProjectsRouterDeps): Router {
   const router = Router();
 
   const createLimiter = rateLimit({
     windowMs: 60_000,
-    limit: 20,
+    limit: createLimitPerMinute,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler: (_req, res) => {

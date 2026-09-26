@@ -18,6 +18,7 @@ export type TestServer = {
 export type StartTestServerOptions = {
   allowedOrigins?: string[];
   repo?: MemoryProjectsRepo;
+  projectCreateLimitPerMinute?: number;
 };
 
 export async function startTestServer(options: StartTestServerOptions = {}): Promise<TestServer> {
@@ -27,6 +28,9 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
     allowedOrigins: options.allowedOrigins ?? ['http://localhost:5173'],
     repo,
     logger,
+    ...(options.projectCreateLimitPerMinute === undefined
+      ? {}
+      : { projectCreateLimitPerMinute: options.projectCreateLimitPerMinute }),
   });
   const server = createCollabServer({ app, repo, logger, port: 0, host: '127.0.0.1' });
 

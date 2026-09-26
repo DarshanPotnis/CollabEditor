@@ -124,6 +124,30 @@ describe('GET /api/projects/:id', () => {
   });
 });
 
+describe('rate limiting', () => {
+  it('refuses a flood of project creations from one IP with our error shape', async () => {
+    const limited = await startTestServer({ projectCreateLimitPerMinute: 2 });
+    try {
+      const create = (): Promise<Response> =>
+        fetch(`${limited.httpUrl}/api/projects`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ template: 'blank-node' }),
+        });
+
+      expect((await create()).status).toBe(201);
+      expect((await create()).status).toBe(201);
+
+      const refused = await create();
+      expect(refused.status).toBe(429);
+      expect(await refused.json()).toMatchObject({ error: { code: 'rate-limited' } });
+      expect(limited.repo.size).toBe(2);
+    } finally {
+      await limited.stop();
+    }
+  });
+});
+
 describe('CORS', () => {
   it('answers a preflight from an allowed origin', async () => {
     const response = await fetch(`${server.httpUrl}/api/projects`, {
