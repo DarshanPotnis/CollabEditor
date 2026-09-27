@@ -8,6 +8,7 @@ import cors from 'cors';
 import { pinoHttp } from 'pino-http';
 import type { Logger } from '../lib/logger.js';
 import type { ProjectsRepo } from '../db/projects-repo.js';
+import type { ClientIpSource } from './client-ip.js';
 import { sendApiError } from './errors.js';
 import { createHealthRouter } from './routes/health.js';
 import { createProjectsRouter } from './routes/projects.js';
@@ -19,6 +20,8 @@ export type CreateAppDeps = {
   allowedOrigins: string[];
   repo: ProjectsRepo;
   logger: Logger;
+  /** Where per-IP limits read the client's address from (http/client-ip.ts). */
+  clientIpSource: ClientIpSource;
   startedAt?: number;
   /**
    * Raised by the end-to-end harness, which creates many projects from one IP
@@ -49,14 +52,14 @@ export function createApp({
   allowedOrigins,
   repo,
   logger,
+  clientIpSource,
   startedAt = Date.now(),
   projectCreateLimitPerMinute = DEFAULT_PROJECT_CREATE_LIMIT,
 }: CreateAppDeps): Express {
   const app = express();
 
-  // Render terminates TLS and adds exactly one proxy hop, so req.ip is the
-  // last entry of X-Forwarded-For. Needed for per-IP rate limiting.
-  app.set('trust proxy', 1);
+  // 'trust proxy' stays unset: per-IP limits read the client address through
+  // clientIp() instead, because Render's proxy chain has no fixed length.
   app.disable('x-powered-by');
 
   app.use(
@@ -72,7 +75,12 @@ export function createApp({
   app.use(createHealthRouter(startedAt));
   app.use(
     '/api',
-    createProjectsRouter({ repo, logger, createLimitPerMinute: projectCreateLimitPerMinute }),
+    createProjectsRouter({
+      repo,
+      logger,
+      clientIpSource,
+      createLimitPerMinute: projectCreateLimitPerMinute,
+    }),
   );
 
   app.use((_req, res) => {

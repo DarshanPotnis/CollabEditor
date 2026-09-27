@@ -28,6 +28,8 @@ async function main(): Promise<void> {
     allowedOrigins: ALLOWED_ORIGINS,
     repo,
     logger,
+    // The browser talks to this server directly, with no proxy in front.
+    clientIpSource: 'direct',
     // The suite creates many projects from one IP; the production limit would
     // start refusing them part way through a run.
     projectCreateLimitPerMinute: 10_000,

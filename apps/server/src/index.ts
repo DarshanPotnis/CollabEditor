@@ -48,7 +48,12 @@ async function main(): Promise<void> {
   const sql = createSqlClient(config.DATABASE_URL);
   const repo = createPostgresProjectsRepo(sql);
 
-  const app = createApp({ allowedOrigins: config.ALLOWED_ORIGINS, repo, logger });
+  const app = createApp({
+    allowedOrigins: config.ALLOWED_ORIGINS,
+    repo,
+    logger,
+    clientIpSource: config.CLIENT_IP_SOURCE,
+  });
   const server = createCollabServer({
     app,
     repo,
@@ -59,7 +64,12 @@ async function main(): Promise<void> {
 
   await server.listen();
   logger.info(
-    { port: config.PORT, host: config.HOST, allowedOrigins: config.ALLOWED_ORIGINS },
+    {
+      port: config.PORT,
+      host: config.HOST,
+      allowedOrigins: config.ALLOWED_ORIGINS,
+      clientIpSource: config.CLIENT_IP_SOURCE,
+    },
     'collabcode server listening',
   );
 

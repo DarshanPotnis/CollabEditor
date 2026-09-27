@@ -14,7 +14,12 @@ describe('loadConfig', () => {
       PORT: 8080,
       HOST: '0.0.0.0',
       LOG_LEVEL: 'info',
+      CLIENT_IP_SOURCE: 'render',
     });
+  });
+
+  it('accepts direct as the client IP source for running without a proxy', () => {
+    expect(loadConfig({ ...validEnv, CLIENT_IP_SOURCE: 'direct' }).CLIENT_IP_SOURCE).toBe('direct');
   });
 
   it('splits and trims the origin list', () => {
@@ -44,6 +49,7 @@ describe('loadConfig', () => {
     ['an origin with a path', { ALLOWED_ORIGINS: 'https://a.test/app' }],
     ['an origin with a trailing slash', { ALLOWED_ORIGINS: 'https://a.test/' }],
     ['an origin that is not a URL', { ALLOWED_ORIGINS: 'a.test' }],
+    ['an unknown client IP source', { CLIENT_IP_SOURCE: 'cloudflare' }],
   ])('fails fast on %s', (_label, overrides) => {
     expect(() => loadConfig({ ...validEnv, ...overrides })).toThrow(ConfigError);
   });

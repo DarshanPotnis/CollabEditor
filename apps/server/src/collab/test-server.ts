@@ -6,6 +6,7 @@
 import { pino } from 'pino';
 import { createMemoryProjectsRepo, type MemoryProjectsRepo } from '../db/memory-projects-repo.js';
 import { createApp } from '../http/app.js';
+import type { ClientIpSource } from '../http/client-ip.js';
 import { createCollabServer } from './server.js';
 
 export type TestServer = {
@@ -19,6 +20,8 @@ export type StartTestServerOptions = {
   allowedOrigins?: string[];
   repo?: MemoryProjectsRepo;
   projectCreateLimitPerMinute?: number;
+  /** Defaults to `direct`: tests talk to the server with no proxy in front. */
+  clientIpSource?: ClientIpSource;
 };
 
 export async function startTestServer(options: StartTestServerOptions = {}): Promise<TestServer> {
@@ -28,6 +31,7 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
     allowedOrigins: options.allowedOrigins ?? ['http://localhost:5173'],
     repo,
     logger,
+    clientIpSource: options.clientIpSource ?? 'direct',
     ...(options.projectCreateLimitPerMinute === undefined
       ? {}
       : { projectCreateLimitPerMinute: options.projectCreateLimitPerMinute }),

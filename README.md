@@ -138,14 +138,15 @@ To run just one piece: `npm run dev:server` or `npm run dev:web`.
 
 ### Environment variables
 
-| Variable          | App    | Purpose                                                                             |
-| ----------------- | ------ | ----------------------------------------------------------------------------------- |
-| `DATABASE_URL`    | server | Postgres connection string. Use Neon's **pooled** endpoint with `?sslmode=require`  |
-| `ALLOWED_ORIGINS` | server | Comma-separated web origins allowed to call the API. No wildcard, no trailing slash |
-| `PORT`            | server | Injected by Render; defaults to 8080                                                |
-| `LOG_LEVEL`       | server | pino level; `info` in production                                                    |
-| `VITE_API_URL`    | web    | Base URL of the REST API                                                            |
-| `VITE_COLLAB_URL` | web    | WebSocket URL, e.g. `wss://your-server/collab`                                      |
+| Variable           | App    | Purpose                                                                             |
+| ------------------ | ------ | ----------------------------------------------------------------------------------- |
+| `DATABASE_URL`     | server | Postgres connection string. Use Neon's **pooled** endpoint with `?sslmode=require`  |
+| `ALLOWED_ORIGINS`  | server | Comma-separated web origins allowed to call the API. No wildcard, no trailing slash |
+| `PORT`             | server | Injected by Render; defaults to 8080                                                |
+| `LOG_LEVEL`        | server | pino level; `info` in production                                                    |
+| `CLIENT_IP_SOURCE` | server | Where per-IP limits read the client address: `render` (default) or `direct`         |
+| `VITE_API_URL`     | web    | Base URL of the REST API                                                            |
+| `VITE_COLLAB_URL`  | web    | WebSocket URL, e.g. `wss://your-server/collab`                                      |
 
 Configuration is parsed with zod at start-up, so a missing or malformed value fails immediately
 and names the variable rather than breaking at the first request.
@@ -182,7 +183,8 @@ SPA rewrites come from `apps/web/vercel.json`.
 **Render** (server): root directory is the repository root. Build
 `npm ci && npm run build -w @collabcode/shared && npm run build -w @collabcode/server`, start
 `npm run start -w @collabcode/server`, and run `npm run migrate -w @collabcode/server` on deploy.
-Set `DATABASE_URL`, `ALLOWED_ORIGINS` and `LOG_LEVEL`.
+Set `DATABASE_URL`, `ALLOWED_ORIGINS` and `LOG_LEVEL`. `CLIENT_IP_SOURCE` defaults to `render`,
+which is what Render needs.
 
 ### Launch checklist: cross-origin isolation
 
@@ -196,6 +198,31 @@ deployment after every change to hosting:
    Network, and `curl -sI` its URL. Workers need the headers too, or Monaco falls back to running
    their code on the main thread.
 3. In the browser console on the site, `crossOriginIsolated` is `true`.
+
+### Launch checklist: client IPs behind Render
+
+Requests reach the server through Cloudflare and Render's load balancers, so per-IP limits use the
+first `X-Forwarded-For` entry, which Render sets to the real client address
+(`apps/server/src/http/client-ip.ts`). Check that Render still does this after every change to
+hosting:
+
+1. Send two project creations with different forged addresses and compare the remaining count
+   (`r=`) in the `RateLimit` header. It must go down by one, because Render replaces the forged
+   first entry with your real address and both requests land in your allowance:
+
+   ```bash
+   for ip in 203.0.113.1 198.51.100.7; do
+     curl -s -o /dev/null -D - -X POST https://<your-server>/api/projects \
+       -H 'content-type: application/json' -H "x-forwarded-for: $ip" \
+       -d '{"template":"blank-node"}' | grep -i '^ratelimit:'
+   done
+   ```
+
+   If the count starts over for the second request, the forged address is being trusted: stop
+   and fix `clientIp()` before launch.
+
+2. From a different network (a phone on mobile data), the count starts at the full limit, so
+   visitors are not sharing one proxy address.
 
 A free Render instance sleeps when idle, so the first connection after a quiet period can take up
 to a minute. The app expects this: the landing page pings `/health` on load to start the wake

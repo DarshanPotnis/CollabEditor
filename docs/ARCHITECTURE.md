@@ -320,6 +320,12 @@ Every boundary is validated, and the awkward one is presence.
 - **HTTP:** zod on every body and param; a CORS allowlist with no wildcard; an origin guard that
   refuses a request from an unlisted `Origin` with 403 before any route runs. A request with no
   `Origin` is not a browser request and is left alone.
+- **Client addresses for per-IP limits.** On Render a request passes through Cloudflare and then
+  Render's load balancers, so the socket address is a proxy's, and the length of the
+  `X-Forwarded-For` chain depends on what the client sent. Render sets the first entry to the
+  real client, so the limiters key on that (`http/client-ip.ts`, `CLIENT_IP_SOURCE=render`),
+  with IPv6 grouped by /56; `direct` ignores the header entirely. Express's `trust proxy` is left
+  unset, so `req.ip` is never used for limits.
 - **Code a collaborator wrote runs only in the browser of whoever clicks Run**, inside
   StackBlitz's cross-origin sandbox: it cannot read our page, the document, storage or identity.
   It can use that person's CPU, make HTTP requests from their browser within CORS rules, run

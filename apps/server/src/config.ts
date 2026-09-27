@@ -4,6 +4,7 @@
  * readable message instead of at the first request.
  */
 import { z } from 'zod';
+import { CLIENT_IP_SOURCES } from './http/client-ip.js';
 
 const originSchema = z.string().refine(
   (value) => {
@@ -38,6 +39,12 @@ const envSchema = z.object({
     )
     .pipe(z.array(originSchema)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  /**
+   * Where a request's client IP comes from, for per-IP limits: `render` trusts
+   * the first X-Forwarded-For entry (Render sets it), `direct` uses the socket.
+   * See http/client-ip.ts.
+   */
+  CLIENT_IP_SOURCE: z.enum(CLIENT_IP_SOURCES).default('render'),
 });
 
 export type ServerConfig = z.infer<typeof envSchema>;

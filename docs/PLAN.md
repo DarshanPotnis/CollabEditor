@@ -189,7 +189,8 @@ Deployment changes (apply only when merging to `main`, documented in the README)
 - Render: root at repo root; build
   `npm ci && npm run build -w @collabcode/shared && npm run build -w @collabcode/server`; start
   `npm run start -w @collabcode/server`; run `npm run migrate -w @collabcode/server` on deploy;
-  env `DATABASE_URL`, `ALLOWED_ORIGINS`, `LOG_LEVEL`.
+  env `DATABASE_URL`, `ALLOWED_ORIGINS`, `LOG_LEVEL` (and `CLIENT_IP_SOURCE`, whose default
+  `render` is right; see the README's launch checklist).
 - Confirm both platforms install workspace dependencies correctly before switching `main`.
 - **Still outstanding.** Neither platform has been reconfigured yet; `main` still deploys the
   deleted layout.
@@ -704,17 +705,18 @@ fourth by the default suite; `docs/manual-tests/phase-3.md` walks through all of
   actionable.
 - **Environment variables:**
 
-| Variable               | App            | Purpose                                                                    |
-| ---------------------- | -------------- | -------------------------------------------------------------------------- |
-| `VITE_API_URL`         | web            | Base URL for the REST API                                                  |
-| `VITE_COLLAB_URL`      | web            | WebSocket URL for Hocuspocus (`wss://…/collab`)                            |
-| `PORT`                 | server         | Injected by Render; defaults to 8080                                       |
-| `HOST`                 | server         | Bind address; defaults to `0.0.0.0`                                        |
-| `TEST_DATABASE_URL`    | server (tests) | Enables the Postgres-backed specs; unset means they skip                   |
-| `RUN_WEBCONTAINER_E2E` | e2e (tests)    | Runs the WebContainer specs, which need the network; unset means they skip |
-| `DATABASE_URL`         | server         | Neon Postgres connection string                                            |
-| `ALLOWED_ORIGINS`      | server         | Comma-separated allowed web origins                                        |
-| `LOG_LEVEL`            | server         | pino log level                                                             |
+| Variable               | App            | Purpose                                                                      |
+| ---------------------- | -------------- | ---------------------------------------------------------------------------- |
+| `VITE_API_URL`         | web            | Base URL for the REST API                                                    |
+| `VITE_COLLAB_URL`      | web            | WebSocket URL for Hocuspocus (`wss://…/collab`)                              |
+| `PORT`                 | server         | Injected by Render; defaults to 8080                                         |
+| `HOST`                 | server         | Bind address; defaults to `0.0.0.0`                                          |
+| `TEST_DATABASE_URL`    | server (tests) | Enables the Postgres-backed specs; unset means they skip                     |
+| `RUN_WEBCONTAINER_E2E` | e2e (tests)    | Runs the WebContainer specs, which need the network; unset means they skip   |
+| `DATABASE_URL`         | server         | Neon Postgres connection string                                              |
+| `ALLOWED_ORIGINS`      | server         | Comma-separated allowed web origins                                          |
+| `LOG_LEVEL`            | server         | pino log level                                                               |
+| `CLIENT_IP_SOURCE`     | server         | Per-IP limits: `render` (first `X-Forwarded-For` entry) or `direct` (socket) |
 
 Provide `.env.example` files for both apps. Make sure `.env` is gitignored in every package.
 
