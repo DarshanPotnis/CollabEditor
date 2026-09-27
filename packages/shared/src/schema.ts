@@ -31,6 +31,9 @@ export const nodeNameSchema = z
   .refine((name) => name.trim() === name, { message: 'name has leading or trailing whitespace' })
   .refine((name) => !/[/\\]/.test(name), { message: 'name may not contain a slash' })
   .refine((name) => name !== '.' && name !== '..', { message: 'name is reserved' })
+  // One spelling per name: "é" typed as one code point or as "e" + accent
+  // would otherwise be two different files that look identical.
+  .refine((name) => name.normalize('NFC') === name, { message: 'name is not NFC-normalised' })
   // eslint-disable-next-line no-control-regex -- control characters are exactly what we reject
   .refine((name) => !/[\u0000-\u001f\u007f]/.test(name), {
     message: 'name may not contain control characters',
@@ -44,6 +47,9 @@ export const nodeFieldsSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   createdBy: z.string().min(1),
   deletedAt: z.number().int().nonnegative().nullable(),
+  // Added in Phase 2 without a schema bump: documents written before it have
+  // no such key, which reads as "nobody recorded".
+  deletedBy: z.string().min(1).nullable().default(null),
 });
 export type NodeFields = z.infer<typeof nodeFieldsSchema>;
 
@@ -88,6 +94,20 @@ export function readNode(doc: Y.Doc, nodeId: string): NodeFields | null {
   if (!node) return null;
   const parsed = nodeFieldsSchema.safeParse(node.toJSON());
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Every node that parses, tombstones included, which is what tree resolution
+ * needs to cascade deletions. A node whose `id` field disagrees with its key
+ * is skipped: the key is the identity everything else refers to.
+ */
+export function readAllNodes(doc: Y.Doc): NodeFields[] {
+  const nodes: NodeFields[] = [];
+  for (const [key, raw] of nodesMap(doc).entries()) {
+    const parsed = nodeFieldsSchema.safeParse(raw.toJSON());
+    if (parsed.success && parsed.data.id === key) nodes.push(parsed.data);
+  }
+  return nodes;
 }
 
 /** Every live (non-tombstoned) node that parses, in insertion order. */

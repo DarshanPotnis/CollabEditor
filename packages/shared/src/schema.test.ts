@@ -6,6 +6,7 @@ import {
   nodesMap,
   readFileContent,
   readFileText,
+  readAllNodes,
   readMeta,
   readNode,
   readNodes,
@@ -39,6 +40,7 @@ describe('nodeNameSchema', () => {
     ['newline', 'index\n.js'],
     ['null byte', 'index\u0000.js'],
     ['too long', 'a'.repeat(MAX_NAME_LENGTH + 1)],
+    ['decomposed accent (NFD)', 'cafe\u0301.js'],
   ])('rejects %s', (_label, name) => {
     expect(nodeNameSchema.safeParse(name).success).toBe(false);
   });
@@ -93,6 +95,35 @@ describe('readNode and readNodes', () => {
     expect(readNodes(doc)).toHaveLength(0);
     expect(readNode(doc, file!.id)?.deletedAt).toBe(2000);
     expect(readFileContent(doc, file!.id)).toContain('CollabCode');
+    doc.destroy();
+  });
+});
+
+describe('readAllNodes', () => {
+  it('includes tombstoned nodes', () => {
+    const doc = newProject();
+    const [file] = readNodes(doc);
+    nodesMap(doc).get(file!.id)?.set('deletedAt', 2000);
+
+    expect(readAllNodes(doc).map((node) => node.id)).toEqual([file!.id]);
+    doc.destroy();
+  });
+
+  it('reads a node written before deletedBy existed as deletedBy: null', () => {
+    const doc = newProject();
+    const [file] = readNodes(doc);
+    nodesMap(doc).get(file!.id)?.delete('deletedBy');
+
+    expect(readAllNodes(doc)[0]?.deletedBy).toBeNull();
+    doc.destroy();
+  });
+
+  it('skips a node whose id field disagrees with its key', () => {
+    const doc = newProject();
+    const [file] = readNodes(doc);
+    nodesMap(doc).get(file!.id)?.set('id', 'impostor');
+
+    expect(readAllNodes(doc)).toEqual([]);
     doc.destroy();
   });
 });
