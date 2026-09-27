@@ -38,6 +38,12 @@ source of truth for architecture, data model, phase scope and definitions of don
 - Server logging goes through the pino logger. No `console.log` in committed code.
 - All Yjs mutations go through the operation functions in `packages/shared` and run inside
   `doc.transact()` with an origin tag. UI components never mutate Y types directly.
+- **The one exception is y-monaco.** `MonacoBinding` writes editor keystrokes straight into the
+  bound file's `Y.Text`, bypassing `ops.ts` entirely. That is inherent to the binding, not a
+  shortcut, and it has two consequences worth remembering: limits that apply to file content are
+  enforced at the editor (`apps/web/src/features/editor/file-size-guard.ts`), not in `ops.ts`;
+  and a `Y.Text` change may carry no ops origin tag, so never assume one. Do not add other
+  exceptions without an ADR.
 - React: effects must be StrictMode-safe (create and destroy resources in the same effect).
 - Pure logic (tree resolution, path mapping, diffing) gets unit tests in the same change.
 
@@ -55,4 +61,25 @@ source of truth for architecture, data model, phase scope and definitions of don
 
 ## Commands
 
-Fill this section in as scripts are created (install, dev, test, lint, typecheck, e2e).
+Run from the repository root.
+
+| Command                                  | What it does                                                         |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `npm install`                            | Installs every workspace                                             |
+| `npm run dev`                            | Shared package in watch mode, server on :8080, web on :5173          |
+| `npm run dev:server` / `npm run dev:web` | One of them on its own                                               |
+| `npm run build`                          | Builds shared, then server (tsup), then web (vite)                   |
+| `npm run build:shared`                   | Just the shared package. Lint and typecheck need its output to exist |
+| `npm test`                               | Unit + integration (Vitest). Needs no database                       |
+| `npm run typecheck`                      | Every workspace, plus the root and e2e configs                       |
+| `npm run lint`                           | ESLint, type-aware                                                   |
+| `npm run format`                         | Prettier                                                             |
+| `npm run e2e`                            | Playwright. Builds the web app and starts an in-memory server itself |
+| `npm run migrate -w @collabcode/server`  | Applies SQL migrations to `DATABASE_URL`                             |
+
+Notes:
+
+- `TEST_DATABASE_URL` enables the Postgres-backed specs; without it they skip.
+- A machine-global `DATABASE_URL` shadows `apps/server/.env`, because Node's `--env-file` does
+  not override variables that are already set. Prefix with `env -u DATABASE_URL` when that
+  happens.
