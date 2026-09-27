@@ -2,7 +2,7 @@
  * The right-hand pane: run the project in this browser (PLAN.md §10).
  *
  * Nothing runs until this person clicks Run, and their run is theirs alone.
- * The note under the buttons says what that means: the code includes
+ * The note under the status says what that means: the code includes
  * collaborators' edits, and their changes restart the server.
  */
 import { lazy, Suspense, useMemo, useState } from 'react';
@@ -86,14 +86,15 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
   const hasRun = state.phase !== 'idle';
 
   return (
-    <section aria-labelledby="run-heading" className="flex h-full flex-col">
+    <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
-        <h2
-          id="run-heading"
-          className="flex-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase"
+        <p
+          role="status"
+          aria-label="Run status"
+          className={`min-w-0 flex-1 text-xs ${TONE_CLASS[status.tone]}`}
         >
-          Run
-        </h2>
+          {status.text}
+        </p>
         {canRun(state) ? (
           <Button
             label="Run"
@@ -116,9 +117,6 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
       </div>
 
       <div className="space-y-1.5 border-b border-zinc-800 px-3 py-2 text-xs">
-        <p role="status" aria-label="Run status" className={TONE_CLASS[status.tone]}>
-          {status.text}
-        </p>
         {support.kind !== 'supported' && <p className="text-amber-200">{support.message}</p>}
         {dependenciesChanged && (
           <p className="text-amber-200">
@@ -174,6 +172,6 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
           )}
         </div>
       ))}
-    </section>
+    </div>
   );
 }

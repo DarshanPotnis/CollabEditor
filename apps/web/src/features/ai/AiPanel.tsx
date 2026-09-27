@@ -116,14 +116,9 @@ export function AiPanel({ request }: AiPanelProps): React.ReactElement {
   const { state } = request;
 
   return (
-    <section aria-labelledby="ai-heading" className="flex h-full flex-col">
+    <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
-        <h2 id="ai-heading" className="text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-          AI
-        </h2>
-        <p className="min-w-0 flex-1 truncate text-right text-xs text-zinc-500">
-          {keyStatus(ownKey.choice)}
-        </p>
+        <p className="min-w-0 flex-1 truncate text-xs text-zinc-500">{keyStatus(ownKey.choice)}</p>
         <button
           type="button"
           aria-label="AI settings"
@@ -153,6 +148,6 @@ export function AiPanel({ request }: AiPanelProps): React.ReactElement {
       {settingsOpen && (
         <AiSettingsDialog settings={ownKey} onClose={() => setSettingsOpen(false)} />
       )}
-    </section>
+    </div>
   );
 }
