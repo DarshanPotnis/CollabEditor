@@ -15,7 +15,8 @@ import { useFilePresence } from '../../collab/useFilePresence.js';
 import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
-import { CodeEditor } from '../editor/CodeEditor.js';
+import { editorSpecs } from '../editor/editor-specs.js';
+import type { ModelSpec } from '../editor/model-registry.js';
 import { FilesPane, type FilesView } from '../file-tree/FilesPane.js';
 import { useTreeActions } from '../file-tree/useTreeActions.js';
 import { ToastProvider, useToasts } from '../notifications/ToastProvider.js';
@@ -23,6 +24,8 @@ import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
 import { RunPanelPlaceholder } from '../runtime/RunPanelPlaceholder.js';
+import { EditorPane } from '../tabs/EditorPane.js';
+import { useTabs } from '../tabs/useTabs.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { useProjectSummary } from './useProjectSummary.js';
 import { WorkspaceHeader } from './WorkspaceHeader.js';
@@ -40,19 +43,13 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   const tree = useResolvedTree(session);
   const presence = useFilePresence(collaborators);
   const folders = useExpandedFolders(project.id);
-  const [openedFileId, setOpenedFileId] = useState<string | null>(null);
+  const entryId = session ? entryFileId(tree, readMeta(session.doc)) : null;
+  const tabs = useTabs(tree, entryId);
+  const activeId = tabs.state.activeId;
 
-  // Until someone picks a file, show the template's entry file.
-  const activeFileId =
-    openedFileId !== null && tree.byId.has(openedFileId)
-      ? openedFileId
-      : session
-        ? entryFileId(tree, readMeta(session.doc))
-        : null;
-  const activeFile = activeFileId === null ? undefined : tree.byId.get(activeFileId);
-
-  usePublishIdentity(session, identity, activeFileId);
+  usePublishIdentity(session, identity, activeId);
   useRemoteCursorStyles(remoteOnly(collaborators));
+  useCycleNotice(tree, toasts);
 
   const rename = useCallback((name: string) => {
     setIdentity((current) => {
@@ -71,15 +68,17 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     [toasts],
   );
   const showDeleted = useCallback(() => setFilesView('deleted'), []);
-  useCycleNotice(tree, toasts);
   const actions = useTreeActions(session, identity, toasts, {
-    onCreatedFile: setOpenedFileId,
+    onCreatedFile: tabs.open,
     onShowDeleted: showDeleted,
   });
 
-  const ytext = useMemo(
-    () => (session && activeFileId ? (readFileText(session.doc, activeFileId) ?? null) : null),
-    [session, activeFileId],
+  const specs = useMemo(
+    () =>
+      session
+        ? editorSpecs(tabs.state.tabs, tree, (id) => readFileText(session.doc, id))
+        : new Map<string, ModelSpec>(),
+    [session, tabs.state.tabs, tree],
   );
   const awareness = session?.provider.awareness ?? null;
 
@@ -100,22 +99,25 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
             <FilesPane
               tree={tree}
               folders={folders}
-              activeFileId={activeFileId}
+              activeFileId={activeId}
               presence={presence}
               actions={actions}
               myUserId={identity.id}
               view={filesView}
               onViewChange={setFilesView}
-              onOpenFile={setOpenedFileId}
+              onOpenFile={tabs.open}
               onError={showError}
             />
           }
           editor={
-            ytext && awareness && activeFile ? (
-              <CodeEditor
-                ytext={ytext}
+            awareness ? (
+              <EditorPane
+                tree={tree}
+                tabs={tabs}
+                specs={specs}
                 awareness={awareness}
-                fileName={activeFile.path}
+                myUserId={identity.id}
+                onRestore={actions.restore}
                 onFileSizeLimit={onFileSizeLimit}
               />
             ) : (

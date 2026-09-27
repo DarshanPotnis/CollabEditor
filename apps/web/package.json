@@ -15,7 +15,6 @@
   "dependencies": {
     "@collabcode/shared": "*",
     "@hocuspocus/provider": "^4.7.0",
-    "@monaco-editor/react": "^4.7.0",
     "lucide-react": "^1.48.0",
     "monaco-editor": "^0.57.0",
     "react": "^19.3.0",
