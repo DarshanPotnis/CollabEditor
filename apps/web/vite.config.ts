@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { ISOLATION_HEADERS } from './src/lib/isolation-headers.js';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -14,8 +15,10 @@ export default defineConfig({
       },
     ],
   },
-  server: { port: 5173, strictPort: true },
-  preview: { port: 4173, strictPort: true },
+  // Every response, including the Monaco worker scripts, is cross-origin
+  // isolated, in development and in `vite preview` (which e2e runs against).
+  server: { port: 5173, strictPort: true, headers: ISOLATION_HEADERS },
+  preview: { port: 4173, strictPort: true, headers: ISOLATION_HEADERS },
   build: {
     // Monaco is large and split across chunks; this silences the default
     // 500 kB warning without hiding genuinely surprising growth.

@@ -142,6 +142,19 @@ SPA rewrites come from `apps/web/vercel.json`.
 `npm run start -w @collabcode/server`, and run `npm run migrate -w @collabcode/server` on deploy.
 Set `DATABASE_URL`, `ALLOWED_ORIGINS` and `LOG_LEVEL`.
 
+### Launch checklist: cross-origin isolation
+
+Running code needs the web app to be cross-origin isolated. `apps/web/vercel.json` sends the
+headers, and the e2e suite checks them against a local production build, but check the real
+deployment after every change to hosting:
+
+1. `curl -sI https://<your-site>/ | grep -i cross-origin` shows
+   `cross-origin-opener-policy: same-origin` and `cross-origin-embedder-policy: require-corp`.
+2. The same for a worker script: open the site, find a `…worker-….js` request in DevTools →
+   Network, and `curl -sI` its URL. Workers need the headers too, or Monaco falls back to running
+   their code on the main thread.
+3. In the browser console on the site, `crossOriginIsolated` is `true`.
+
 A free Render instance sleeps when idle, so the first connection after a quiet period can take up
 to a minute. The app expects this: the landing page pings `/health` on load to start the wake
 early, and the workspace explains the wait instead of showing a spinner.
