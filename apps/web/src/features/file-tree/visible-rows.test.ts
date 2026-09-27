@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTree } from '@collabcode/shared';
 import { node } from '../../test/nodes.js';
-import { ancestorIds, visibleRows } from './visible-rows.js';
+import { ancestorIds, draftInsertIndex, visibleRows } from './visible-rows.js';
 
 const tree = resolveTree([
   node({ id: 'src', name: 'src', kind: 'folder' }),
@@ -50,5 +50,14 @@ describe('ancestorIds', () => {
   it('lists folders from the root down', () => {
     expect(ancestorIds(tree, 'deep')).toEqual(['src', 'lib']);
     expect(ancestorIds(tree, 'pkg')).toEqual([]);
+  });
+});
+
+describe('draftInsertIndex', () => {
+  it('goes first inside the folder, or at the top for the root', () => {
+    const rows = visibleRows(tree, new Set(['src']));
+    expect(draftInsertIndex(rows, null)).toBe(0);
+    expect(draftInsertIndex(rows, 'src')).toBe(2);
+    expect(draftInsertIndex(rows, 'missing')).toBe(0);
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   fileSizeLimitMessage,
@@ -15,7 +15,9 @@ import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
 import { CodeEditor } from '../editor/CodeEditor.js';
-import { FileTree } from '../file-tree/FileTree.js';
+import { FilesPane, type FilesView } from '../file-tree/FilesPane.js';
+import { useTreeActions } from '../file-tree/useTreeActions.js';
+import { ToastProvider, useToasts } from '../notifications/ToastProvider.js';
 import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
@@ -30,7 +32,8 @@ const COLD_START_AFTER_MS = 2_000;
 function Workspace({ project }: { project: ProjectSummary }): React.ReactElement {
   const { session, connection } = useProject(project.id);
   const [identity, setIdentity] = useState(() => loadIdentity(browserStorage()));
-  const [notice, setNotice] = useState<string | null>(null);
+  const toasts = useToasts();
+  const [filesView, setFilesView] = useState<FilesView>('files');
 
   const collaborators = useCollaborators(session);
   const tree = useResolvedTree(session);
@@ -58,15 +61,19 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     });
   }, []);
 
-  const onFileSizeLimit = useCallback(() => setNotice(fileSizeLimitMessage()), []);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 6_000);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [notice]);
+  const onFileSizeLimit = useCallback(
+    () => toasts.show({ message: fileSizeLimitMessage(), tone: 'error' }),
+    [toasts],
+  );
+  const showError = useCallback(
+    (message: string) => toasts.show({ message, tone: 'error' }),
+    [toasts],
+  );
+  const showDeleted = useCallback(() => setFilesView('deleted'), []);
+  const actions = useTreeActions(session, identity, toasts, {
+    onCreatedFile: setOpenedFileId,
+    onShowDeleted: showDeleted,
+  });
 
   const ytext = useMemo(
     () => (session && activeFileId ? (readFileText(session.doc, activeFileId) ?? null) : null),
@@ -85,24 +92,20 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
 
       <ConnectionBanner state={connection} />
 
-      {notice && (
-        <p
-          role="alert"
-          className="border-b border-amber-900 bg-amber-950/60 px-4 py-2 text-sm text-amber-100"
-        >
-          {notice}
-        </p>
-      )}
-
       <main className="min-h-0 flex-1">
         <WorkspaceLayout
           tree={
-            <FileTree
+            <FilesPane
               tree={tree}
               folders={folders}
               activeFileId={activeFileId}
               presence={presence}
+              actions={actions}
+              myUserId={identity.id}
+              view={filesView}
+              onViewChange={setFilesView}
               onOpenFile={setOpenedFileId}
+              onError={showError}
             />
           }
           editor={
@@ -166,5 +169,9 @@ export function WorkspacePage(): React.ReactElement {
     );
   }
 
-  return <Workspace project={summary.project} />;
+  return (
+    <ToastProvider>
+      <Workspace project={summary.project} />
+    </ToastProvider>
+  );
 }

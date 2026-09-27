@@ -14,8 +14,12 @@ const tree = resolveTree([
 const collapsed = visibleRows(tree, new Set());
 const open = visibleRows(tree, new Set(['src', 'empty']));
 
-const key = (name: string, modifiers: Partial<{ metaKey: boolean; ctrlKey: boolean }> = {}) => ({
+const key = (
+  name: string,
+  modifiers: Partial<{ metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }> = {},
+) => ({
   key: name,
+  shiftKey: false,
   ctrlKey: false,
   metaKey: false,
   altKey: false,
@@ -66,6 +70,15 @@ describe('treeKeyAction', () => {
       id: 'index',
     });
     expect(treeKeyAction(key('Backspace'), open, 'index')).toEqual({ type: 'none' });
+  });
+
+  it('Shift+F10 and the Menu key open the context menu', () => {
+    expect(treeKeyAction(key('F10', { shiftKey: true }), open, 'src')).toEqual({
+      type: 'menu',
+      id: 'src',
+    });
+    expect(treeKeyAction(key('ContextMenu'), open, 'src')).toEqual({ type: 'menu', id: 'src' });
+    expect(treeKeyAction(key('F10'), open, 'src')).toEqual({ type: 'none' });
   });
 
   it('leaves Ctrl shortcuts alone', () => {

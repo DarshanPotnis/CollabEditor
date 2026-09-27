@@ -11,10 +11,12 @@ export type TreeKeyAction =
   | { type: 'open'; id: string }
   | { type: 'rename'; id: string }
   | { type: 'delete'; id: string }
+  | { type: 'menu'; id: string }
   | { type: 'none' };
 
 export type TreeKey = {
   key: string;
+  shiftKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
@@ -65,6 +67,10 @@ export function treeKeyAction(
       return row.expanded ? { type: 'collapse', id: row.id } : { type: 'expand', id: row.id };
     case 'F2':
       return { type: 'rename', id: row.id };
+    case 'F10':
+      return event.shiftKey ? { type: 'menu', id: row.id } : NONE;
+    case 'ContextMenu':
+      return { type: 'menu', id: row.id };
     case 'Delete':
       return { type: 'delete', id: row.id };
     case 'Backspace':

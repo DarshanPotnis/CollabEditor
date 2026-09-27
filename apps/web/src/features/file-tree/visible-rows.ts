@@ -59,3 +59,14 @@ export function ancestorIds(tree: ResolvedTree, nodeId: string): string[] {
   }
   return ids;
 }
+
+/**
+ * Where a draft row for a new file or folder goes: first inside its folder,
+ * right after the folder's row, or at the very top for the root. The folder
+ * must already be expanded for its row to be followed by its children.
+ */
+export function draftInsertIndex(rows: readonly TreeRow[], parentId: string | null): number {
+  if (parentId === null) return 0;
+  const index = rows.findIndex((row) => row.id === parentId);
+  return index === -1 ? 0 : index + 1;
+}
