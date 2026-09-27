@@ -97,7 +97,7 @@ test.describe('multi-file workspace', () => {
 
     await expect(b.getByText(/permanently deleted, so it can't be restored/)).toBeVisible();
     await b.getByRole('button', { name: 'Close tab' }).click();
-    await expect(b.getByRole('tab')).toHaveCount(0);
+    await expect(b.getByRole('tablist', { name: 'Open files' }).getByRole('tab')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
