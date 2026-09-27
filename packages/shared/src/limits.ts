@@ -9,6 +9,16 @@
 /** Largest content a single file may hold, in UTF-16 code units. */
 export const MAX_FILE_SIZE = 512 * 1024;
 
+/** Most files and folders a project may show at once. */
+export const MAX_LIVE_NODES = 500;
+
+/**
+ * Most nodes a project may hold including deleted ones, whose content is kept
+ * so a delete can be undone. Without this, create-and-delete churn would grow
+ * the document forever.
+ */
+export const MAX_TOTAL_NODES = 2_000;
+
 /** Largest node name, in characters. */
 export const MAX_NAME_LENGTH = 100;
 

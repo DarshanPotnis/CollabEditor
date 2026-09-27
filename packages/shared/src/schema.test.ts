@@ -6,17 +6,40 @@ import {
   nodesMap,
   readFileContent,
   readFileText,
+  readAllNodes,
   readMeta,
   readNode,
   readNodes,
   type NodeFieldValue,
 } from './schema.js';
 import { initProjectDoc } from './ops.js';
+import { insertNode } from './node-writer.js';
 import { MAX_NAME_LENGTH } from './limits.js';
 
 function newProject(): Y.Doc {
   const doc = new Y.Doc();
   initProjectDoc(doc, { name: 'Demo', template: 'blank-node', now: 1000 });
+  return doc;
+}
+
+/** A document holding exactly one file, independent of what templates contain. */
+function oneFile(): Y.Doc {
+  const doc = new Y.Doc();
+  insertNode(
+    doc,
+    {
+      id: 'file-1',
+      kind: 'file',
+      name: 'index.js',
+      parentId: null,
+      createdAt: 1000,
+      createdBy: 'system',
+      deletedAt: null,
+      deletedBy: null,
+      deletedByName: null,
+    },
+    'Hello from CollabCode',
+  );
   return doc;
 }
 
@@ -39,6 +62,7 @@ describe('nodeNameSchema', () => {
     ['newline', 'index\n.js'],
     ['null byte', 'index\u0000.js'],
     ['too long', 'a'.repeat(MAX_NAME_LENGTH + 1)],
+    ['decomposed accent (NFD)', 'cafe\u0301.js'],
   ])('rejects %s', (_label, name) => {
     expect(nodeNameSchema.safeParse(name).success).toBe(false);
   });
@@ -66,13 +90,13 @@ describe('readMeta', () => {
 
 describe('readNode and readNodes', () => {
   it('returns null for an unknown id', () => {
-    const doc = newProject();
+    const doc = oneFile();
     expect(readNode(doc, 'nope')).toBeNull();
     doc.destroy();
   });
 
   it('ignores a node another client wrote with a malformed shape', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const before = readNodes(doc).length;
     const junk = new Y.Map<NodeFieldValue>([
       ['id', 'junk'],
@@ -86,7 +110,7 @@ describe('readNode and readNodes', () => {
   });
 
   it('leaves tombstoned nodes out of readNodes but keeps their content', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     nodesMap(doc).get(file!.id)?.set('deletedAt', 2000);
 
@@ -97,15 +121,61 @@ describe('readNode and readNodes', () => {
   });
 });
 
+describe('readAllNodes', () => {
+  it('includes tombstoned nodes', () => {
+    const doc = oneFile();
+    const [file] = readNodes(doc);
+    nodesMap(doc).get(file!.id)?.set('deletedAt', 2000);
+
+    expect(readAllNodes(doc).map((node) => node.id)).toEqual([file!.id]);
+    doc.destroy();
+  });
+
+  it('reads a node written before deletedBy existed as deletedBy: null', () => {
+    const doc = oneFile();
+    const [file] = readNodes(doc);
+    nodesMap(doc).get(file!.id)?.delete('deletedBy');
+
+    expect(readAllNodes(doc)[0]?.deletedBy).toBeNull();
+    doc.destroy();
+  });
+
+  it('sanitises deletedByName, and reads a hostile one as null instead of hiding the node', () => {
+    const doc = oneFile();
+    const [file] = readNodes(doc);
+    const node = nodesMap(doc).get(file!.id);
+
+    node?.set('deletedByName', 'Mallory\u202e\n  Evil');
+    expect(readAllNodes(doc)[0]?.deletedByName).toBe('Mallory Evil');
+
+    node?.set('deletedByName', '\u200b\u200b');
+    expect(readAllNodes(doc)[0]?.deletedByName).toBeNull();
+
+    node?.set('deletedByName', 42);
+    expect(readAllNodes(doc)).toHaveLength(1);
+    expect(readAllNodes(doc)[0]?.deletedByName).toBeNull();
+    doc.destroy();
+  });
+
+  it('skips a node whose id field disagrees with its key', () => {
+    const doc = oneFile();
+    const [file] = readNodes(doc);
+    nodesMap(doc).get(file!.id)?.set('id', 'impostor');
+
+    expect(readAllNodes(doc)).toEqual([]);
+    doc.destroy();
+  });
+});
+
 describe('readFileText', () => {
   it('returns undefined when there is no content for an id', () => {
-    const doc = newProject();
+    const doc = oneFile();
     expect(readFileText(doc, 'nope')).toBeUndefined();
     doc.destroy();
   });
 
   it('returns the live Y.Text, so edits are visible through it', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     const text = readFileText(doc, file!.id);
     text!.insert(0, 'x');

@@ -1,15 +1,17 @@
 # CollabCode
 
-A multiplayer code workspace in the browser. Several people open the same project, edit at the
-same time, and see each other's named cursors. Nothing is lost when someone joins late, drops
-offline, or closes the tab mid-keystroke.
+A multiplayer code workspace in the browser. Several people open the same project, work in the
+same or different files at the same time, and see each other's named cursors and where everyone
+is in the file tree. Nothing is lost when someone joins late, drops offline, or closes the tab
+mid-keystroke.
 
 It runs entirely on free infrastructure: Vercel for the web app, Render for the sync server, Neon
 for Postgres.
 
-**Status: Phase 1 complete.** Real-time collaboration and persistence work on a single file per
-project. The multi-file workspace (Phase 2) and running a Node backend in the browser via
-WebContainers (Phase 3) are specified in [`docs/PLAN.md`](docs/PLAN.md) and not built yet.
+**Status: Phase 2 complete.** Projects are multi-file workspaces: a file tree with presence,
+drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, and following a
+collaborator to their cursor. Running a Node backend in the browser via WebContainers (Phase 3)
+is specified in [`docs/PLAN.md`](docs/PLAN.md) and not built yet.
 
 ---
 
@@ -39,6 +41,13 @@ them.
 The analogy: the old version emailed the whole file on every keystroke and the last email won.
 The new one sends individual edits that every copy can apply in any order and still agree.
 
+A file tree has conflicts of its own. Two people can create `utils.js` in the same folder before
+either sees the other's, or move two folders into each other at the same moment. Files are
+identified by stable IDs rather than paths, so a rename never disturbs someone typing in the file,
+and every browser runs the same pure function over the same data to draw the tree: both
+`utils.js` files survive, one shown as `utils (2).js`, identically on every screen. Undo is per
+person, so undoing never removes a collaborator's work.
+
 ## How it works
 
 ```
@@ -55,11 +64,12 @@ Browser                                  Render                       Neon
 
 The server syncs and stores. It never runs or interprets user code.
 
-Three decisions are written up in full:
+Four decisions are written up in full:
 
 - [001 — a CRDT instead of last-write-wins, and why not operational transformation](docs/decisions/001-crdt-over-last-write-wins.md)
 - [002 — Hocuspocus with whole-document Postgres snapshots](docs/decisions/002-persistence.md)
 - [003 — Hocuspocus owns the HTTP server, Express is mounted inside it](docs/decisions/003-hocuspocus-owns-the-http-server.md)
+- [004 — stable node IDs and deterministic read-time resolution of the file tree](docs/decisions/004-stable-ids-and-read-time-resolution.md)
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the system as it stands today,
 including the trust boundaries and what is deliberately missing.
@@ -139,17 +149,18 @@ early, and the workspace explains the wait instead of showing a spinner.
 ## Layout
 
 ```
-apps/web/          React + Vite + Monaco. Provider lifecycle, editor binding, presence
+apps/web/          React + Vite + Monaco. File tree, tabs, editor models and undo, presence
 apps/server/       Hocuspocus + Express + Postgres
-packages/shared/   Document schema, write-path ops, awareness validation, templates, limits
+packages/shared/   Document schema, tree resolution, write-path ops, awareness validation,
+                   templates, limits
 e2e/               Playwright specs
-docs/              PLAN.md, ARCHITECTURE.md, decisions/
+docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
 ```
 
 ## Roadmap
 
-- **Phase 2** — multi-file workspace: file tree, tabs, and deterministic read-time resolution of
-  concurrent tree edits (duplicate names, cycles, orphans) so every client computes the same view.
+- **Phase 2** (done) — multi-file workspace: file tree, tabs, per-person undo, and deterministic
+  read-time resolution of concurrent tree edits so every client computes the same view.
 - **Phase 3** — run the project's Node backend inside the browser with WebContainers, with a
   terminal, a preview and an API console.
 

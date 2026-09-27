@@ -6,7 +6,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { HocuspocusProvider } from '@hocuspocus/provider';
-import { readFileText } from '@collabcode/shared';
+import { TEMPLATES, readFileText, resolveDocTree } from '@collabcode/shared';
 import { startTestServer, type TestServer } from './test-server.js';
 import { COLLAB_REJECTION_REASONS } from './rejection.js';
 import {
@@ -178,6 +178,8 @@ describe('document shape', () => {
     const client = track(await connectClient(server.collabUrl, project));
 
     expect(readFileText(client.doc, project.entryFileId)).toBeInstanceOf(Y.Text);
-    expect(client.doc.getMap('nodes').size).toBe(1);
+    const tree = resolveDocTree(client.doc);
+    expect(tree.idByPath.get(TEMPLATES['blank-node'].entryPath)).toBe(project.entryFileId);
+    expect(tree.byId.size).toBe(TEMPLATES['blank-node'].files.length);
   });
 });

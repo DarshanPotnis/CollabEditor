@@ -43,7 +43,7 @@ test.describe('two people in one project', () => {
 
     expect(occurrences(converged, '@')).toBe(4);
     expect(occurrences(converged, '#')).toBe(4);
-    expect(converged).toContain('A blank Node.js file');
+    expect(converged).toContain('A blank Node.js project');
 
     await first.close();
     await second.close();

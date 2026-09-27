@@ -14,7 +14,7 @@ This plan is written for Claude Code. Work one phase at a time, in order. For ea
 Later phases (AI agent, checkpoints, GitHub push, accounts) are intentionally out of scope here.
 Design choices below leave room for them, but do not build them yet.
 
-Phases 0 and 1 are **done**. Where reality diverged from the original plan — mostly because
+Phases 0, 1 and 2 are **done**. Where reality diverged from the original plan — mostly because
 installed library versions differ from what it assumed — this document has been corrected in
 place so it stays the source of truth, and §14 lists every change with its reason.
 
@@ -89,25 +89,26 @@ every copy can merge in any order and still end up identical.
 
 ## 4. Technology decisions
 
-| Concern      | Choice                                                                                       | Reason                                                                                                                                                                |
-| ------------ | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Language     | TypeScript **5.9** (strict) across all packages                                              | Shared types. Pinned below 7: typescript-eslint 8 peers cap at `<6.1.0`                                                                                               |
-| Repo         | npm workspaces monorepo                                                                      | No extra tooling, supported by Vercel and Render                                                                                                                      |
-| Frontend     | React 19 + **Vite 7** + **Tailwind 4**                                                       | Vite pinned to 7 repo-wide: `@vitejs/plugin-react` 6 requires Vite 8, and Vite 8's Rolldown pipeline plus Monaco worker bundling is not a risk worth taking mid-phase |
-| Editor       | `monaco-editor` bundled locally, via `@monaco-editor/react` with `loader.config({ monaco })` | CDN loading breaks under the cross-origin isolation headers needed in Phase 3                                                                                         |
-| CRDT         | Yjs + `y-monaco`                                                                             | Mature, fast, awareness built in                                                                                                                                      |
-| Sync server  | `@hocuspocus/server` + `@hocuspocus/provider`                                                | Yjs server with auth, persistence hooks, debounced storage                                                                                                            |
-| Persistence  | Neon Postgres (free tier), `@hocuspocus/extension-database`                                  | Survives Render spin-down; stores full doc snapshot                                                                                                                   |
-| DB client    | `postgres` (porsager) with plain SQL migrations, `prepare: false`                            | No ORM needed for one table; Neon's pooler is pgbouncer in transaction mode                                                                                           |
-| Validation   | zod                                                                                          | Env, HTTP bodies, params                                                                                                                                              |
-| Logging      | pino                                                                                         | Structured logs on Render                                                                                                                                             |
-| IDs          | nanoid                                                                                       | Project and file-node IDs                                                                                                                                             |
-| Runtime      | `@webcontainer/api`                                                                          | Node.js in the browser at $0; free for personal/open-source use                                                                                                       |
-| Terminal     | `@xterm/xterm` + fit addon                                                                   | Standard web terminal                                                                                                                                                 |
-| Tests        | Vitest (unit/integration), Playwright (e2e)                                                  | Fast, TS-native                                                                                                                                                       |
-| Server build | tsup (bundles `packages/shared` in)                                                          | Avoids publishing/building the shared package separately                                                                                                              |
-| Node         | 24 (current LTS), pinned in `.nvmrc` and `engines`                                           | Reproducible builds. Its global `WebSocket` means tests need no `ws` polyfill                                                                                         |
-| Lint         | ESLint 10 flat config + typescript-eslint 8, type-aware                                      | Catches floating promises and unsafe `any` flow                                                                                                                       |
+| Concern      | Choice                                                                                  | Reason                                                                                                                                                                |
+| ------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language     | TypeScript **5.9** (strict) across all packages                                         | Shared types. Pinned below 7: typescript-eslint 8 peers cap at `<6.1.0`                                                                                               |
+| Repo         | npm workspaces monorepo                                                                 | No extra tooling, supported by Vercel and Render                                                                                                                      |
+| Frontend     | React 19 + **Vite 7** + **Tailwind 4**                                                  | Vite pinned to 7 repo-wide: `@vitejs/plugin-react` 6 requires Vite 8, and Vite 8's Rolldown pipeline plus Monaco worker bundling is not a risk worth taking mid-phase |
+| Editor       | `monaco-editor` bundled locally, created with `monaco.editor.create` (no React wrapper) | CDN loading breaks under Phase 3's isolation headers; the wrapper's model cache fought ours (§9.3), so it was removed in Phase 2                                      |
+| Panes        | `react-resizable-panels` 4 (`Group` / `Panel` / `Separator`)                            | Accessible, keyboard-resizable splitters with no dependencies. Tree, drag and drop, context menu and toasts are built in-house                                        |
+| CRDT         | Yjs + `y-monaco`                                                                        | Mature, fast, awareness built in                                                                                                                                      |
+| Sync server  | `@hocuspocus/server` + `@hocuspocus/provider`                                           | Yjs server with auth, persistence hooks, debounced storage                                                                                                            |
+| Persistence  | Neon Postgres (free tier), `@hocuspocus/extension-database`                             | Survives Render spin-down; stores full doc snapshot                                                                                                                   |
+| DB client    | `postgres` (porsager) with plain SQL migrations, `prepare: false`                       | No ORM needed for one table; Neon's pooler is pgbouncer in transaction mode                                                                                           |
+| Validation   | zod                                                                                     | Env, HTTP bodies, params                                                                                                                                              |
+| Logging      | pino                                                                                    | Structured logs on Render                                                                                                                                             |
+| IDs          | nanoid                                                                                  | Project and file-node IDs                                                                                                                                             |
+| Runtime      | `@webcontainer/api`                                                                     | Node.js in the browser at $0; free for personal/open-source use                                                                                                       |
+| Terminal     | `@xterm/xterm` + fit addon                                                              | Standard web terminal                                                                                                                                                 |
+| Tests        | Vitest (unit/integration), Playwright (e2e)                                             | Fast, TS-native                                                                                                                                                       |
+| Server build | tsup (bundles `packages/shared` in)                                                     | Avoids publishing/building the shared package separately                                                                                                              |
+| Node         | 24 (current LTS), pinned in `.nvmrc` and `engines`                                      | Reproducible builds. Its global `WebSocket` means tests need no `ws` polyfill                                                                                         |
+| Lint         | ESLint 10 flat config + typescript-eslint 8, type-aware                                 | Catches floating promises and unsafe `any` flow                                                                                                                       |
 
 ---
 
@@ -134,9 +135,12 @@ the Phase 1 cutover, once it worked end to end.
 │   │       ├── features/
 │   │       │   ├── landing/
 │   │       │   ├── workspace/ # three-pane layout
-│   │       │   ├── editor/    # Monaco setup, binding hook, remote-cursor styles
-│   │       │   ├── file-tree/
-│   │       │   ├── tabs/
+│   │       │   ├── editor/    # Monaco setup, model registry, URIs, undo routing, cursor CSS
+│   │       │   ├── file-tree/ # tree, rows, keyboard, drag and drop, tree actions
+│   │       │   ├── tabs/      # tab state, tab bar, editor pane, deleted-file banners
+│   │       │   ├── recently-deleted/
+│   │       │   ├── notifications/ # toasts
+│   │       │   ├── ui/        # context menu, confirm dialog
 │   │       │   ├── presence/
 │   │       │   └── runtime/   # Phase 3: WebContainer, FS bridge, terminal, preview, API console
 │   │       ├── lib/           # config (zod-parsed env), identity, api client
@@ -155,14 +159,18 @@ the Phase 1 cutover, once it worked end to end.
 │   └── shared/
 │       └── src/
 │           ├── schema.ts      # Y.Doc shape, keys, node types, zod-validated readers
-│           ├── ops.ts         # the single write path. Phase 1: initProjectDoc.
-│           │                  #   Phase 2 adds createFile, rename, move, softDelete, restore
+│           ├── ops.ts         # initProjectDoc (templates → document)
+│           ├── tree-ops.ts    # createFile, createFolder, rename, move, softDelete, restore
+│           ├── purge-ops.ts   # purgeDeleted: the one hard delete
+│           ├── tree-rules.ts  # write-time checks, shared with the UI
+│           ├── resolve-tree.ts # deterministic read-time resolution (§6.2)
+│           ├── deleted-items.ts # what Recently deleted lists
+│           ├── display-name.ts, node-writer.ts, op-error.ts
 │           ├── presence.ts    # awareness schema, palette, sanitising, CSS escaping
 │           ├── ids.ts         # project, node and user ids
-│           ├── templates/     # starter projects as plain file maps
+│           ├── templates/     # starter projects as path → content maps, plus layout.ts
 │           ├── limits.ts      # size and count limits
 │           └── protocol.ts    # API DTOs (zod)
-│           # resolve-tree.ts arrives in Phase 2, with the tree that needs it (see 6.2)
 ├── e2e/                       # Playwright specs
 ├── .github/workflows/ci.yml
 ├── README.md
@@ -205,6 +213,8 @@ type NodeFields = {
   createdAt: number;
   createdBy: string; // user id from awareness identity
   deletedAt: number | null; // tombstone; content is kept so delete can be undone
+  deletedBy: string | null; // Phase 2, optional in storage: reads as null when absent
+  deletedByName: string | null; // the deleter's name then, sanitised like an awareness name
 };
 ```
 
@@ -215,8 +225,9 @@ Rules:
   Because identity doesn't change on rename, someone typing in a file that gets renamed keeps
   their cursor and their edits.
 - **Single write path, with one exception.** All _structural_ mutations go through
-  `packages/shared/src/ops.ts`, run inside `doc.transact(fn, origin)`, and validate names
-  (non-empty, no `/`, not `.` or `..`) and limits. The exception is **y-monaco**, which writes
+  `packages/shared` (`ops.ts`, `tree-ops.ts`, `purge-ops.ts`), run inside
+  `doc.transact(fn, origin)`, and validate names (non-empty, NFC, no `/`, not `.` or `..`) and
+  limits. The exception is **y-monaco**, which writes
   editor keystrokes straight into a file's `Y.Text`. That is why the per-file size limit is
   enforced at the editor rather than in `ops.ts` (see §8.3). The exception is recorded in
   `CLAUDE.md`.
@@ -237,12 +248,16 @@ a pure function that every client runs on the same data and gets the same answer
 3. **Cycles.** Two users concurrently moving A into B and B into A creates a cycle. Walk the
    ancestors; for any cycle, re-parent the node in the cycle with the smallest
    `(createdAt, id)` to root.
-4. **Duplicate names in one folder.** Prevented at write time first: `createFile`, `createFolder`
-   and `rename` refuse a name that a live sibling already has, so the ordinary case never reaches
-   resolution. Resolution then handles the case writes cannot — two clients creating the same
+4. **Duplicate names in one folder.** Prevented at write time first: `createFile`, `createFolder`,
+   `rename` and `move` refuse a name that a live sibling already has — **compared
+   case-insensitively**, since a project may later be cloned onto macOS or Windows — so the
+   ordinary case never reaches resolution. (Resolution itself stays case-sensitive, like the
+   WebContainer's file system.) `restore` never refuses: a restored node whose name was taken
+   meanwhile really renames itself to the next free `name (n)`. Resolution then handles the case writes cannot — two clients creating the same
    name concurrently, where neither saw the other. Sort siblings by `(createdAt, id)`. The first
-   keeps its name. The others get display names `name (2)`, `name (3)` and are reported in
-   `conflicts`. Display names are what paths, Monaco URIs and the WebContainer use.
+   keeps its name. The others get display names `name (2).ext`, `name (3).ext` — skipping any
+   suffix a sibling really has as its name — and are reported in `conflicts`. Display names are
+   what paths, Monaco URIs and the WebContainer use.
 
    The conflict **badge** is not a must-have. Once duplicates are prevented at write time the
    badge explains a state most users will never see, and the display name already communicates
@@ -252,19 +267,29 @@ Output:
 
 ```ts
 type ResolvedTree = {
-  byId: Map<string, ResolvedNode>; // includes displayName, path, depth
-  childrenOf: Map<string | null, string[]>; // sorted: folders first, then name
+  byId: Map<string, ResolvedNode>; // visible only; includes displayName, path, depth
+  childrenOf: Map<string | null, string[]>; // sorted: folders first, then a fixed code-point order
   idByPath: Map<string, string>;
-  conflicts: Array<{ nodeId: string; kind: 'duplicate-name' | 'cycle' | 'missing-parent' }>;
+  hidden: Map<string, HiddenNode>; // for each hidden node, the tombstone that hid it, and who
+  conflicts: Array<
+    | { nodeId: string; kind: 'duplicate-name' | 'missing-parent' }
+    | { nodeId: string; kind: 'cycle'; others: string[] } // so the UI can name both folders
+  >;
 };
 ```
 
-This function needs exhaustive unit tests (each rule, combinations, stability of ordering).
-It is a portfolio highlight; document it in an ADR (004).
+The rules run in the order 1–2 (parents, cycles), then 3 (cascade along the resolved parents),
+then 4, so a node in a broken cycle still cascades correctly. Sorting never uses the browser's
+locale, which differs between machines.
 
-**Deferred to Phase 2.** Phase 1 has one file per project and no way to create a second, so
-there is no tree to resolve and nothing the function could be exercised against beyond its own
-unit tests. It ships with the file tree.
+This function has exhaustive unit tests (each rule, combinations, input-order independence) and
+a seeded convergence test: two replicas make random offline edits, exchange them, and must
+resolve identically. ADR 004 documents it.
+
+**Purge.** Tombstones keep content forever, so the document only grows. `purgeDeleted` (behind a
+confirmation in Recently deleted) is the one hard delete. It removes only what the purging client
+sees as deleted, so a file created concurrently inside a purged folder survives via rule 2. A
+restore racing a purge loses: it writes into a `Y.Map` the purge deleted, which Yjs discards.
 
 ### 6.3 Awareness (presence)
 
@@ -478,13 +503,13 @@ The manual script that walks through these in two browser windows is
 
 ---
 
-## 9. Phase 2: Multi-file workspace
+## 9. Phase 2: Multi-file workspace — **done**
 
 **Goal:** a real project workspace where people work in different files at once and can see
 where everyone is.
 
-**Inherited from Phase 1.** These were deliberately deferred here, because Phase 1 had no tree
-to exercise them against:
+**Inherited from Phase 1** (all built). These were deliberately deferred here, because Phase 1
+had no tree to exercise them against:
 
 - `packages/shared/src/resolve-tree.ts` and its exhaustive unit tests (§6.2).
 - The tree ops in `ops.ts`: `createFile`, `createFolder`, `rename`, `move`, `softDelete`,
@@ -499,7 +524,13 @@ Three resizable panes: file tree | tabbed editor | run panel (placeholder until 
 ### 9.2 File tree
 
 - Create file and folder, inline rename, delete (soft, with an undo toast), move by drag and
-  drop, right-click context menu, basic keyboard navigation.
+  drop (native HTML5, offered only where the move op would accept it) or keyboard cut/paste,
+  right-click context menu (also Shift+F10), WAI-ARIA treeview keyboard navigation.
+- **Recently deleted:** each deleted item with where it was, who deleted it and when; Restore,
+  Delete forever and Empty all, the last two behind a confirmation that states the count and that
+  it cannot be undone for anyone. This is also the only way back to a deleted file whose tab was
+  closed, and the way under the total node limit.
+- When resolution breaks a cycle, both people get a toast naming the folders.
 - Rendered from `resolveTree`. Duplicates are refused at write time; the display name
   (`utils (2).js`) carries the concurrent case. The conflict badge is optional — see §6.2.
 - Presence dots on files showing who has each file open (from `activeFileId`).
@@ -507,23 +538,33 @@ Three resizable panes: file tree | tabbed editor | run panel (placeholder until 
 ### 9.3 Tabs and editor
 
 - Open tabs are local to each user (not synced).
-- One Monaco model per open file with URI `file:///<path>`. When a rename changes the path,
-  recreate the model (Monaco URIs are immutable) and carry over view state.
-- Brute force: bind only the active file (dispose the binding on tab switch, bind the new one).
-  Make sure remote selections only render for the active file (check how the installed
-  y-monaco resolves positions against its own `Y.Text`; filter by `activeFileId` if needed).
-- If an open file is deleted by someone else, show "Deleted by <name> · Restore" in its tab.
+- One Monaco model **and binding** per open tab, with URI `URI.file('/' + path)` (encoded, never
+  concatenated). When the resolved path changes (rename, move, parent rename, a duplicate gaining
+  `(2)`), recreate the model (Monaco URIs are immutable) and carry over view state and focus.
+- Every open tab stays bound, not only the active one: an unbound model falls behind remote
+  edits, and rebinding calls `setValue`, which wipes undo and moves the cursor. Switching tabs is
+  `setModel`. No `activeFileId` filter is needed for remote selections: y-monaco 0.1.6 already
+  draws only positions that resolve into its own `Y.Text`.
+- **Undo is per person:** a `Y.UndoManager` per file tracking only this user's binding (y-monaco's
+  transaction origin), kept across renames. Every Monaco undo path ends in `model.undo()`, which
+  each model routes to that manager; the command palette gets Undo/Redo on the same manager.
+- If an open file is deleted by someone else, it stays open read-only with "Deleted by <name>"
+  and Restore. If it is deleted forever, the tab says so and can be closed.
 - Clicking a collaborator's avatar opens their file and reveals their cursor.
 
 ### 9.4 Limits and scale
 
-- Enforce max file size and max node count in `ops.ts` (client) and keep the server-side
-  update-size rejection from Phase 1.
+- Enforce limits in the tree ops (client): at most 500 visible nodes and 2,000 including deleted
+  ones, and `createFile` content within the per-file limit. Typed content stays guarded at the
+  editor (§8.3). Keep the server-side update-size rejection from Phase 1.
 - Brute force keeps every file in one Y.Doc, which is fine up to a few hundred small files.
-  Record the future optimization (Yjs subdocuments per file, loaded lazily) in an ADR. Do not
-  build it.
+  The future optimization (Yjs subdocuments per file, loaded lazily) is recorded in ADR 004's
+  consequences rather than a separate ADR, to avoid renumbering 005/006 again. Not built.
 
-### 9.5 Definition of done
+### 9.5 Definition of done — met
+
+Each item has an e2e test (`e2e/workspace.spec.ts`, `undo.spec.ts`, `tabs.spec.ts`,
+`follow.spec.ts`), and `docs/manual-tests/phase-2.md` walks through them in two windows.
 
 - Two users edit different files at the same time; both see each other's presence in the tree.
 - User A renames a file while user B types in it: B's cursor and edits survive.
@@ -537,10 +578,12 @@ Three resizable panes: file tree | tabbed editor | run panel (placeholder until 
 
 ### 9.6 Tests and ADR
 
-- Unit tests for every new op and resolution case.
-- E2E for concurrent rename-while-editing and duplicate-create.
-- ADR **004**: stable IDs + read-time deterministic resolution. (Renumbered from 003, which
-  Phase 1 used for the HTTP server decision.)
+- Unit tests for every new op and resolution case, including the restore/purge races.
+- E2E for concurrent rename-while-editing and duplicate-create, plus cross-move, delete/restore,
+  delete forever while open, per-person undo (keys, palette, across a rename), tab and cursor
+  behaviour, and following a collaborator.
+- ADR **004**: stable IDs + read-time deterministic resolution — written. (Renumbered from 003,
+  which Phase 1 used for the HTTP server decision.)
 
 ---
 
@@ -613,8 +656,9 @@ endpoints, and it reloads as collaborators edit.
 ## 11. Cross-cutting standards
 
 - **Performance:** subscribe React to Yjs through small selector hooks
-  (`useSyncExternalStore`) so a keystroke doesn't re-render the whole workspace. Debounce
-  expensive derived work (tree resolution, FS sync).
+  (`useSyncExternalStore`) so a keystroke doesn't re-render the whole workspace. Tree resolution
+  is not debounced: it observes only `nodes`, which keystrokes never change, so it runs only on
+  structural edits, and a debounce would only delay renames on screen. Debounce the FS sync.
 - **Known optimisation, deliberately not built: the Monaco bundle.** Importing all of
   `monaco-editor` produces a 4.36 MB main chunk (**1.14 MB gzipped**). Importing
   `monaco-editor/editor/editor.api` plus only the language contributions we use would cut that
@@ -689,3 +733,23 @@ corrected in place above.
 | Monaco bundle-size optimisation recorded as post-Phase-2 (§11)                               | The language set is not known until the workspace is multi-file                                                                               |
 | Phase 0's "skip the Socket.IO fixes" not followed (§7)                                       | Doing them made the before/after demonstrable and kept `main` deployable                                                                      |
 | README written at the Phase 1 cutover rather than Phase 3 (§13)                              | Deleting the old folders changed how the project is run                                                                                       |
+
+**Phase 2 (2026-09-26)**
+
+| Change                                                                                           | Reason                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every open tab keeps its model and binding, not only the active one (§9.3)                       | "One model per open file" plus "bind only the active file" left unbound models stale, and rebinding calls `setValue`, which wipes undo and moves the cursor            |
+| No `activeFileId` filter for remote selections (§9.3)                                            | Verified in y-monaco 0.1.6: it draws only positions that resolve into its own `Y.Text`                                                                                 |
+| `@monaco-editor/react` removed; the editor is created directly (§4, §9.3)                        | Its `path` prop caches models by URI, never disposes the old one on a path change, keys view state by the old path, and disposes our models on unmount                 |
+| Models follow the resolved path, built with `URI.file` (§9.3)                                    | Paths change on parent renames, moves and duplicate suffixes, not only renames, and names may contain `#`, `?`, `%`                                                    |
+| Deleted files keep an open tab, read-only, under their own URI scheme (§9.3)                     | A new file can take the deleted file's path while its tab is open, and two models cannot share a URI                                                                   |
+| Per-person undo on a `Y.UndoManager` per file; every Monaco undo path routed to it (§9.3)        | Monaco's own stack undoes collaborators' edits, and since remote edits are applied with `applyEdits` (not recorded there) it would replay old edits at shifted offsets |
+| Write-time name checks are case-insensitive; resolution stays case-sensitive (§6.2)              | A project may be cloned onto a case-insensitive file system; the WebContainer's is case-sensitive                                                                      |
+| `deletedBy` and `deletedByName` added to nodes as optional fields, no schema bump (§6.1)         | "Deleted by <name>" and Recently deleted need the deleter, usually after they have left                                                                                |
+| `resolveTree` also returns `hidden` and names every member of a cycle (§6.2)                     | The deleted-file banner and restore need the tombstone that hid a node; the cycle toast names both folders                                                             |
+| Recently deleted, `purgeDeleted` and a total node cap including deleted nodes (§6.2, §9.2, §9.4) | Tombstones grow the document forever; a cap without a way to purge would be a dead end                                                                                 |
+| Restore renames on a clash instead of refusing (§6.2)                                            | Restoring must not fail because someone reused the name meanwhile                                                                                                      |
+| No debounce on tree resolution (§11)                                                             | It observes only `nodes`, which typing never changes                                                                                                                   |
+| Subdocument optimisation recorded in ADR 004 rather than its own ADR (§9.4)                      | Avoids renumbering Phase 3's 005/006 again                                                                                                                             |
+| Templates are path → content maps with an `entryPath` (§6.1)                                     | Folders and a `package.json` for Phase 3; the old "earliest file" entry rule is arbitrary once files share a `createdAt`                                               |
+| E2E presses Ctrl, not Cmd, even on a Mac host                                                    | Playwright's Desktop Chrome profile reports a Windows user agent, and the app follows the page's platform                                                              |

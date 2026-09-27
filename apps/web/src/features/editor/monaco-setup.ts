@@ -6,8 +6,7 @@
  * Bundling means we own the web workers too, which Vite gives us as `?worker`
  * imports.
  */
-import * as monaco from 'monaco-editor';
-import { loader } from '@monaco-editor/react';
+import type * as monaco from 'monaco-editor';
 // monaco-editor 0.57 ships an exports map: deep paths are addressed as
 // `monaco-editor/<path under esm/vs>`, not `monaco-editor/esm/vs/<path>`.
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
@@ -33,6 +32,4 @@ export function setupMonaco(): void {
       return new EditorWorker();
     },
   };
-
-  loader.config({ monaco });
 }

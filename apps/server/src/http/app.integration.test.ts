@@ -5,7 +5,13 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { projectIdSchema, projectSummarySchema, readMeta } from '@collabcode/shared';
+import {
+  TEMPLATES,
+  projectIdSchema,
+  projectSummarySchema,
+  readMeta,
+  resolveDocTree,
+} from '@collabcode/shared';
 import { startTestServer, type TestServer } from '../collab/test-server.js';
 import { seedProject } from '../test/support.js';
 
@@ -56,7 +62,8 @@ describe('POST /api/projects', () => {
     const stored = new Y.Doc();
     Y.applyUpdate(stored, snapshot ?? new Uint8Array());
     expect(readMeta(stored)).toMatchObject({ name: 'My workspace', template: 'express-api' });
-    expect(stored.getMap('nodes').size).toBe(1);
+    const paths = [...resolveDocTree(stored).idByPath.keys()];
+    for (const file of TEMPLATES['express-api'].files) expect(paths).toContain(file.path);
     stored.destroy();
   });
 

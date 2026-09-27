@@ -1,64 +1,58 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Check, Copy } from 'lucide-react';
-import { fileSizeLimitMessage, readFileText, type ProjectSummary } from '@collabcode/shared';
+import { useCallback, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  fileSizeLimitMessage,
+  readFileText,
+  readMeta,
+  type ProjectSummary,
+} from '@collabcode/shared';
 import { useProject } from '../../collab/useProject.js';
 import { useCollaborators, usePublishIdentity } from '../../collab/useCollaborators.js';
-import { remoteOnly } from '../../collab/collaborators.js';
-import { useEntryFile } from '../../collab/useEntryFile.js';
+import { remoteOnly, type Collaborator } from '../../collab/collaborators.js';
+import { followLabel, followTarget } from '../../collab/follow.js';
+import { remoteCursorIndex } from '../../collab/remote-selection.js';
+import { entryFileId } from '../../collab/entry-file.js';
+import { useCycleNotice } from '../../collab/useCycleNotice.js';
+import { useFilePresence } from '../../collab/useFilePresence.js';
+import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
-import { CodeEditor } from '../editor/CodeEditor.js';
+import type { RevealRequest } from '../editor/CodeEditor.js';
+import { editorSpecs } from '../editor/editor-specs.js';
+import type { ModelSpec } from '../editor/model-registry.js';
+import { FilesPane, type FilesView } from '../file-tree/FilesPane.js';
+import { useTreeActions } from '../file-tree/useTreeActions.js';
+import { ToastProvider, useToasts } from '../notifications/ToastProvider.js';
+import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
-import { PresenceBar } from '../presence/PresenceBar.js';
-import { IdentityField } from '../presence/IdentityField.js';
+import { RunPanelPlaceholder } from '../runtime/RunPanelPlaceholder.js';
+import { EditorPane } from '../tabs/EditorPane.js';
+import { useTabs } from '../tabs/useTabs.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { useProjectSummary } from './useProjectSummary.js';
+import { WorkspaceHeader } from './WorkspaceHeader.js';
+import { WorkspaceLayout } from './WorkspaceLayout.js';
 
 const COLD_START_AFTER_MS = 2_000;
-
-function ShareLink(): React.ReactElement {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1_500);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [copied]);
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(window.location.href).then(
-          () => setCopied(true),
-          () => setCopied(false),
-        );
-      }}
-      className="flex items-center gap-1.5 rounded-md border border-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
-    >
-      {copied ? (
-        <Check className="size-3.5" aria-hidden />
-      ) : (
-        <Copy className="size-3.5" aria-hidden />
-      )}
-      {copied ? 'Link copied' : 'Copy invite link'}
-    </button>
-  );
-}
 
 function Workspace({ project }: { project: ProjectSummary }): React.ReactElement {
   const { session, connection } = useProject(project.id);
   const [identity, setIdentity] = useState(() => loadIdentity(browserStorage()));
-  const [notice, setNotice] = useState<string | null>(null);
+  const toasts = useToasts();
+  const [filesView, setFilesView] = useState<FilesView>('files');
 
   const collaborators = useCollaborators(session);
-  const entryFile = useEntryFile(session);
-  usePublishIdentity(session, identity, entryFile?.id ?? null);
+  const tree = useResolvedTree(session);
+  const presence = useFilePresence(collaborators);
+  const folders = useExpandedFolders(project.id);
+  const entryId = session ? entryFileId(tree, readMeta(session.doc)) : null;
+  const tabs = useTabs(tree, entryId);
+  const activeId = tabs.state.activeId;
+
+  usePublishIdentity(session, identity, activeId);
   useRemoteCursorStyles(remoteOnly(collaborators));
+  useCycleNotice(tree, toasts);
 
   const rename = useCallback((name: string) => {
     setIdentity((current) => {
@@ -68,66 +62,97 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     });
   }, []);
 
-  const onFileSizeLimit = useCallback(() => setNotice(fileSizeLimitMessage()), []);
+  const onFileSizeLimit = useCallback(
+    () => toasts.show({ message: fileSizeLimitMessage(), tone: 'error' }),
+    [toasts],
+  );
+  const showError = useCallback(
+    (message: string) => toasts.show({ message, tone: 'error' }),
+    [toasts],
+  );
+  const showDeleted = useCallback(() => setFilesView('deleted'), []);
+  const actions = useTreeActions(session, identity, toasts, {
+    onCreatedFile: tabs.open,
+    onShowDeleted: showDeleted,
+  });
 
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 6_000);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [notice]);
+  const [reveal, setReveal] = useState<RevealRequest | null>(null);
+  const describeCollaborator = useCallback(
+    (collaborator: Collaborator) => followLabel(collaborator, tree),
+    [tree],
+  );
+  const follow = useCallback(
+    (collaborator: Collaborator) => {
+      const target = followTarget(collaborator, tree);
+      if (target.kind === 'nowhere') {
+        toasts.show({ message: target.message, tone: 'info' });
+        return;
+      }
+      tabs.open(target.fileId);
+      const ytext = session ? readFileText(session.doc, target.fileId) : undefined;
+      const state = session?.provider.awareness?.getStates().get(collaborator.clientId);
+      const index = ytext ? remoteCursorIndex(state, ytext) : null;
+      if (index !== null) setReveal({ fileId: target.fileId, index, requestId: Date.now() });
+    },
+    [session, tree, tabs, toasts],
+  );
 
-  const ytext = useMemo(
-    () => (session && entryFile ? (readFileText(session.doc, entryFile.id) ?? null) : null),
-    [session, entryFile],
+  const specs = useMemo(
+    () =>
+      session
+        ? editorSpecs(tabs.state.tabs, tree, (id) => readFileText(session.doc, id))
+        : new Map<string, ModelSpec>(),
+    [session, tabs.state.tabs, tree],
   );
   const awareness = session?.provider.awareness ?? null;
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="text-sm font-semibold tracking-tight hover:text-white">
-            CollabCode
-          </Link>
-          <span className="text-zinc-700">/</span>
-          <h1 className="text-sm text-zinc-300">{project.name}</h1>
-          {entryFile && (
-            <span className="rounded bg-zinc-900 px-2 py-0.5 font-mono text-xs text-zinc-400">
-              {entryFile.name}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          <PresenceBar collaborators={collaborators} />
-          <IdentityField identity={identity} onRename={rename} />
-          <ShareLink />
-        </div>
-      </header>
+      <WorkspaceHeader
+        projectName={project.name}
+        collaborators={collaborators}
+        describeCollaborator={describeCollaborator}
+        onFollow={follow}
+        identity={identity}
+        onRename={rename}
+      />
 
       <ConnectionBanner state={connection} />
 
-      {notice && (
-        <p
-          role="alert"
-          className="border-b border-amber-900 bg-amber-950/60 px-4 py-2 text-sm text-amber-100"
-        >
-          {notice}
-        </p>
-      )}
-
       <main className="min-h-0 flex-1">
-        {ytext && awareness && entryFile ? (
-          <CodeEditor
-            ytext={ytext}
-            awareness={awareness}
-            fileName={entryFile.name}
-            onFileSizeLimit={onFileSizeLimit}
-          />
-        ) : (
-          <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
-        )}
+        <WorkspaceLayout
+          tree={
+            <FilesPane
+              tree={tree}
+              folders={folders}
+              activeFileId={activeId}
+              presence={presence}
+              actions={actions}
+              myUserId={identity.id}
+              view={filesView}
+              onViewChange={setFilesView}
+              onOpenFile={tabs.open}
+              onError={showError}
+            />
+          }
+          editor={
+            awareness ? (
+              <EditorPane
+                tree={tree}
+                tabs={tabs}
+                specs={specs}
+                awareness={awareness}
+                reveal={reveal}
+                myUserId={identity.id}
+                onRestore={actions.restore}
+                onFileSizeLimit={onFileSizeLimit}
+              />
+            ) : (
+              <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
+            )
+          }
+          run={<RunPanelPlaceholder />}
+        />
       </main>
     </div>
   );
@@ -175,5 +200,9 @@ export function WorkspacePage(): React.ReactElement {
     );
   }
 
-  return <Workspace project={summary.project} />;
+  return (
+    <ToastProvider>
+      <Workspace project={summary.project} />
+    </ToastProvider>
+  );
 }

@@ -1,52 +1,105 @@
-import { useEffect, useState } from 'react';
-import Editor from '@monaco-editor/react';
-import type * as Y from 'yjs';
+/**
+ * One Monaco editor showing whichever open tab is active. The editor, the
+ * model registry and the undo/redo actions are created in one effect and
+ * destroyed in reverse order in its cleanup, so StrictMode's double mount
+ * produces two complete lifecycles and the registry never outlives the editor.
+ */
+import { useEffect, useRef, useState } from 'react';
+import * as monaco from 'monaco-editor';
 import type { Awareness } from 'y-protocols/awareness';
-import { MonacoBinding } from 'y-monaco';
-import type * as monaco from 'monaco-editor';
 import { setupMonaco } from './monaco-setup.js';
-import { languageForFileName } from './language.js';
+import { createModelRegistry, type ModelRegistry, type ModelSpec } from './model-registry.js';
 import { isAtFileSizeLimit, isTextInsertingKey, pasteWouldExceedLimit } from './file-size-guard.js';
 
 setupMonaco();
 
+/** Scroll to a character offset in a file once it is shown. */
+export type RevealRequest = { fileId: string; index: number; requestId: number };
+
 export type CodeEditorProps = {
-  ytext: Y.Text;
   awareness: Awareness;
-  fileName: string;
+  specs: ReadonlyMap<string, ModelSpec>;
+  activeId: string | null;
+  reveal: RevealRequest | null;
   /** Called when an edit was blocked because the file is at its size limit. */
   onFileSizeLimit: () => void;
 };
 
+const EDITOR_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
+  theme: 'vs-dark',
+  fontSize: 14,
+  fontLigatures: true,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
+  smoothScrolling: true,
+  padding: { top: 12 },
+  tabSize: 2,
+  automaticLayout: true,
+  readOnlyMessage: { value: 'This file was deleted. Restore it to keep editing.' },
+};
+
+type Mounted = { editor: monaco.editor.IStandaloneCodeEditor; registry: ModelRegistry };
+
 export function CodeEditor({
-  ytext,
   awareness,
-  fileName,
+  specs,
+  activeId,
+  reveal,
   onFileSizeLimit,
 }: CodeEditorProps): React.ReactElement {
-  const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState<Mounted | null>(null);
 
-  // The binding is the only thing that writes editor text into the document.
-  // It is created and destroyed inside one effect, so StrictMode's double
-  // mount cannot leave two bindings fighting over the same model.
   useEffect(() => {
-    if (!editor) return;
-    const model = editor.getModel();
-    if (!model) return;
+    const element = container.current;
+    if (!element) return;
+    const editor = monaco.editor.create(element, { ...EDITOR_OPTIONS, model: null });
+    const registry = createModelRegistry(editor, awareness);
 
-    const binding = new MonacoBinding(ytext, model, new Set([editor]), awareness);
+    // Undo and redo already reach this person's history from every built-in
+    // path (route-history.ts). Monaco's standalone command palette lists only
+    // editor actions, and its built-in undo is not one, so these give the
+    // palette an Undo and Redo that go to the same place.
+    const paletteUndo = editor.addAction({
+      id: 'collabcode.undo',
+      label: 'Undo',
+      run: () => registry.undo(),
+    });
+    const paletteRedo = editor.addAction({
+      id: 'collabcode.redo',
+      label: 'Redo',
+      run: () => registry.redo(),
+    });
+
+    setMounted({ editor, registry });
     return () => {
-      binding.destroy();
+      setMounted(null);
+      paletteUndo.dispose();
+      paletteRedo.dispose();
+      registry.destroy();
+      editor.dispose();
     };
-  }, [editor, ytext, awareness]);
+  }, [awareness]);
+
+  useEffect(() => {
+    mounted?.registry.sync(specs, activeId);
+  }, [mounted, specs, activeId]);
+
+  // Declared after the sync effect so that, when a follow opens a new tab
+  // and asks to reveal in the same render, the model exists and is shown.
+  useEffect(() => {
+    if (reveal) mounted?.registry.reveal(reveal.fileId, reveal.index);
+  }, [mounted, reveal]);
 
   // The per-file size limit. Editor keystrokes bypass packages/shared's ops
   // (y-monaco writes into Y.Text directly), so this is where it is enforced.
   useEffect(() => {
-    if (!editor) return;
+    if (!mounted) return;
+    const { editor, registry } = mounted;
+    const length = (): number => registry.activeText()?.length ?? 0;
 
     const keyGuard = editor.onKeyDown((event) => {
-      if (!isAtFileSizeLimit(ytext.length)) return;
+      if (!isAtFileSizeLimit(length())) return;
       const inserting = isTextInsertingKey({
         key: event.browserEvent.key,
         ctrlKey: event.ctrlKey,
@@ -62,7 +115,7 @@ export function CodeEditor({
     const node = editor.getDomNode();
     const pasteGuard = (event: ClipboardEvent): void => {
       const pasted = event.clipboardData?.getData('text') ?? '';
-      if (!pasteWouldExceedLimit(ytext.length, pasted)) return;
+      if (!pasteWouldExceedLimit(length(), pasted)) return;
       event.preventDefault();
       event.stopPropagation();
       onFileSizeLimit();
@@ -73,26 +126,7 @@ export function CodeEditor({
       keyGuard.dispose();
       node?.removeEventListener('paste', pasteGuard, true);
     };
-  }, [editor, ytext, onFileSizeLimit]);
+  }, [mounted, onFileSizeLimit]);
 
-  return (
-    <Editor
-      className="h-full"
-      theme="vs-dark"
-      path={fileName}
-      language={languageForFileName(fileName)}
-      onMount={(mounted) => setEditor(mounted)}
-      loading={<p className="p-4 text-sm text-zinc-400">Loading the editor…</p>}
-      options={{
-        fontSize: 14,
-        fontLigatures: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        smoothScrolling: true,
-        padding: { top: 12 },
-        tabSize: 2,
-        automaticLayout: true,
-      }}
-    />
-  );
+  return <div ref={container} className="h-full" />;
 }

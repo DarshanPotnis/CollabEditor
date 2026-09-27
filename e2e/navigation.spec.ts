@@ -9,7 +9,8 @@ test('creating a project from a template opens it with the template content', as
   await expect(page).toHaveURL(/\/p\/[a-z0-9]+$/);
   await waitForEditor(page);
   await expect(page.locator('.view-lines')).toContainText('A small Express API');
-  await expect(page.getByText('index.js')).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'index.js', selected: true })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: 'index.js' })).toBeVisible();
 });
 
 test('an unknown project link shows the not-found page', async ({ page }) => {
