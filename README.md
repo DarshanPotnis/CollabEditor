@@ -2,16 +2,17 @@
 
 A multiplayer code workspace in the browser. Several people open the same project, work in the
 same or different files at the same time, and see each other's named cursors and where everyone
-is in the file tree. Nothing is lost when someone joins late, drops offline, or closes the tab
-mid-keystroke.
+is in the file tree. Anyone can run the project's Node backend in their own browser tab and call
+its endpoints while everyone keeps editing. Nothing is lost when someone joins late, drops
+offline, or closes the tab mid-keystroke.
 
 It runs entirely on free infrastructure: Vercel for the web app, Render for the sync server, Neon
 for Postgres.
 
-**Status: Phase 2 complete.** Projects are multi-file workspaces: a file tree with presence,
-drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, and following a
-collaborator to their cursor. Running a Node backend in the browser via WebContainers (Phase 3)
-is specified in [`docs/PLAN.md`](docs/PLAN.md) and not built yet.
+**Status: Phase 3 complete.** Projects are multi-file workspaces (a file tree with presence,
+drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, following a collaborator
+to their cursor), and each person can run the backend in their browser with WebContainers: run
+output, a shell, an API console and a preview. The plan is [`docs/PLAN.md`](docs/PLAN.md).
 
 ---
 
@@ -56,23 +57,58 @@ Browser                                  Render                       Neon
 │ Monaco ── y-monaco ──┐  │  ────────►  │ Hocuspocus owns the  │───►│ projects │
 │                      ▼  │             │ HTTP server:         │    │  .ydoc   │
 │ React UI ──────► Y.Doc ─┼─ WebSocket ►│  onRequest → Express │    │  (bytea) │
-│                      ▲  │  /collab    │  onUpgrade → /collab │    └──────────┘
-│ Awareness ───────────┘  │             │  extensions → guard, │
-└─────────────────────────┘             │    database, logging │
-                                        └──────────────────────┘
+│                   │  ▲  │  /collab    │  onUpgrade → /collab │    └──────────┘
+│ Awareness ────────┼──┘  │             │  extensions → guard, │
+│                   ▼     │             │    database, logging │
+│ WebContainer (on Run):  │             └──────────────────────┘
+│ Node, npm, your server  │
+└─────────────────────────┘
 ```
 
-The server syncs and stores. It never runs or interprets user code.
+The server syncs and stores. It never runs or interprets user code: running happens only in the
+browser of the person who clicks Run, in a WebContainer that the project's files are copied into,
+one way.
 
-Four decisions are written up in full:
+Six decisions are written up in full:
 
 - [001 — a CRDT instead of last-write-wins, and why not operational transformation](docs/decisions/001-crdt-over-last-write-wins.md)
 - [002 — Hocuspocus with whole-document Postgres snapshots](docs/decisions/002-persistence.md)
 - [003 — Hocuspocus owns the HTTP server, Express is mounted inside it](docs/decisions/003-hocuspocus-owns-the-http-server.md)
 - [004 — stable node IDs and deterministic read-time resolution of the file tree](docs/decisions/004-stable-ids-and-read-time-resolution.md)
+- [005 — one-way sync from the document into the WebContainer](docs/decisions/005-one-way-yjs-to-webcontainer-sync.md)
+- [006 — running projects in the browser with WebContainers](docs/decisions/006-in-browser-execution-with-webcontainers.md)
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the system as it stands today,
 including the trust boundaries and what is deliberately missing.
+
+## Running a project in your browser
+
+Click **Run** in a project. The first Run boots a [WebContainer](https://webcontainers.io), a
+Node runtime by StackBlitz that runs inside the browser, copies the project into it, runs
+`npm install` when the dependencies changed, then `npm run dev`. The Run panel has the output, an
+interactive shell, an **API console** that calls your server from inside the container (no CORS
+set-up), and a sandboxed **preview**. Collaborators' edits restart your server; if it crashes, the
+next file change restarts it.
+
+- **Nothing runs until you click Run**, and your run is yours alone. The code may include edits
+  from anyone in the project; it runs in StackBlitz's sandbox in your browser, which cannot reach
+  this page, your storage or the project's server. [ADR 006](docs/decisions/006-in-browser-execution-with-webcontainers.md)
+  lists what the sandbox does and does not protect.
+- **Browsers:** Chrome, Edge and other Chromium browsers are fully supported. Safari 16.4+ (beta)
+  and Firefox (alpha) may work, with a notice. Without cross-origin isolation Run is disabled and
+  editing still works. If your browser blocks third-party cookies, allow them for
+  `stackblitz.com`; the runtime lives in an iframe from there.
+- **Node 22.** The container runs Node 22, not the Node 24 this repository uses, so templates
+  declare `engines: { node: ">=22" }`.
+- **Privacy:** running sends nothing to this project's server, but the runtime is served by
+  StackBlitz and `npm install` goes through their infrastructure.
+
+**Licence.** The WebContainer API's npm package is MIT, but using it means accepting
+[StackBlitz's Terms of Service](https://stackblitz.com/terms-of-service). Their
+[commercial usage page](https://webcontainers.io/enterprise) says a licence is required "for
+production usage of the API in a commercial, for-profit setting", and that prototypes do not need
+one. CollabCode is a non-commercial open-source project and uses no API key; a commercial fork
+would need a licence first.
 
 ## Running it locally
 
@@ -121,6 +157,9 @@ npm run lint
 npm run typecheck
 npm test          # unit + integration
 npm run e2e       # Playwright, two browser contexts against the production bundle
+
+# Boots real WebContainers, so it needs the network; not part of CI:
+RUN_WEBCONTAINER_E2E=1 npm run e2e -- runtime.spec.ts
 ```
 
 `npm test` runs without a database. The integration tests start the real Express + Hocuspocus
@@ -129,7 +168,10 @@ wiring rather than a stub. The Postgres repository, the `bytea` round trip and t
 runner are covered by a spec that skips unless `TEST_DATABASE_URL` is set; CI provides one.
 
 `npm run e2e` builds the web app and serves it with `vite preview`, because the fragile part of
-the frontend is what bundling produces — Monaco and its web workers.
+the frontend is what bundling produces — Monaco and its web workers. It is served cross-origin
+isolated, exactly like production, so every spec also checks the app still works under those
+headers. CI also runs the API console's request helper on Node 22, the version inside the
+WebContainer.
 
 ## Deploying
 
@@ -162,7 +204,8 @@ early, and the workspace explains the wait instead of showing a spinner.
 ## Layout
 
 ```
-apps/web/          React + Vite + Monaco. File tree, tabs, editor models and undo, presence
+apps/web/          React + Vite + Monaco. File tree, tabs, editor models and undo, presence,
+                   and the runtime: WebContainer, file sync, terminal, API console, preview
 apps/server/       Hocuspocus + Express + Postgres
 packages/shared/   Document schema, tree resolution, write-path ops, awareness validation,
                    templates, limits
@@ -174,8 +217,8 @@ docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
 
 - **Phase 2** (done) — multi-file workspace: file tree, tabs, per-person undo, and deterministic
   read-time resolution of concurrent tree edits so every client computes the same view.
-- **Phase 3** — run the project's Node backend inside the browser with WebContainers, with a
-  terminal, a preview and an API console.
+- **Phase 3** (done) — run the project's Node backend inside the browser with WebContainers, with
+  run output, a shell, an API console and a sandboxed preview.
 
 Later, deliberately out of scope for now: accounts, an AI agent participating through the same
 sync system, checkpoints, and pushing to GitHub.

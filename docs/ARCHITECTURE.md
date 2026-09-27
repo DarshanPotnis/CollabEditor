@@ -2,10 +2,10 @@
 
 A living description of how the system works **today**. Each phase updates this file.
 
-Current state: **v2 (Phase 2)** — a multi-file workspace on a Yjs CRDT synced by Hocuspocus and
-persisted as Postgres snapshots: a file tree with presence, tabs, per-person undo, and
-deterministic resolution of concurrent tree edits. In-browser execution (Phase 3) is described in
-`docs/PLAN.md` and is not built yet.
+Current state: **v3 (Phase 3)** — a multi-file workspace on a Yjs CRDT synced by Hocuspocus and
+persisted as Postgres snapshots (file tree with presence, tabs, per-person undo, deterministic
+resolution of concurrent tree edits), and each person can run the project's Node backend in their
+own browser tab with WebContainers, call it from an API console, open a shell and see a preview.
 
 | Tag                   | What it is                                                                |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -17,7 +17,7 @@ the point of Phase 1 is what changed between them and now.
 
 ---
 
-## v2: today
+## v3: today
 
 ### Shape
 
@@ -56,7 +56,7 @@ the point of Phase 1 is what changed between them and now.
 
 **The server syncs and stores. It never runs or interprets user code.** It does not even
 interpret the file tree: every structural rule lives in `packages/shared` and runs in the
-browsers. Phase 3 runs code only in the browser of whoever clicks Run.
+browsers. Code runs only in the browser of whoever clicks Run (see "Running the project").
 
 ### Where the truth lives
 
@@ -179,6 +179,86 @@ The tree store observes only `nodes`. Keystrokes change `contents`, so typing ne
 tree or re-renders it; a rename or move does, synchronously, so the tree, the tabs and the models
 see one snapshot. Presence dots use a map that keeps its identity while only cursors move.
 
+### Running the project
+
+```
+┌─────────────────────────── one person's browser tab ───────────────────────────┐
+│                                                                                │
+│  Y.Doc (nodes, contents), shared with everyone                                 │
+│     │  FS bridge, one way: after 250 ms of quiet, at most 1 s                  │
+│     ▼  mkdir · writeFile · rm (only what it wrote)                             │
+│  ┌──────────── WebContainer: StackBlitz iframe and workers ─────────────┐      │
+│  │  project files, plus node_modules and a lockfile that stay local     │      │
+│  │  npm install → npm run dev (node --watch)   jsh   node -e <helper>   │      │
+│  └───┬────────────────┬───────────────┬──────────────────┬──────────────┘      │
+│      │ output         │ port events   │ one base64 line  │ preview URL         │
+│      ▼                ▼               ▼ per request      ▼                     │
+│   Output, Shell    runner and       API console       Preview: sandboxed       │
+│   (xterm)          run state        (text only)       iframe, never our origin │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Nothing runs until the person clicks Run, and every person's run is their own: a separate
+container in their tab, fed from the shared document. ADR 006 covers the choice of WebContainers,
+their cost, licence, browser support and sandbox; ADR 005 covers the file sync.
+
+- **Booting.** The first Run boots the page's single WebContainer with `coep: 'require-corp'`,
+  matching the page headers. The API client and xterm are loaded then, not with the page. Leaving
+  the workspace tears the container down; a boot that finishes after that is discarded.
+- **Files.** The FS bridge (`features/runtime/fs-bridge/`) diffs the whole project against what it
+  last wrote and applies the difference. It removes only files it wrote and empty folders it
+  created, so `node_modules`, the lockfile and whatever the program writes survive deletes and
+  renames in the project. Nothing flows back into the document.
+- **The run** (`process-runner.ts`, lifecycle in `run-state.ts`). Read `package.json` from the
+  document, parsed defensively; run `npm install` only when its dependency sections changed; start
+  `dev`, else `start`; follow the server through the container's port events. A port that closes
+  is a restart; one that stays closed for 3 s, or a dev process that exits, is a crash. **A crashed
+  run restarts itself when the bridge next writes a file**, which covers what `node --watch` cannot:
+  after a crash it watches only the files it had loaded, so a restored file would otherwise go
+  unnoticed. Every run has a generation; output and exits from a replaced process are dropped, so
+  Restart never reads the old process's exit as a crash.
+- **Node 22.** The container runs Node 22 (22.22 at the time of writing), not the repository's 24.
+  Template `package.json` files declare `engines: { node: ">=22" }`, and CI runs the request
+  helper's integration test on Node 22 too.
+
+### Cross-origin isolation
+
+WebContainers need `SharedArrayBuffer`, so every response is served with
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`
+(`apps/web/src/lib/isolation-headers.ts`, used by the Vite dev and preview servers and checked
+against `vercel.json` by a test). What that changes:
+
+- Monaco and its workers are same-origin and carry the headers; the e2e suite runs isolated and
+  checks that the workers really run rather than falling back to the main thread.
+- The Hocuspocus WebSocket is unaffected, and the REST calls to Render are `cors`-mode fetches,
+  which COEP does not block. The app loads no third-party fonts, scripts or images.
+- Our page cannot talk to windows it opens on other origins. Future sign-in popups must redirect.
+- A browser without isolation gets a disabled Run button and an explanation; editing works.
+
+`require-corp`, not `credentialless`: we have no cross-origin `no-cors` resources for it to help
+with, and Safari does not implement `credentialless` at all.
+
+### The API console, the shell and the preview
+
+- **API console.** Each request starts a helper with `node -e` inside the container
+  (`api-console/request-script.ts`), which calls `http://localhost:<port>`, so CORS never applies.
+  It reads at most 2 MB of the body, never follows redirects and gives up after 30 s. The answer is
+  read **only from the helper's own process output**, never the server's, as one line: a
+  per-request random nonce, then the whole response (status, headers, body bytes, timing) as
+  base64 JSON. Base64 cannot contain a line break or a marker, the nonce cannot be guessed, a
+  second line with the right prefix is treated as tampering, and the decoded JSON is validated
+  before use. Bodies arrive byte for byte; they are shown as pretty JSON, text or a hex preview,
+  never as HTML. Send waits out a restart for up to 10 s. The helper script contains no backslash,
+  `$`, backtick or double quote, because WebContainer's `spawn` was found to process escapes inside
+  arguments.
+- **Shell.** `jsh` in the same container, with its own output buffer so switching tabs keeps the
+  session.
+- **Preview.** An iframe with `sandbox="allow-scripts allow-same-origin allow-forms"` on the
+  server's preview URL, which is a StackBlitz origin, never ours. `allow-same-origin` is needed
+  because previews are served by a service worker on that origin. Verified in Chromium: scripts
+  and forms work, top navigation throws, `window.open` is blocked, and without `allow-same-origin`
+  nothing loads. The pane says plainly that it is running project code.
+
 ### Sync and persistence lifecycle
 
 1. A provider connects to `/collab` and sends the project ID **in the sync message**, not in the
@@ -240,6 +320,16 @@ Every boundary is validated, and the awkward one is presence.
 - **HTTP:** zod on every body and param; a CORS allowlist with no wildcard; an origin guard that
   refuses a request from an unlisted `Origin` with 403 before any route runs. A request with no
   `Origin` is not a browser request and is left alone.
+- **Code a collaborator wrote runs only in the browser of whoever clicks Run**, inside
+  StackBlitz's cross-origin sandbox: it cannot read our page, the document, storage or identity.
+  It can use that person's CPU, make HTTP requests from their browser within CORS rules, run
+  npm install scripts inside the sandbox, and show anything in the preview. ADR 006 has the full
+  list of what the sandbox does and does not protect.
+- **Everything the running program produces is displayed as text.** Terminal output goes through
+  xterm with no link handling; API responses are text, JSON or hex, never HTML; the container's
+  `xdg-open` and `code` events are ignored.
+- **API console responses cannot be faked** by the server's logs or bodies (see above), and a
+  collaborator-written `package.json` is parsed defensively before its scripts are chosen.
 - **Transport:** `websocketOptions.maxPayload` caps a single WebSocket frame as a safety net
   against a runaway client. It is far above the per-file limit because one frame can carry a
   whole document's initial sync. Hitting it closes the socket with code 1009, which the client
@@ -270,7 +360,13 @@ refusal is final.
 - **One server instance.** Hocuspocus holds documents in memory per process, so a second Render
   instance would serve a different live document for the same project. Fine on the free tier,
   and the reason there is no horizontal scaling story yet.
-- **No running code.** Phase 3.
+- **Runs are per person.** There is no shared run, and a run's container (with its
+  `node_modules`) does not survive a page reload; the next Run boots and installs again.
+- **Nothing the program writes is saved**, including the lockfile `npm install` produces. Opt-in
+  lockfile sync is future work (ADR 005).
+- **Running depends on StackBlitz** being reachable; editing and collaboration never do.
+- **The Monaco bundle is not split.** Measured in Phase 3: a lean import saved 0.6%, so it was not
+  kept (PLAN.md §11).
 - **Every file lives in one `Y.Doc`.** Fine up to a few hundred small files, which the node
   limits keep us under. The next step, one subdocument per file loaded when opened, is recorded
   in ADR 004 and not built.
@@ -285,12 +381,14 @@ refusal is final.
 
 ### How it is verified
 
-| Layer                                | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit (`packages/shared`, `apps/web`) | Document schema and ops; every `resolveTree` rule, combinations, input-order independence and a seeded two-replica convergence run; tree ops, limits, restore and purge including their races; tree rows and keyboard, tabs, model URIs and plans, remote cursor parsing; awareness hardening, CSS escaping, the connection state machine, the file-size guard, identity storage, language mapping, config parsing                                                                                      |
-| Integration (`apps/server`)          | The real Hocuspocus + Express composition against an in-memory repo: convergence, late joiners, offline merge, refusal of unknown and malformed IDs, the store beating document unload, restart survival, the Express mount, CORS preflight and rejection, rate limiting                                                                                                                                                                                                                                |
-| Postgres (`apps/server`)             | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                                                                                                                                                                                                                                                            |
-| End-to-end (`e2e`)                   | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors, persistence, 404, redirect; and Phase 2's definition of done: presence in the tree, rename while typing, delete and restore, delete forever while open, duplicate refusal, concurrent duplicate create and cross-move (one window offline), per-person undo from keys and the command palette, undo across a rename, cursor behaviour on tab switch and close, following a collaborator |
+| Layer                                | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (`packages/shared`, `apps/web`) | Document schema and ops; every `resolveTree` rule, combinations, input-order independence and a seeded two-replica convergence run; tree ops, limits, restore and purge including their races; tree rows and keyboard, tabs, model URIs and plans, remote cursor parsing; awareness hardening, CSS escaping, the connection state machine, the file-size guard, identity storage, language mapping, config parsing                                                                                                                                                                                                                                                                                                          |
+| Integration (`apps/server`)          | The real Hocuspocus + Express composition against an in-memory repo: convergence, late joiners, offline merge, refusal of unknown and malformed IDs, the store beating document unload, restart survival, the Express mount, CORS preflight and rejection, rate limiting                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Postgres (`apps/server`)             | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Runtime (`apps/web`, Node)           | The FS bridge against a real Y.Doc and a fake file system (renames, folder renames, deletes, restores, purges, npm-written files left alone, coalescing, retries); the run lifecycle and auto-restart against a fake container (install skipping, Restart, Stop mid-install, crashes, stale output, waiting for the server); the API console codec against forged and binary output; the request helper under real Node against a real HTTP server, on Node 24 and, in CI, Node 22                                                                                                                                                                                                                                          |
+| End-to-end (`e2e`)                   | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors, persistence, 404, redirect; and Phase 2's definition of done: presence in the tree, rename while typing, delete and restore, delete forever while open, duplicate refusal, concurrent duplicate create and cross-move (one window offline), per-person undo from keys and the command palette, undo across a rename, cursor behaviour on tab switch and close, following a collaborator; and Phase 3's: the whole suite runs cross-origin isolated, the headers are on the page and the worker scripts, Monaco's workers really run, and a browser without isolation gets a disabled Run and can still edit |
+| WebContainer end-to-end (opt-in)     | `RUN_WEBCONTAINER_E2E=1`: Run, then the API console against the real server; my edit and a collaborator's reach it; the preview shows it; a crash recovers once fixed; the container's Node version. Needs the network, so not in CI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 
