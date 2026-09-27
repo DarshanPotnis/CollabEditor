@@ -6,7 +6,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectSession } from '../../collab/useProject.js';
 import { createOutputBuffer, type OutputBuffer } from './output-buffer.js';
-import { createRunner, type Runner } from './process-runner.js';
+import type { ApiRequest, ApiResult } from './api-console/request-codec.js';
+import { sendRequest } from './api-console/send-request.js';
+import { ServerUnavailableError, createRunner, type Runner } from './process-runner.js';
 import { IDLE, type RunState } from './run-state.js';
 import { startShell, type ShellSession } from './shell-session.js';
 import { bootContainer, teardownContainer } from './webcontainer.js';
@@ -21,7 +23,11 @@ export type RuntimeControls = {
   canOpenShell: boolean;
   shell: ShellSession | null;
   openShell: () => void;
+  /** Send an API console request to the running server, waiting out a restart. */
+  send: (request: ApiRequest) => Promise<ConsoleResult>;
 };
+
+export type ConsoleResult = ApiResult | { kind: 'unavailable'; message: string };
 
 function reportInternalError(error: unknown): void {
   // eslint-disable-next-line no-console -- there is no logging service; the browser console is all we have
@@ -91,9 +97,25 @@ export function useRuntime(
     }, reportInternalError);
   }, []);
 
+  const send = useCallback(async (request: ApiRequest): Promise<ConsoleResult> => {
+    const current = runner.current;
+    const container = current?.container();
+    if (!current || !container) {
+      return { kind: 'unavailable', message: "The project isn't running. Click Run first." };
+    }
+    try {
+      const server = await current.waitForServer();
+      return await sendRequest(container, server.port, request);
+    } catch (error) {
+      if (error instanceof ServerUnavailableError)
+        return { kind: 'unavailable', message: error.message };
+      throw error;
+    }
+  }, []);
+
   // A container exists once a run has got past booting.
   const canOpenShell =
     state.phase !== 'idle' && state.phase !== 'booting' && Boolean(runner.current?.container());
 
-  return { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell };
+  return { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell, send };
 }

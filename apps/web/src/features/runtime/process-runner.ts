@@ -21,6 +21,7 @@ import {
   shouldAutoRestart,
   type RunEvent,
   type RunState,
+  type Server,
 } from './run-state.js';
 
 export type RunnerOptions = {
@@ -43,9 +44,43 @@ export type Runner = {
   state: () => RunState;
   /** The booted container, once a run has booted it. */
   container: () => Container | null;
+  /**
+   * The server, once it is listening: at once while serving, after a restart
+   * or start-up finishes, or rejected with a ServerUnavailableError.
+   */
+  waitForServer: (timeoutMs?: number) => Promise<Server>;
 };
 
 export const AUTO_RESTART_DELAY_MS = 500;
+export const SERVER_WAIT_MS = 10_000;
+
+export class ServerUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ServerUnavailableError';
+  }
+}
+
+/** Why there is no server to talk to, or null if one may still come. */
+function unavailableReason(state: RunState): string | null {
+  switch (state.phase) {
+    case 'idle':
+    case 'stopped':
+      return "The project isn't running. Click Run first.";
+    case 'failed':
+      return `The run failed: ${state.message}`;
+    case 'crashed':
+      return 'The server is down because the program crashed. The run output says why.';
+    default:
+      return null;
+  }
+}
+
+type Waiter = {
+  resolve: (server: Server) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
 
 const dim = (text: string): string => `\x1b[2m${text}\x1b[0m\r\n`;
 
@@ -71,6 +106,18 @@ export function createRunner(options: RunnerOptions): Runner {
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
   let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  const waiters = new Set<Waiter>();
+
+  const settleWaiters = (): void => {
+    const reason = unavailableReason(state);
+    for (const waiter of waiters) {
+      if (state.phase === 'serving') waiter.resolve(state.server);
+      else if (reason !== null) waiter.reject(new ServerUnavailableError(reason));
+      else continue;
+      clearTimeout(waiter.timer);
+      waiters.delete(waiter);
+    }
+  };
 
   const dispatch = (event: RunEvent): void => {
     const previous = state;
@@ -85,6 +132,7 @@ export function createRunner(options: RunnerOptions): Runner {
       clearTimeout(graceTimer);
       graceTimer = null;
     }
+    settleWaiters();
     options.onState(state);
   };
 
@@ -232,5 +280,25 @@ export function createRunner(options: RunnerOptions): Runner {
     },
     state: () => state,
     container: () => container,
+    waitForServer(timeoutMs = SERVER_WAIT_MS) {
+      if (state.phase === 'serving') return Promise.resolve(state.server);
+      const reason = unavailableReason(state);
+      if (reason !== null) return Promise.reject(new ServerUnavailableError(reason));
+      return new Promise<Server>((resolve, reject) => {
+        const waiter: Waiter = {
+          resolve,
+          reject,
+          timer: setTimeout(() => {
+            waiters.delete(waiter);
+            reject(
+              new ServerUnavailableError(
+                `No server started listening within ${String(timeoutMs / 1000)} seconds. The run output says what the program is doing.`,
+              ),
+            );
+          }, timeoutMs),
+        };
+        waiters.add(waiter);
+      });
+    },
   };
 }

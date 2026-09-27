@@ -26,13 +26,16 @@ test('the page and the Monaco worker scripts are served with the isolation heade
   const root = await page.request.get('/');
   expect(root.headers()).toMatchObject(ISOLATION);
 
-  const workers = await page.evaluate(() =>
-    performance
-      .getEntriesByType('resource')
-      .map((entry) => entry.name)
-      .filter((name) => name.includes('.worker')),
-  );
-  expect(workers.length).toBeGreaterThan(0);
+  // Monaco starts its workers shortly after the editor appears.
+  const workerUrls = (): Promise<string[]> =>
+    page.evaluate(() =>
+      performance
+        .getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .filter((name) => name.includes('.worker')),
+    );
+  await expect.poll(async () => (await workerUrls()).length).toBeGreaterThan(0);
+  const workers = await workerUrls();
   for (const url of workers) {
     expect((await page.request.get(url)).headers()).toMatchObject(ISOLATION);
   }

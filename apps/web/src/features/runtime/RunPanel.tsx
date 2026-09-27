@@ -13,15 +13,17 @@ import { runStatus, type RunStatus } from './run-status.js';
 import { runtimeSupport } from './runtime-support.js';
 import { useRuntime } from './useRuntime.js';
 import { ShellTab } from './ShellTab.js';
+import { ApiConsole } from './api-console/ApiConsole.js';
 import { Tabs, panelId, tabId, type TabDefinition } from '../ui/Tabs.js';
 
 const TerminalView = lazy(() => import('./TerminalView.js'));
 
-type RunTab = 'output' | 'shell';
+type RunTab = 'output' | 'shell' | 'api';
 
 const RUN_TABS: readonly TabDefinition<RunTab>[] = [
   { id: 'output', label: 'Output' },
   { id: 'shell', label: 'Shell' },
+  { id: 'api', label: 'API' },
 ];
 
 const TONE_CLASS: Record<RunStatus['tone'], string> = {
@@ -67,7 +69,7 @@ export type RunPanelProps = {
 };
 
 export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactElement {
-  const { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell } =
+  const { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell, send } =
     useRuntime(session, onSyncError);
   const [tab, setTab] = useState<RunTab>('output');
   const support = useMemo(
@@ -131,24 +133,37 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
       </div>
 
       <Tabs label="Run views" tabs={RUN_TABS} selected={tab} onSelect={setTab} idPrefix="run" />
-      <div
-        role="tabpanel"
-        id={panelId('run', tab)}
-        aria-labelledby={tabId('run', tab)}
-        className="min-h-0 flex-1"
-      >
-        {tab === 'output' &&
-          (hasRun ? (
-            <Suspense fallback={<p className="p-3 text-xs text-zinc-500">Loading the terminal…</p>}>
-              <TerminalView label="Run output" source={output} />
-            </Suspense>
-          ) : (
-            <p className="p-3 text-xs text-zinc-500">
-              Output appears here when you run the project.
-            </p>
-          ))}
-        {tab === 'shell' && <ShellTab shell={shell} canOpen={canOpenShell} onOpen={openShell} />}
-      </div>
+      {/* One panel per tab. The API console stays mounted so its form and
+          history survive switching tabs; terminals remount and replay their
+          output buffers. */}
+      {RUN_TABS.map(({ id }) => (
+        <div
+          key={id}
+          role="tabpanel"
+          id={panelId('run', id)}
+          aria-labelledby={tabId('run', id)}
+          hidden={tab !== id}
+          className="min-h-0 flex-1"
+        >
+          {id === 'output' &&
+            tab === 'output' &&
+            (hasRun ? (
+              <Suspense
+                fallback={<p className="p-3 text-xs text-zinc-500">Loading the terminal…</p>}
+              >
+                <TerminalView label="Run output" source={output} />
+              </Suspense>
+            ) : (
+              <p className="p-3 text-xs text-zinc-500">
+                Output appears here when you run the project.
+              </p>
+            ))}
+          {id === 'shell' && tab === 'shell' && (
+            <ShellTab shell={shell} canOpen={canOpenShell} onOpen={openShell} />
+          )}
+          {id === 'api' && <ApiConsole send={send} restarting={state.phase === 'restarting'} />}
+        </div>
+      ))}
     </section>
   );
 }

@@ -10,7 +10,13 @@ import {
 } from '@collabcode/shared';
 import { FakeContainer } from '../../test/fake-container.js';
 import { createOutputBuffer } from './output-buffer.js';
-import { AUTO_RESTART_DELAY_MS, createRunner, type Runner } from './process-runner.js';
+import {
+  AUTO_RESTART_DELAY_MS,
+  SERVER_WAIT_MS,
+  ServerUnavailableError,
+  createRunner,
+  type Runner,
+} from './process-runner.js';
 import { RESTART_GRACE_MS, type RunState } from './run-state.js';
 
 const ada = { userId: 'ada', userName: 'Ada' };
@@ -276,5 +282,57 @@ describe('process runner', () => {
     await settle(0);
     expect(output()).not.toContain('stale line');
     expect(output()).toContain('fresh line');
+  });
+
+  describe('waitForServer', () => {
+    it('returns the server at once while serving', async () => {
+      const { container, runner } = setup();
+      await runner.run();
+      container.emitPort(3000, 'open');
+      await expect(runner.waitForServer()).resolves.toEqual({
+        port: 3000,
+        url: 'https://p-3000.example',
+      });
+    });
+
+    it('waits out a restart', async () => {
+      const { container, runner } = setup();
+      await runner.run();
+      container.emitPort(3000, 'open');
+      container.emitPort(3000, 'close');
+      const waiting = runner.waitForServer();
+      container.emitPort(3000, 'open');
+      await expect(waiting).resolves.toMatchObject({ port: 3000 });
+    });
+
+    it('gives up when no server starts listening in time', async () => {
+      const { runner } = setup();
+      await runner.run();
+      const waiting = runner.waitForServer();
+      const assertion = expect(waiting).rejects.toThrow(
+        /No server started listening within 10 seconds/,
+      );
+      await settle(SERVER_WAIT_MS);
+      await assertion;
+    });
+
+    it('fails at once, saying why, when there is nothing to wait for', async () => {
+      const { runner, container } = setup();
+      await expect(runner.waitForServer()).rejects.toThrow(
+        "The project isn't running. Click Run first.",
+      );
+      await runner.run();
+      container.last('npm run dev').finish(1);
+      await settle(0);
+      await expect(runner.waitForServer()).rejects.toBeInstanceOf(ServerUnavailableError);
+    });
+
+    it('fails a waiting request when the run crashes', async () => {
+      const { container, runner } = setup();
+      await runner.run();
+      const waiting = runner.waitForServer();
+      container.last('npm run dev').finish(1);
+      await expect(waiting).rejects.toThrow(/crashed/);
+    });
   });
 });
