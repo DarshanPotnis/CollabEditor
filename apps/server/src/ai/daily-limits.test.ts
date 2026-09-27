@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest';
+import { createDailyLimiter, quotaDay } from './daily-limits.js';
+
+function clock(start: string): { now: () => number; set: (iso: string) => void } {
+  let current = Date.parse(start);
+  return {
+    now: () => current,
+    set: (iso) => {
+      current = Date.parse(iso);
+    },
+  };
+}
+
+const NOON = '2026-09-27T19:00:00Z';
+
+describe('quotaDay', () => {
+  it('follows Pacific time, where Google resets the free quota', () => {
+    // 06:59 UTC is still 23:59 the day before in California (PDT, UTC-7).
+    expect(quotaDay(Date.parse('2026-09-27T06:59:59Z'))).toBe('2026-09-26');
+    expect(quotaDay(Date.parse('2026-09-27T07:00:00Z'))).toBe('2026-09-27');
+  });
+
+  it('moves with daylight saving time', () => {
+    // In December California is on PST, UTC-8.
+    expect(quotaDay(Date.parse('2026-12-01T07:59:59Z'))).toBe('2026-11-30');
+    expect(quotaDay(Date.parse('2026-12-01T08:00:00Z'))).toBe('2026-12-01');
+  });
+});
+
+describe('createDailyLimiter', () => {
+  it('lets a visitor use their allowance, counting down what is left', () => {
+    const limiter = createDailyLimiter({ global: 100, perIp: 3, perProject: 100 }, clock(NOON).now);
+    const caller = { ipKey: '203.0.113.1', projectId: 'p1' };
+    expect(limiter.tryConsume(caller)).toEqual({ ok: true, remaining: 2 });
+    expect(limiter.tryConsume(caller)).toEqual({ ok: true, remaining: 1 });
+    expect(limiter.tryConsume(caller)).toEqual({ ok: true, remaining: 0 });
+    expect(limiter.tryConsume(caller)).toEqual({ ok: false, exceeded: 'ip' });
+  });
+
+  it('keeps visitors apart', () => {
+    const limiter = createDailyLimiter({ global: 100, perIp: 1, perProject: 100 }, clock(NOON).now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p1' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p2' }).ok).toBe(false);
+    expect(limiter.tryConsume({ ipKey: 'b', projectId: 'p1' }).ok).toBe(true);
+  });
+
+  it('caps a project whoever is asking', () => {
+    const limiter = createDailyLimiter({ global: 100, perIp: 100, perProject: 2 }, clock(NOON).now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p1' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'b', projectId: 'p1' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'c', projectId: 'p1' })).toEqual({
+      ok: false,
+      exceeded: 'project',
+    });
+    expect(limiter.tryConsume({ ipKey: 'c', projectId: 'p2' }).ok).toBe(true);
+  });
+
+  it('stops everyone once the global budget is spent, and says so first', () => {
+    const limiter = createDailyLimiter({ global: 2, perIp: 1, perProject: 100 }, clock(NOON).now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'b', projectId: 'p' }).ok).toBe(true);
+    // 'a' has also used their own allowance, but the budget is the real reason.
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toEqual({
+      ok: false,
+      exceeded: 'global',
+    });
+    expect(limiter.tryConsume({ ipKey: 'c', projectId: 'p' })).toEqual({
+      ok: false,
+      exceeded: 'global',
+    });
+  });
+
+  it('reports the tightest allowance as what is left', () => {
+    const limiter = createDailyLimiter({ global: 10, perIp: 5, perProject: 2 }, clock(NOON).now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toEqual({ ok: true, remaining: 1 });
+  });
+
+  it('does not count a refused request against the other allowances', () => {
+    const limiter = createDailyLimiter({ global: 100, perIp: 1, perProject: 2 }, clock(NOON).now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
+    // Had the refusal counted, the project would now be full.
+    expect(limiter.tryConsume({ ipKey: 'b', projectId: 'p' }).ok).toBe(true);
+  });
+
+  it('starts every allowance again at midnight Pacific time', () => {
+    const time = clock('2026-09-27T06:30:00Z');
+    const limiter = createDailyLimiter({ global: 1, perIp: 1, perProject: 1 }, time.now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
+
+    time.set('2026-09-27T06:59:59Z');
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
+
+    time.set('2026-09-27T07:00:00Z');
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toEqual({ ok: true, remaining: 0 });
+  });
+
+  it('refuses everything when a limit is zero, which turns the shared tier off', () => {
+    const limiter = createDailyLimiter({ global: 0, perIp: 30, perProject: 60 }, clock(NOON).now);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toEqual({
+      ok: false,
+      exceeded: 'global',
+    });
+  });
+});

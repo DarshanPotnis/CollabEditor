@@ -290,7 +290,8 @@ System prompt essentials:
   text, which can echo part of a key.
 - **Limits:** per IP (30 a day), per project (60 a day) and a global daily budget (400 a day,
   80% of the free quota), counted in memory (single instance; documented), for the shared key
-  only. When exhausted, the UI explains and suggests using your own key. BYOK requests skip
+  only. Days follow Pacific time, when Google resets the free quota; UTC days would reset about
+  seven hours early and let twice the budget through within one of Google's days. When exhausted, the UI explains and suggests using your own key. BYOK requests skip
   the daily budgets but share a per-minute burst limit per IP. AI routes require an `Origin`
   header; that stops casual scripts, not determined ones, so the global budget is what really
   protects the free quota. The per-project limit is cheap but weak (projects are easy to
