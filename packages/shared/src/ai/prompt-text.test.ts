@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fence, fencedBlocks, lineCount, numberLines } from './prompt-text.js';
+import { fence, fencedBlocks, lineCount, markdownSegments, numberLines } from './prompt-text.js';
 
 describe('fence', () => {
   it('wraps text in a three-backtick fence with an info string', () => {
@@ -78,5 +78,30 @@ describe('fencedBlocks', () => {
 
   it('returns nothing for prose without fences', () => {
     expect(fencedBlocks('Just some words.')).toEqual([]);
+  });
+});
+
+describe('markdownSegments', () => {
+  it('splits prose and code blocks in order', () => {
+    expect(markdownSegments('Intro.\n\n```js\nlet a;\n```\nAfter.')).toEqual([
+      { kind: 'text', text: 'Intro.\n' },
+      { kind: 'fence', info: 'js', content: 'let a;', closed: true },
+      { kind: 'text', text: 'After.' },
+    ]);
+  });
+
+  it('runs a block that is not closed yet to the end, as while streaming', () => {
+    expect(markdownSegments('Here:\n```js\nlet a;\nlet b')).toEqual([
+      { kind: 'text', text: 'Here:' },
+      { kind: 'fence', info: 'js', content: 'let a;\nlet b', closed: false },
+    ]);
+  });
+
+  it('keeps a backtick line whose info string has backticks as prose', () => {
+    expect(markdownSegments('```a`b\ntext')).toEqual([{ kind: 'text', text: '```a`b\ntext' }]);
+  });
+
+  it('returns one prose segment for text without fences', () => {
+    expect(markdownSegments('Just words.')).toEqual([{ kind: 'text', text: 'Just words.' }]);
   });
 });
