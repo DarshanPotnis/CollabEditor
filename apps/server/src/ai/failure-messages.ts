@@ -12,6 +12,27 @@ export type StepFailure = Exclude<ModelCallFailure, 'aborted'> | 'timeout';
 
 export type FailureMessage = { code: ApiErrorCode; message: string };
 
+/** A wait in rough words: "a few seconds", "about 25 seconds" or "a minute". */
+export function describeWait(ms: number): string {
+  const seconds = Math.ceil(ms / 1_000);
+  if (seconds <= 5) return 'a few seconds';
+  if (seconds >= 55) return 'a minute';
+  return `about ${String(Math.ceil(seconds / 5) * 5)} seconds`;
+}
+
+/**
+ * The shared tier is at a per-minute limit: ours, when `waitMs` says how long
+ * until a slot opens, or the provider's, when it is null because Google does
+ * not say.
+ */
+export function sharedTierBusy(waitMs: number | null): FailureMessage {
+  const wait = waitMs === null ? 'a minute' : describeWait(waitMs);
+  return {
+    code: 'rate-limited',
+    message: `The shared free AI is busy right now. Try again in ${wait}, or add your own key in AI settings.`,
+  };
+}
+
 export function describeFailure(
   failure: StepFailure,
   statusCode: number | null,
@@ -32,11 +53,7 @@ export function describeFailure(
           };
     case 'rate-limited':
       return provider === null
-        ? {
-            code: 'rate-limited',
-            message:
-              'The shared free AI is busy right now. Try again in a minute, or add your own key in AI settings.',
-          }
+        ? sharedTierBusy(null)
         : {
             code: 'rate-limited',
             message: `${provider} is rate limiting your key right now. Wait a moment and try again.`,

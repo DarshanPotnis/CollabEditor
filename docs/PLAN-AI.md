@@ -270,10 +270,10 @@ System prompt essentials:
   because the AI-2 agent core must also run in Node for evals. ADR 007.
 
 - **Default model: `gemini-3.5-flash-lite`**, configurable with `AI_DEFAULT_MODEL`. Free tier,
-  function calling, 1M input tokens. In September 2026 the free tier allowed roughly 500
-  requests a day for the Flash-Lite models and roughly 20 for the Flash models (3.5–3.8),
-  **per Google Cloud project, not per key**, resetting at midnight Pacific. Google's docs no
-  longer publish the numbers; AI Studio shows a project's actual limits. Free-tier content is
+  function calling, 1M input tokens. AI Studio's rate-limit page for the project (September 2026) shows 15 requests a minute, 250K tokens a minute and 500 requests a day; the Flash
+  models (3.5–3.8) get roughly 20 a day. Limits are **per Google Cloud project, not per key**,
+  and the daily count resets at midnight Pacific. Google's docs no longer publish the numbers,
+  so AI Studio is the source. Free-tier content is
   used to improve Google's products (pricing page), as the privacy notice says.
 - **What the free tier can carry.** About 500 requests a day for the whole deployment serves
   AI-1's one-request helpers comfortably, but only a handful of AI-2 agent sessions (up to 25
@@ -288,9 +288,13 @@ System prompt essentials:
   test sends a known key and prompt through the success and failure paths and asserts neither
   appears in any log line. Users only see error messages we write, never a provider's raw
   text, which can echo part of a key.
-- **Limits:** per IP (30 a day), per project (60 a day) and a global daily budget (400 a day,
-  80% of the free quota), counted in memory (single instance; documented), for the shared key
-  only. Days follow Pacific time, when Google resets the free quota; UTC days would reset about
+- **Limits:** per IP (30 a day), per project (60 a day), a global daily budget (400 a day,
+  80% of the free quota) and a global per-minute limit (12 in any rolling 60 seconds, 80% of
+  the free tier's 15), counted in memory (single instance; documented), for the shared key
+  only. The per-minute limit is checked before the daily ones and its refusal says roughly how
+  long to wait; a request is recorded against it only once the daily limits accept it. A
+  request the provider refuses for rate or quota reasons before answering is refunded to the
+  daily limits; every other failure stays counted. Days follow Pacific time, when Google resets the free quota; UTC days would reset about
   seven hours early and let twice the budget through within one of Google's days. When exhausted, the UI explains and suggests using your own key. BYOK requests skip
   the daily budgets but share a per-minute burst limit per IP. AI routes require an `Origin`
   header; that stops casual scripts, not determined ones, so the global budget is what really
@@ -321,6 +325,7 @@ using your own key avoids the shared free tier. Repeat this in the README.
 | `AI_GLOBAL_DAILY_REQUESTS`      | server | Global budget (400)                                                            |
 | `AI_PER_IP_DAILY_REQUESTS`      | server | Per-visitor limit (30)                                                         |
 | `AI_PER_PROJECT_DAILY_REQUESTS` | server | Per-project limit (60)                                                         |
+| `AI_GLOBAL_REQUESTS_PER_MINUTE` | server | Shared-tier requests in any 60 seconds, everyone together (12)                 |
 | `CLIENT_IP_SOURCE`              | server | `render` (first `X-Forwarded-For` entry) or `direct` (socket address)          |
 
 ### 6.4 Prompts
@@ -504,16 +509,17 @@ corrected in place above.
 
 **AI-1 (2026-09-27)**
 
-| Change                                                                                         | Reason                                                                                                                                                                                                 |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Provider layer is the Vercel AI SDK behind our own `ModelGateway`, with four guardrails (§6.1) | Verified against `ai` 7: browser-executed tools, runtime JSON Schema tools and Gemini 3 thought signatures work; gateway fallback, default telemetry, default retries and error bodies needed guarding |
-| Streaming from the start; status committed on the first model event (§6.1)                     | Verified through the real Hocuspocus mount; early failures stay ordinary HTTP errors                                                                                                                   |
-| Default model `gemini-3.5-flash-lite` (§6.1)                                                   | About 500 free requests a day against about 20 for the Flash models; both support function calling                                                                                                     |
-| Server-owned, versioned prompts; the client sends `{ promptId, inputs }` (§6.4)                | A client-supplied system prompt would make the shared key a general-purpose relay; evals and the app must run the same prompt versions                                                                 |
-| Client IP is the first `X-Forwarded-For` entry on Render, not a hop count (§6.1)               | Cloudflare and Render's load balancers both sit in front; Render guarantees only the first entry. The old `trust proxy: 1` keyed limits on a proxy address                                             |
-| AI routes require `Origin`; per-project limit kept but not relied on (§6.1)                    | The origin guard lets requests without `Origin` through; projects are easy to create                                                                                                                   |
-| `GEMINI_API_KEY` optional (§6.1, §6.3)                                                         | CI and local development should not need a key                                                                                                                                                         |
-| Apply goes through the Monaco model; stale selections refuse to apply (AI-1)                   | Undo tracks the editor binding, not a user origin; a collaborator's concurrent edit must not be overwritten                                                                                            |
-| Run \| AI switch in AI-1, layout revisited in AI-2                                             | One pane is enough for one-shot helpers; the agent needs its panel and the terminal together                                                                                                           |
-| Evals get their own key and pick the default model by numbers (AI-4)                           | Limits are per Google Cloud project; one eval run would spend the app's free day                                                                                                                       |
-| "Watch a demo" replay mode (AI-5)                                                              | A zero-cost demo that works when the quota is gone, clearly labelled as a replay                                                                                                                       |
+| Change                                                                                          | Reason                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Provider layer is the Vercel AI SDK behind our own `ModelGateway`, with four guardrails (§6.1)  | Verified against `ai` 7: browser-executed tools, runtime JSON Schema tools and Gemini 3 thought signatures work; gateway fallback, default telemetry, default retries and error bodies needed guarding |
+| Streaming from the start; status committed on the first model event (§6.1)                      | Verified through the real Hocuspocus mount; early failures stay ordinary HTTP errors                                                                                                                   |
+| Default model `gemini-3.5-flash-lite` (§6.1)                                                    | About 500 free requests a day against about 20 for the Flash models; both support function calling                                                                                                     |
+| Server-owned, versioned prompts; the client sends `{ promptId, inputs }` (§6.4)                 | A client-supplied system prompt would make the shared key a general-purpose relay; evals and the app must run the same prompt versions                                                                 |
+| Client IP is the first `X-Forwarded-For` entry on Render, not a hop count (§6.1)                | Cloudflare and Render's load balancers both sit in front; Render guarantees only the first entry. The old `trust proxy: 1` keyed limits on a proxy address                                             |
+| AI routes require `Origin`; per-project limit kept but not relied on (§6.1)                     | The origin guard lets requests without `Origin` through; projects are easy to create                                                                                                                   |
+| `GEMINI_API_KEY` optional (§6.1, §6.3)                                                          | CI and local development should not need a key                                                                                                                                                         |
+| Apply goes through the Monaco model; stale selections refuse to apply (AI-1)                    | Undo tracks the editor binding, not a user origin; a collaborator's concurrent edit must not be overwritten                                                                                            |
+| Run \| AI switch in AI-1, layout revisited in AI-2                                              | One pane is enough for one-shot helpers; the agent needs its panel and the terminal together                                                                                                           |
+| Evals get their own key and pick the default model by numbers (AI-4)                            | Limits are per Google Cloud project; one eval run would spend the app's free day                                                                                                                       |
+| "Watch a demo" replay mode (AI-5)                                                               | A zero-cost demo that works when the quota is gone, clearly labelled as a replay                                                                                                                       |
+| Global per-minute limit for the shared tier; refunds for up-front rate or quota refusals (§6.1) | The per-visitor minute limit cannot keep the whole deployment under Google's 15 RPM; a request Google refused up front cost nothing, so it should not spend anyone's day                               |

@@ -41,6 +41,7 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
       gateway: createFakeModelGateway(),
       sharedTier: { model: 'gemini-3.5-flash-lite', apiKey: 'shared-test-key' },
       limits: { global: 1_000, perIp: 1_000, perProject: 1_000 },
+      sharedTierPerMinute: 1_000,
       ...options.ai,
     },
     ...(options.projectCreateLimitPerMinute === undefined

@@ -277,6 +277,87 @@ describe('POST /api/ai/step', () => {
       });
     });
 
+    it('slows everyone down past its per-minute limit, saying how long to wait', async () => {
+      let current = Date.parse('2026-09-27T19:00:00Z');
+      const { server, projectId } = await serve({
+        ai: {
+          sharedTierPerMinute: 2,
+          limits: { global: 100, perIp: 3, perProject: 100 },
+          now: () => current,
+        },
+      });
+      await events(await step(server, explainBody(projectId)));
+      current += 20_000;
+      await events(await step(server, explainBody(projectId)));
+
+      const busy = await step(server, explainBody(projectId));
+      expect(busy.status).toBe(429);
+      expect(busy.headers.get('retry-after')).toBe('40');
+      expect(await apiError(busy)).toEqual({
+        code: 'rate-limited',
+        message:
+          'The shared free AI is busy right now. Try again in about 40 seconds, or add your own key in AI settings.',
+      });
+
+      // The first request's slot opens a minute after it started. The busy
+      // refusal never counted against the day: this is the third of three.
+      current += 40_000;
+      const after = await events(await step(server, explainBody(projectId)));
+      expect(after.at(-1)).toMatchObject({ type: 'finish', remainingToday: 0 });
+    });
+
+    it('does not let a request the daily allowances refuse use up a minute slot', async () => {
+      const { server, projectId } = await serve({
+        ai: { sharedTierPerMinute: 2, limits: { global: 100, perIp: 100, perProject: 1 } },
+      });
+      const { id: otherProjectId } = await seedProject(server.repo);
+      await events(await step(server, explainBody(projectId)));
+      expect((await apiError(await step(server, explainBody(projectId)))).code).toBe(
+        'quota-exhausted',
+      );
+      expect((await step(server, explainBody(otherProjectId))).status).toBe(200);
+    });
+
+    it('does not hold requests with an own key to its per-minute limit', async () => {
+      const { server, projectId } = await serve({ ai: { sharedTierPerMinute: 0 } });
+      expect((await step(server, explainBody(projectId))).status).toBe(429);
+      const own = await step(server, explainBody(projectId, { byok: ANTHROPIC }), { key: OWN_KEY });
+      expect(own.status).toBe(200);
+      await own.text();
+    });
+
+    it('gives the day’s request back when the provider refuses it for rate or quota up front', async () => {
+      let reply: FakeReply = { kind: 'fail', failure: 'rate-limited', statusCode: 429 };
+      const gateway = createFakeModelGateway(() => reply);
+      const { server, projectId } = await serve({
+        ai: { gateway, limits: { global: 100, perIp: 1, perProject: 100 } },
+      });
+      const refused = await step(server, explainBody(projectId));
+      expect(refused.status).toBe(429);
+      await refused.text();
+
+      reply = { kind: 'text', chunks: ['Fine now.'] };
+      const retried = await step(server, explainBody(projectId));
+      expect(retried.status).toBe(200);
+      expect((await events(retried)).at(-1)).toMatchObject({ type: 'finish', remainingToday: 0 });
+    });
+
+    it.each<[string, FakeReply]>([
+      ['for another reason', { kind: 'fail', failure: 'unavailable', statusCode: 503 }],
+      [
+        'after it began answering',
+        { kind: 'fail', failure: 'rate-limited', statusCode: 429, afterChunks: ['Half'] },
+      ],
+    ])('keeps counting a request the provider failed %s', async (_label, reply) => {
+      const { server, projectId } = await serve({
+        ai: { gateway: scripted(reply), limits: { global: 100, perIp: 1, perProject: 100 } },
+      });
+      await (await step(server, explainBody(projectId))).text();
+      const next = await step(server, explainBody(projectId));
+      expect(next.status).toBe(429);
+      expect((await apiError(next)).code).toBe('quota-exhausted');
+    });
+
     it('does not blame the caller when the provider refuses the server’s own key', async () => {
       const gateway = scripted({ kind: 'fail', failure: 'invalid-key', statusCode: 403 });
       const { server, projectId } = await serve({ ai: { gateway } });

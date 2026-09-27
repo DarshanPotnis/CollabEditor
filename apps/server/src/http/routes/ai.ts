@@ -20,7 +20,8 @@ import {
 import express, { Router, type Request, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createDailyLimiter, type DailyLimits } from '../../ai/daily-limits.js';
-import { describeFailure } from '../../ai/failure-messages.js';
+import { describeFailure, sharedTierBusy } from '../../ai/failure-messages.js';
+import { createMinuteLimit } from '../../ai/minute-limit.js';
 import type { ModelGateway, ModelTarget } from '../../ai/model-gateway.js';
 import type { ProjectsRepo } from '../../db/projects-repo.js';
 import { streamAnswer } from '../ai-stream.js';
@@ -44,6 +45,9 @@ export type AiRouterDeps = {
   /** Null when the server has no key, which turns the shared tier off. */
   sharedTier: SharedTier | null;
   limits: DailyLimits;
+  /** Shared-tier requests everyone together may start in any 60 seconds. */
+  sharedTierPerMinute: number;
+  /** Requests one visitor may make per minute, shared tier or own key. */
   requestsPerMinute?: number;
   callTimeoutMs?: number;
   now?: () => number;
@@ -91,12 +95,14 @@ export function createAiRouter({
   clientIpSource,
   sharedTier,
   limits,
+  sharedTierPerMinute,
   requestsPerMinute = DEFAULT_AI_REQUESTS_PER_MINUTE,
   callTimeoutMs = DEFAULT_MODEL_CALL_TIMEOUT_MS,
   now,
 }: AiRouterDeps): Router {
   const router = Router();
   const daily = createDailyLimiter(limits, now);
+  const sharedMinute = createMinuteLimit(sharedTierPerMinute, now);
   const perMinute = rateLimit({
     windowMs: 60_000,
     limit: requestsPerMinute,
@@ -138,6 +144,7 @@ export function createAiRouter({
 
       let target: ModelTarget;
       let remainingToday: number | null = null;
+      let refundDaily: (() => void) | null = null;
       if (ownKey.key !== null && byok !== undefined) {
         target = { provider: byok.provider, model: byok.model, apiKey: ownKey.key };
       } else {
@@ -149,13 +156,23 @@ export function createAiRouter({
           );
           return;
         }
+        // Checked before the daily allowances, so a busy minute costs nobody a request.
+        const waitMs = sharedMinute.waitMs();
+        if (waitMs > 0) {
+          const busy = sharedTierBusy(waitMs);
+          res.set('retry-after', String(Math.ceil(waitMs / 1_000)));
+          sendApiError(res, busy.code, busy.message);
+          return;
+        }
         const verdict = daily.tryConsume({ ipKey: clientKey(req, clientIpSource), projectId });
         if (!verdict.ok) {
           sendApiError(res, 'quota-exhausted', QUOTA_MESSAGES[verdict.exceeded]);
           return;
         }
+        sharedMinute.record();
         target = { provider: 'gemini', model: sharedTier.model, apiKey: sharedTier.apiKey };
         remainingToday = verdict.remaining;
+        refundDaily = verdict.refund;
       }
 
       const ownKeyProvider = byok?.provider ?? null;
@@ -178,6 +195,14 @@ export function createAiRouter({
           describeFailure(failure, providerStatus, ownKeyProvider),
       });
 
+      // Refused for quota or rate reasons before answering: the request cost
+      // nothing, so it should not count against anyone's day.
+      const refusedUpFront =
+        outcome.status === 'failed' &&
+        outcome.failure === 'rate-limited' &&
+        outcome.firstEventMs === null;
+      if (refusedUpFront && refundDaily) refundDaily();
+
       // Metadata only: never the inputs, the answer or the key.
       const meta = {
         promptId: prompt.id,
@@ -185,6 +210,7 @@ export function createAiRouter({
         provider: target.provider,
         model: target.model,
         ownKey: ownKeyProvider !== null,
+        dailyRefunded: refusedUpFront && refundDaily !== null,
         ...outcome,
       };
       const sharedKeyRefused =

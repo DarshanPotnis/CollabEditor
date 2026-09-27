@@ -39,6 +39,7 @@ async function main(): Promise<void> {
       gateway: createFakeModelGateway(),
       sharedTier: { model: 'gemini-3.5-flash-lite', apiKey: 'e2e-shared-key' },
       limits: { global: 10_000, perIp: 10_000, perProject: 10_000 },
+      sharedTierPerMinute: 10_000,
       requestsPerMinute: 10_000,
     },
   });

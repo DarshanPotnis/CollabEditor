@@ -31,9 +31,9 @@ describe('createDailyLimiter', () => {
   it('lets a visitor use their allowance, counting down what is left', () => {
     const limiter = createDailyLimiter({ global: 100, perIp: 3, perProject: 100 }, clock(NOON).now);
     const caller = { ipKey: '203.0.113.1', projectId: 'p1' };
-    expect(limiter.tryConsume(caller)).toEqual({ ok: true, remaining: 2 });
-    expect(limiter.tryConsume(caller)).toEqual({ ok: true, remaining: 1 });
-    expect(limiter.tryConsume(caller)).toEqual({ ok: true, remaining: 0 });
+    expect(limiter.tryConsume(caller)).toMatchObject({ ok: true, remaining: 2 });
+    expect(limiter.tryConsume(caller)).toMatchObject({ ok: true, remaining: 1 });
+    expect(limiter.tryConsume(caller)).toMatchObject({ ok: true, remaining: 0 });
     expect(limiter.tryConsume(caller)).toEqual({ ok: false, exceeded: 'ip' });
   });
 
@@ -72,7 +72,10 @@ describe('createDailyLimiter', () => {
 
   it('reports the tightest allowance as what is left', () => {
     const limiter = createDailyLimiter({ global: 10, perIp: 5, perProject: 2 }, clock(NOON).now);
-    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toEqual({ ok: true, remaining: 1 });
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toMatchObject({
+      ok: true,
+      remaining: 1,
+    });
   });
 
   it('does not count a refused request against the other allowances', () => {
@@ -93,7 +96,48 @@ describe('createDailyLimiter', () => {
     expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
 
     time.set('2026-09-27T07:00:00Z');
-    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toEqual({ ok: true, remaining: 0 });
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toMatchObject({
+      ok: true,
+      remaining: 0,
+    });
+  });
+
+  it('gives a refunded request back to every allowance', () => {
+    const limiter = createDailyLimiter({ global: 1, perIp: 1, perProject: 1 }, clock(NOON).now);
+    const first = limiter.tryConsume({ ipKey: 'a', projectId: 'p' });
+    if (!first.ok) throw new Error('expected the first request to be accepted');
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
+
+    first.refund();
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' })).toMatchObject({
+      ok: true,
+      remaining: 0,
+    });
+  });
+
+  it('refunds a request only once', () => {
+    const limiter = createDailyLimiter({ global: 100, perIp: 2, perProject: 100 }, clock(NOON).now);
+    const first = limiter.tryConsume({ ipKey: 'a', projectId: 'p' });
+    if (!first.ok) throw new Error('expected the first request to be accepted');
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(true);
+
+    first.refund();
+    first.refund();
+    // One slot came back, not two.
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(true);
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
+  });
+
+  it("does not refund into a new day's allowance", () => {
+    const time = clock('2026-09-27T06:59:00Z');
+    const limiter = createDailyLimiter({ global: 100, perIp: 1, perProject: 100 }, time.now);
+    const lateNight = limiter.tryConsume({ ipKey: 'a', projectId: 'p' });
+    if (!lateNight.ok) throw new Error('expected the request to be accepted');
+
+    time.set('2026-09-27T07:00:00Z');
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(true);
+    lateNight.refund();
+    expect(limiter.tryConsume({ ipKey: 'a', projectId: 'p' }).ok).toBe(false);
   });
 
   it('refuses everything when a limit is zero, which turns the shared tier off', () => {

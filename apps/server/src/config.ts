@@ -75,6 +75,11 @@ const envSchema = z.object({
   AI_PER_IP_DAILY_REQUESTS: envCount(30),
   /** Shared-tier requests per day for one project. */
   AI_PER_PROJECT_DAILY_REQUESTS: envCount(60),
+  /**
+   * Shared-tier requests everyone together may start in any 60 seconds: about
+   * 80% of the free tier's 15 requests a minute.
+   */
+  AI_GLOBAL_REQUESTS_PER_MINUTE: envCount(12),
 });
 
 export type ServerConfig = z.infer<typeof envSchema>;

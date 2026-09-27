@@ -26,6 +26,7 @@ describe('loadConfig', () => {
       AI_GLOBAL_DAILY_REQUESTS: 400,
       AI_PER_IP_DAILY_REQUESTS: 30,
       AI_PER_PROJECT_DAILY_REQUESTS: 60,
+      AI_GLOBAL_REQUESTS_PER_MINUTE: 12,
     });
   });
 
@@ -43,7 +44,9 @@ describe('loadConfig', () => {
       AI_GLOBAL_DAILY_REQUESTS: '10',
       AI_PER_IP_DAILY_REQUESTS: '',
       AI_PER_PROJECT_DAILY_REQUESTS: '0',
+      AI_GLOBAL_REQUESTS_PER_MINUTE: '5',
     });
+    expect(config.AI_GLOBAL_REQUESTS_PER_MINUTE).toBe(5);
     expect(config.AI_GLOBAL_DAILY_REQUESTS).toBe(10);
     expect(config.AI_PER_IP_DAILY_REQUESTS).toBe(30);
     expect(config.AI_PER_PROJECT_DAILY_REQUESTS).toBe(0);
