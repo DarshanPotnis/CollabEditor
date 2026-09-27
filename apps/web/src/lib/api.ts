@@ -3,36 +3,9 @@
  * a server change shows up here as a typed error rather than as undefined
  * deep inside a component.
  */
-import {
-  apiErrorSchema,
-  projectSummarySchema,
-  type ApiErrorCode,
-  type ProjectSummary,
-  type TemplateId,
-} from '@collabcode/shared';
+import { projectSummarySchema, type ProjectSummary, type TemplateId } from '@collabcode/shared';
+import { ApiError, readApiError } from './api-error.js';
 import { config } from './app-config.js';
-
-export type ApiFailureCode = ApiErrorCode | 'network' | 'malformed-response';
-
-export class ApiError extends Error {
-  readonly code: ApiFailureCode;
-
-  constructor(code: ApiFailureCode, message: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.code = code;
-  }
-}
-
-async function readError(response: Response): Promise<ApiError> {
-  try {
-    const parsed = apiErrorSchema.safeParse(await response.json());
-    if (parsed.success) return new ApiError(parsed.data.error.code, parsed.data.error.message);
-  } catch {
-    // Fall through to the generic message below.
-  }
-  return new ApiError('internal', `The server answered with ${String(response.status)}.`);
-}
 
 async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
@@ -45,7 +18,7 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
     throw new ApiError('network', 'Could not reach the server. Check your connection.');
   }
 
-  if (!response.ok) throw await readError(response);
+  if (!response.ok) throw await readApiError(response);
 
   try {
     return await response.json();

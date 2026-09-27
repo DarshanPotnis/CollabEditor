@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Loader2, Users } from 'lucide-react';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from '@collabcode/shared';
-import { ApiError, createProject, fetchProject, pingHealth } from '../../lib/api.js';
+import { ApiError } from '../../lib/api-error.js';
+import { createProject, fetchProject, pingHealth } from '../../lib/api.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
 import { projectIdFromInput } from './join-input.js';
 
