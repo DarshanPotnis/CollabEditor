@@ -8,6 +8,7 @@ import { createSqlClient } from './db/client.js';
 import { createPostgresProjectsRepo } from './db/projects-repo.js';
 import { createApp } from './http/app.js';
 import { createCollabServer } from './collab/server.js';
+import { createAiSdkGateway } from './ai/ai-sdk-gateway.js';
 
 /** How long shutdown may take before we stop waiting. Render allows ~30s. */
 const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -53,6 +54,17 @@ async function main(): Promise<void> {
     repo,
     logger,
     clientIpSource: config.CLIENT_IP_SOURCE,
+    ai: {
+      gateway: createAiSdkGateway({ logger }),
+      sharedTier: config.GEMINI_API_KEY
+        ? { model: config.AI_DEFAULT_MODEL, apiKey: config.GEMINI_API_KEY }
+        : null,
+      limits: {
+        global: config.AI_GLOBAL_DAILY_REQUESTS,
+        perIp: config.AI_PER_IP_DAILY_REQUESTS,
+        perProject: config.AI_PER_PROJECT_DAILY_REQUESTS,
+      },
+    },
   });
   const server = createCollabServer({
     app,
@@ -69,6 +81,7 @@ async function main(): Promise<void> {
       host: config.HOST,
       allowedOrigins: config.ALLOWED_ORIGINS,
       clientIpSource: config.CLIENT_IP_SOURCE,
+      sharedAi: config.GEMINI_API_KEY ? config.AI_DEFAULT_MODEL : 'off',
     },
     'collabcode server listening',
   );
