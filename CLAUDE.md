@@ -60,6 +60,14 @@ source of truth for architecture, data model, phase scope and definitions of don
   never `;`, so a commit can never happen after a failing check.
 - Never commit `.env` files or secrets.
 
+## Secrets
+
+- Never print any part of a secret (API keys, tokens, passwords, connection strings) in command
+  output, messages, logs or commits: not a prefix, suffix or other fragment, and not a hash.
+- To check that a secret is set, print only whether it is (for example
+  `grep -q '^GEMINI_API_KEY=.' apps/server/.env && echo set`). When searching output for a leaked
+  secret, report found or not found without echoing any of it.
+
 ## Docs to keep current
 
 - `docs/ARCHITECTURE.md`: living description of how the system works today.
