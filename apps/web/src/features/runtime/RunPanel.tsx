@@ -14,16 +14,18 @@ import { runtimeSupport } from './runtime-support.js';
 import { useRuntime } from './useRuntime.js';
 import { ShellTab } from './ShellTab.js';
 import { ApiConsole } from './api-console/ApiConsole.js';
+import { PreviewTab } from './PreviewTab.js';
 import { Tabs, panelId, tabId, type TabDefinition } from '../ui/Tabs.js';
 
 const TerminalView = lazy(() => import('./TerminalView.js'));
 
-type RunTab = 'output' | 'shell' | 'api';
+type RunTab = 'output' | 'shell' | 'api' | 'preview';
 
 const RUN_TABS: readonly TabDefinition<RunTab>[] = [
   { id: 'output', label: 'Output' },
   { id: 'shell', label: 'Shell' },
   { id: 'api', label: 'API' },
+  { id: 'preview', label: 'Preview' },
 ];
 
 const TONE_CLASS: Record<RunStatus['tone'], string> = {
@@ -162,6 +164,14 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
             <ShellTab shell={shell} canOpen={canOpenShell} onOpen={openShell} />
           )}
           {id === 'api' && <ApiConsole send={send} restarting={state.phase === 'restarting'} />}
+          {id === 'preview' && tab === 'preview' && (
+            <PreviewTab
+              server={
+                state.phase === 'serving' || state.phase === 'restarting' ? state.server : null
+              }
+              restarting={state.phase === 'restarting'}
+            />
+          )}
         </div>
       ))}
     </section>
