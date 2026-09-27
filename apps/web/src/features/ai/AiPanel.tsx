@@ -10,12 +10,17 @@ import type { AiRequestState } from './ai-request-state.js';
 import { describeStep, finishNote, keyStatus, settingsAction, usageLine } from './ai-messages.js';
 import { AiSettingsDialog } from './AiSettingsDialog.js';
 import { AiText } from './AiText.js';
+import type { EditProposal } from './edit-proposal.js';
 import { PrivacyNotice } from './PrivacyNotice.js';
 import type { AiRequestControls } from './useAiRequest.js';
 import { useOwnKeyChoice } from './useOwnKeyChoice.js';
 
 export type AiPanelProps = {
   request: AiRequestControls;
+  /** The Edit with AI answer on screen, if it is one. */
+  edit: EditProposal;
+  /** Opens the edited file, where the change waits for review. */
+  onShowEdit: () => void;
 };
 
 type ActiveState = Exclude<AiRequestState, { phase: 'idle' | 'needs-consent' }>;
@@ -62,11 +67,15 @@ function EmptyState(): React.ReactElement {
 function RequestView({
   state,
   request,
+  edit,
+  onShowEdit,
   usingOwnKey,
   onOpenSettings,
 }: {
   state: ActiveState;
   request: AiRequestControls;
+  edit: EditProposal;
+  onShowEdit: () => void;
   usingOwnKey: boolean;
   onOpenSettings: () => void;
 }): React.ReactElement {
@@ -78,7 +87,15 @@ function RequestView({
   return (
     <div className="space-y-3">
       <p className="line-clamp-3 text-xs text-zinc-500">{describeStep(state.step)}</p>
-      {state.phase !== 'waiting' && state.text !== '' && <AiText text={state.text} />}
+      {edit.kind === 'ready' ? (
+        <div className="space-y-2 rounded-md border border-sky-900/60 bg-sky-950/30 p-2 text-sm text-sky-100">
+          <p>The suggested change to {edit.target.path} is ready to review over the editor.</p>
+          <PanelButton onClick={onShowEdit}>Show change</PanelButton>
+        </div>
+      ) : (
+        state.phase !== 'waiting' && state.text !== '' && <AiText text={state.text} />
+      )}
+      {edit.kind === 'unusable' && <p className="text-sm text-amber-200">{edit.message}</p>}
       <p
         role="status"
         className={`text-xs ${state.phase === 'failed' ? 'sr-only' : 'text-zinc-500'}`}
@@ -110,7 +127,7 @@ function RequestView({
   );
 }
 
-export function AiPanel({ request }: AiPanelProps): React.ReactElement {
+export function AiPanel({ request, edit, onShowEdit }: AiPanelProps): React.ReactElement {
   const ownKey = useOwnKeyChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { state } = request;
@@ -139,6 +156,8 @@ export function AiPanel({ request }: AiPanelProps): React.ReactElement {
           <RequestView
             state={state}
             request={request}
+            edit={edit}
+            onShowEdit={onShowEdit}
             usingOwnKey={ownKey.choice !== null}
             onOpenSettings={() => setSettingsOpen(true)}
           />

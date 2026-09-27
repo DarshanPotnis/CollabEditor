@@ -16,13 +16,22 @@ function lineRange(startLine: number, selection: string): string {
     : `lines ${String(startLine)}–${String(endLine)}`;
 }
 
+/** A file and the lines a selection covers, such as "routes/users.js, lines 12–14". */
+export function describeSelection(path: string, startLine: number, selection: string): string {
+  return `${path}, ${lineRange(startLine, selection)}`;
+}
+
 /** One line saying what was asked, shown above the answer. */
 export function describeStep(step: AiStep): string {
   switch (step.promptId) {
-    case 'explain-selection':
-      return `Explain ${step.inputs.path}, ${lineRange(step.inputs.startLine, step.inputs.selection)}`;
-    case 'edit-selection':
-      return `Edit ${step.inputs.path}, ${lineRange(step.inputs.startLine, step.inputs.selection)}: ${step.inputs.instruction.trim()}`;
+    case 'explain-selection': {
+      const { path, startLine, selection } = step.inputs;
+      return `Explain ${describeSelection(path, startLine, selection)}`;
+    }
+    case 'edit-selection': {
+      const { path, startLine, selection, instruction } = step.inputs;
+      return `Edit ${describeSelection(path, startLine, selection)}: ${instruction.trim()}`;
+    }
     case 'explain-error':
       return 'Explain why the run stopped';
   }

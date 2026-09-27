@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   fileSizeLimitMessage,
@@ -17,7 +17,7 @@ import { useFilePresence } from '../../collab/useFilePresence.js';
 import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
-import type { RevealRequest } from '../editor/CodeEditor.js';
+import type { CodeEditorHandle, RevealRequest } from '../editor/CodeEditor.js';
 import { editorSpecs } from '../editor/editor-specs.js';
 import type { ModelSpec } from '../editor/model-registry.js';
 import { FilesPane, type FilesView } from '../file-tree/FilesPane.js';
@@ -25,7 +25,11 @@ import { useTreeActions } from '../file-tree/useTreeActions.js';
 import { ToastProvider, useToasts } from '../notifications/ToastProvider.js';
 import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
+import { AiDiffView } from '../ai/AiDiffView.js';
 import { AiPanel } from '../ai/AiPanel.js';
+import { describeStep } from '../ai/ai-messages.js';
+import { EditInstructionDialog } from '../ai/EditInstructionDialog.js';
+import { useAiActions } from '../ai/useAiActions.js';
 import { useAiRequest } from '../ai/useAiRequest.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
 import { RunPanel } from '../runtime/RunPanel.js';
@@ -111,6 +115,35 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   );
   const awareness = session?.provider.awareness ?? null;
 
+  const editorRef = useRef<CodeEditorHandle>(null);
+  const showAiView = useCallback(() => setSideView('ai'), []);
+  const notify = useCallback(
+    (message: string, tone: 'info' | 'error') => toasts.show({ message, tone }),
+    [toasts],
+  );
+  const ai = useAiActions({
+    projectId: project.id,
+    request: aiRequest,
+    editor: editorRef,
+    showAiView,
+    openFile: tabs.open,
+    notify,
+  });
+  const { proposal } = ai;
+  const editOverlay =
+    proposal.kind === 'ready' && proposal.target.fileId === activeId ? (
+      <AiDiffView
+        title={describeStep(proposal.target.step)}
+        original={proposal.target.anchor.original}
+        replacement={proposal.replacement}
+        language={proposal.target.language}
+        startLine={proposal.target.startLine}
+        error={ai.applyError}
+        onApply={ai.applyEdit}
+        onDiscard={ai.discardEdit}
+      />
+    ) : null;
+
   return (
     <div className="flex h-full flex-col">
       <WorkspaceHeader
@@ -151,6 +184,9 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
                 myUserId={identity.id}
                 onRestore={actions.restore}
                 onFileSizeLimit={onFileSizeLimit}
+                onAiAction={ai.onEditorAction}
+                editorRef={editorRef}
+                overlay={editOverlay}
               />
             ) : (
               <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
@@ -161,11 +197,19 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
               view={sideView}
               onViewChange={setSideView}
               run={<RunPanel session={session} onSyncError={showError} />}
-              ai={<AiPanel request={aiRequest} />}
+              ai={<AiPanel request={aiRequest} edit={proposal} onShowEdit={ai.showEdit} />}
             />
           }
         />
       </main>
+
+      {ai.instructionTarget !== null && (
+        <EditInstructionDialog
+          target={ai.instructionTarget}
+          onSubmit={ai.submitInstruction}
+          onCancel={ai.cancelInstruction}
+        />
+      )}
     </div>
   );
 }
