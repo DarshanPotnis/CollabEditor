@@ -66,7 +66,7 @@ describe('initProjectDoc', () => {
   });
 
   it.each(TEMPLATE_IDS)(
-    '%s opens its entry path and ships a package.json with a dev script',
+    '%s opens its entry path and ships a package.json with a dev script for Node 22',
     (id) => {
       const doc = new Y.Doc();
       const { entryFileId, fileIds } = initProjectDoc(doc, { name: 'T', template: id });
@@ -77,7 +77,11 @@ describe('initProjectDoc', () => {
       const pkg: unknown = JSON.parse(
         readFileContent(doc, tree.idByPath.get('package.json') ?? '') ?? '',
       );
-      expect(pkg).toMatchObject({ scripts: { dev: 'node --watch index.js' } });
+      // The WebContainer runs Node 22, not the repository's Node 24.
+      expect(pkg).toMatchObject({
+        scripts: { dev: 'node --watch index.js' },
+        engines: { node: '>=22' },
+      });
       doc.destroy();
     },
   );

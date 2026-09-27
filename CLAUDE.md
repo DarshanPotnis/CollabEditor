@@ -56,6 +56,8 @@ source of truth for architecture, data model, phase scope and definitions of don
 
 - Work on feature branches off `upgrade`. Never push to or change deploy settings for `main`.
 - Small commits with Conventional Commit messages (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
+- Chain checks and the commit with `&&` (for example `npm test && npm run lint && git commit …`),
+  never `;`, so a commit can never happen after a failing check.
 - Never commit `.env` files or secrets.
 
 ## Docs to keep current

@@ -4,6 +4,9 @@ const packageJson = `{
   "name": "express-api",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js"
