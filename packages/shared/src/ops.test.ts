@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { OPS_ORIGIN, OpError, createProjectUpdate, initProjectDoc } from './ops.js';
 import { isInitialised, readFileContent, readMeta, readNodes } from './schema.js';
+import { resolveDocTree } from './tree-ops.js';
 import { TEMPLATES, TEMPLATE_IDS } from './templates/index.js';
 
 describe('initProjectDoc', () => {
@@ -23,7 +24,7 @@ describe('initProjectDoc', () => {
     });
 
     const nodes = readNodes(doc);
-    expect(nodes).toHaveLength(TEMPLATES['express-api'].files.length);
+    expect(nodes).toHaveLength(TEMPLATES['express-api'].files.length + 1);
     expect(nodes[0]).toMatchObject({
       kind: 'file',
       name: 'index.js',
@@ -46,6 +47,40 @@ describe('initProjectDoc', () => {
     expect(readFileContent(doc, entryFileId)?.length).toBeGreaterThan(0);
     doc.destroy();
   });
+
+  it('creates folders from template paths, parents first', () => {
+    const doc = new Y.Doc();
+    initProjectDoc(doc, { name: 'T', template: 'express-api' });
+    const tree = resolveDocTree(doc);
+
+    expect([...tree.idByPath.keys()].sort()).toEqual([
+      'index.js',
+      'package.json',
+      'routes',
+      'routes/users.js',
+    ]);
+    const routes = tree.byId.get(tree.idByPath.get('routes') ?? '');
+    expect(routes?.kind).toBe('folder');
+    expect(readFileContent(doc, tree.idByPath.get('routes/users.js') ?? '')).toContain('Router');
+    doc.destroy();
+  });
+
+  it.each(TEMPLATE_IDS)(
+    '%s opens its entry path and ships a package.json with a dev script',
+    (id) => {
+      const doc = new Y.Doc();
+      const { entryFileId, fileIds } = initProjectDoc(doc, { name: 'T', template: id });
+      const tree = resolveDocTree(doc);
+
+      expect(tree.idByPath.get(TEMPLATES[id].entryPath)).toBe(entryFileId);
+      expect(fileIds).toHaveLength(TEMPLATES[id].files.length);
+      const pkg: unknown = JSON.parse(
+        readFileContent(doc, tree.idByPath.get('package.json') ?? '') ?? '',
+      );
+      expect(pkg).toMatchObject({ scripts: { dev: 'node --watch index.js' } });
+      doc.destroy();
+    },
+  );
 
   it('defaults createdBy to system and createdAt to now', () => {
     vi.useFakeTimers();
@@ -78,7 +113,7 @@ describe('initProjectDoc', () => {
     const second = () => initProjectDoc(doc, { name: 'T', template: 'blank-node' });
     expect(second).toThrow(OpError);
     expect(second).toThrow(/already/i);
-    expect(readNodes(doc)).toHaveLength(1);
+    expect(readNodes(doc)).toHaveLength(TEMPLATES['blank-node'].files.length);
     doc.destroy();
   });
 

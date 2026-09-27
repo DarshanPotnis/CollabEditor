@@ -1,42 +1,28 @@
 /**
- * Starter projects as plain file maps. The server builds a project's initial
- * Y.Doc from one of these; nothing here knows about Yjs.
- *
- * Phase 1 is a single-file experience, so every template has exactly one file.
- * Phase 2 adds package.json and folders to the same structure.
+ * Starter projects. The server builds a project's initial Y.Doc from one of
+ * these (ops.ts); Phase 3 runs them, which is why each has a package.json
+ * whose dev script uses `node --watch`.
  */
-import { expressApiIndexJs } from './express-api.js';
-import { blankNodeIndexJs } from './blank-node.js';
+import { blankNodeFiles } from './blank-node.js';
+import { expressApiFiles } from './express-api.js';
+import { TEMPLATE_IDS, type Template, type TemplateId } from './types.js';
 
-export const TEMPLATE_IDS = ['express-api', 'blank-node'] as const;
-export type TemplateId = (typeof TEMPLATE_IDS)[number];
-
-export type TemplateFile = {
-  /** File name at the project root. Phase 2 adds nested paths. */
-  name: string;
-  content: string;
-};
-
-export type Template = {
-  id: TemplateId;
-  label: string;
-  description: string;
-  /** Non-empty; the first file is the one a new visitor opens. */
-  files: readonly [TemplateFile, ...TemplateFile[]];
-};
+export { TEMPLATE_IDS, type Template, type TemplateFile, type TemplateId } from './types.js';
 
 export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   'express-api': {
     id: 'express-api',
     label: 'Express API',
     description: 'A small REST API you can run in your browser later.',
-    files: [{ name: 'index.js', content: expressApiIndexJs }],
+    files: expressApiFiles,
+    entryPath: 'index.js',
   },
   'blank-node': {
     id: 'blank-node',
     label: 'Blank Node',
-    description: 'An empty Node.js file to start from.',
-    files: [{ name: 'index.js', content: blankNodeIndexJs }],
+    description: 'An empty Node.js project to start from.',
+    files: blankNodeFiles,
+    entryPath: 'index.js',
   },
 };
 

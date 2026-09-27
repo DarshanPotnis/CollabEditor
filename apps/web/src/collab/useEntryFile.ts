@@ -1,21 +1,13 @@
 /**
- * Phase 1 shows one file, so this finds it: the earliest live file node, by
- * (createdAt, id) so every client picks the same one. Phase 2 replaces this
- * with the file tree and tabs.
+ * The one file the Phase 1 editor shows, until tabs replace it: the
+ * template's entry file (see entry-file.ts), tracked as the tree changes.
  */
 import { useEffect, useState } from 'react';
-import { nodesMap, readNodes, type NodeFields } from '@collabcode/shared';
+import { metaMap, nodesMap, readMeta, resolveDocTree, type ResolvedNode } from '@collabcode/shared';
+import { entryFileId } from './entry-file.js';
 import type { ProjectSession } from './useProject.js';
 
-export type EntryFile = Pick<NodeFields, 'id' | 'name'>;
-
-function earliestFile(nodes: NodeFields[]): EntryFile | null {
-  const files = nodes
-    .filter((node) => node.kind === 'file')
-    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  const first = files[0];
-  return first ? { id: first.id, name: first.name } : null;
-}
+export type EntryFile = Pick<ResolvedNode, 'id' | 'name'>;
 
 export function useEntryFile(session: ProjectSession | null): EntryFile | null {
   const [file, setFile] = useState<EntryFile | null>(null);
@@ -27,9 +19,13 @@ export function useEntryFile(session: ProjectSession | null): EntryFile | null {
     }
 
     const nodes = nodesMap(session.doc);
+    const meta = metaMap(session.doc);
     const update = (): void => {
       setFile((current) => {
-        const next = earliestFile(readNodes(session.doc));
+        const tree = resolveDocTree(session.doc);
+        const id = entryFileId(tree, readMeta(session.doc));
+        const node = id === null ? undefined : tree.byId.get(id);
+        const next = node ? { id: node.id, name: node.displayName } : null;
         // Keep the same object when nothing changed, so effects downstream
         // (the Monaco binding in particular) do not restart on every keystroke.
         if (current && next && current.id === next.id && current.name === next.name) return current;
@@ -39,8 +35,10 @@ export function useEntryFile(session: ProjectSession | null): EntryFile | null {
 
     update();
     nodes.observeDeep(update);
+    meta.observe(update);
     return () => {
       nodes.unobserveDeep(update);
+      meta.unobserve(update);
     };
   }, [session]);
 

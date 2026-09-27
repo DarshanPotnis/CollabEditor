@@ -13,11 +13,33 @@ import {
   type NodeFieldValue,
 } from './schema.js';
 import { initProjectDoc } from './ops.js';
+import { insertNode } from './node-writer.js';
 import { MAX_NAME_LENGTH } from './limits.js';
 
 function newProject(): Y.Doc {
   const doc = new Y.Doc();
   initProjectDoc(doc, { name: 'Demo', template: 'blank-node', now: 1000 });
+  return doc;
+}
+
+/** A document holding exactly one file, independent of what templates contain. */
+function oneFile(): Y.Doc {
+  const doc = new Y.Doc();
+  insertNode(
+    doc,
+    {
+      id: 'file-1',
+      kind: 'file',
+      name: 'index.js',
+      parentId: null,
+      createdAt: 1000,
+      createdBy: 'system',
+      deletedAt: null,
+      deletedBy: null,
+      deletedByName: null,
+    },
+    'Hello from CollabCode',
+  );
   return doc;
 }
 
@@ -68,13 +90,13 @@ describe('readMeta', () => {
 
 describe('readNode and readNodes', () => {
   it('returns null for an unknown id', () => {
-    const doc = newProject();
+    const doc = oneFile();
     expect(readNode(doc, 'nope')).toBeNull();
     doc.destroy();
   });
 
   it('ignores a node another client wrote with a malformed shape', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const before = readNodes(doc).length;
     const junk = new Y.Map<NodeFieldValue>([
       ['id', 'junk'],
@@ -88,7 +110,7 @@ describe('readNode and readNodes', () => {
   });
 
   it('leaves tombstoned nodes out of readNodes but keeps their content', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     nodesMap(doc).get(file!.id)?.set('deletedAt', 2000);
 
@@ -101,7 +123,7 @@ describe('readNode and readNodes', () => {
 
 describe('readAllNodes', () => {
   it('includes tombstoned nodes', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     nodesMap(doc).get(file!.id)?.set('deletedAt', 2000);
 
@@ -110,7 +132,7 @@ describe('readAllNodes', () => {
   });
 
   it('reads a node written before deletedBy existed as deletedBy: null', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     nodesMap(doc).get(file!.id)?.delete('deletedBy');
 
@@ -119,7 +141,7 @@ describe('readAllNodes', () => {
   });
 
   it('sanitises deletedByName, and reads a hostile one as null instead of hiding the node', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     const node = nodesMap(doc).get(file!.id);
 
@@ -136,7 +158,7 @@ describe('readAllNodes', () => {
   });
 
   it('skips a node whose id field disagrees with its key', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     nodesMap(doc).get(file!.id)?.set('id', 'impostor');
 
@@ -147,13 +169,13 @@ describe('readAllNodes', () => {
 
 describe('readFileText', () => {
   it('returns undefined when there is no content for an id', () => {
-    const doc = newProject();
+    const doc = oneFile();
     expect(readFileText(doc, 'nope')).toBeUndefined();
     doc.destroy();
   });
 
   it('returns the live Y.Text, so edits are visible through it', () => {
-    const doc = newProject();
+    const doc = oneFile();
     const [file] = readNodes(doc);
     const text = readFileText(doc, file!.id);
     text!.insert(0, 'x');

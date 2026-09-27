@@ -13,18 +13,11 @@
  * createFolder, rename, move, softDelete, restore) live in tree-ops.ts.
  */
 import * as Y from 'yjs';
-import {
-  SCHEMA_VERSION,
-  contentsMap,
-  isInitialised,
-  metaMap,
-  nodeNameSchema,
-  nodesMap,
-  projectMetaSchema,
-  type NodeFieldValue,
-} from './schema.js';
+import { SCHEMA_VERSION, isInitialised, metaMap, projectMetaSchema } from './schema.js';
 import { createNodeId } from './ids.js';
+import { insertNode } from './node-writer.js';
 import { getTemplate, type TemplateId } from './templates/index.js';
+import { layoutTemplate } from './templates/layout.js';
 import { OPS_ORIGIN, OpError } from './op-error.js';
 
 export { OPS_ORIGIN, OpError, type OpErrorCode } from './op-error.js';
@@ -39,7 +32,7 @@ export type InitProjectDocInput = {
 };
 
 export type InitProjectDocResult = {
-  /** The file a new visitor opens. */
+  /** The file a new visitor opens: the template's entry path. */
   entryFileId: string;
   fileIds: string[];
 };
@@ -67,14 +60,12 @@ export function initProjectDoc(doc: Y.Doc, input: InitProjectDocInput): InitProj
     throw new OpError('invalid-meta', meta.error.issues.map((issue) => issue.message).join('; '));
   }
 
-  for (const file of template.files) {
-    const parsedName = nodeNameSchema.safeParse(file.name);
-    if (!parsedName.success) {
-      throw new OpError('invalid-name', `template file name is invalid: ${file.name}`);
-    }
+  const entries = layoutTemplate(template.files).map((entry) => ({ ...entry, id: createNodeId() }));
+  const idByPath = new Map(entries.map((entry) => [entry.path, entry.id]));
+  const entryFileId = idByPath.get(template.entryPath);
+  if (entryFileId === undefined) {
+    throw new OpError('invalid-meta', `template ${template.id} has no ${template.entryPath}`);
   }
-
-  const fileIds: string[] = [];
 
   doc.transact(() => {
     const metaY = metaMap(doc);
@@ -83,32 +74,27 @@ export function initProjectDoc(doc: Y.Doc, input: InitProjectDocInput): InitProj
     metaY.set('template', meta.data.template);
     metaY.set('createdAt', meta.data.createdAt);
 
-    const nodes = nodesMap(doc);
-    const contents = contentsMap(doc);
-
-    for (const file of template.files) {
-      const id = createNodeId();
-      const fields: Array<[string, NodeFieldValue]> = [
-        ['id', id],
-        ['kind', 'file'],
-        ['name', file.name],
-        ['parentId', null],
-        ['createdAt', now],
-        ['createdBy', createdBy],
-        ['deletedAt', null],
-        ['deletedBy', null],
-        ['deletedByName', null],
-      ];
-      nodes.set(id, new Y.Map<NodeFieldValue>(fields));
-      contents.set(id, new Y.Text(file.content));
-      fileIds.push(id);
+    for (const entry of entries) {
+      const parentId = entry.parentPath === null ? null : (idByPath.get(entry.parentPath) ?? null);
+      insertNode(
+        doc,
+        {
+          id: entry.id,
+          kind: entry.kind,
+          name: entry.name,
+          parentId,
+          createdAt: now,
+          createdBy,
+          deletedAt: null,
+          deletedBy: null,
+          deletedByName: null,
+        },
+        entry.content,
+      );
     }
   }, OPS_ORIGIN);
 
-  const entryFileId = fileIds[0];
-  if (entryFileId === undefined) {
-    throw new OpError('invalid-meta', `template ${template.id} has no files`);
-  }
+  const fileIds = entries.filter((entry) => entry.kind === 'file').map((entry) => entry.id);
 
   return { entryFileId, fileIds };
 }

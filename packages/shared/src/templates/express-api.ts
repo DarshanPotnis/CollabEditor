@@ -1,20 +1,52 @@
-export const expressApiIndexJs = `// A small Express API.
+import type { TemplateFile } from './types.js';
+
+const packageJson = `{
+  "name": "express-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
+`;
+
+const indexJs = `// A small Express API.
 // Phase 3 runs this inside your browser and lets you call it from the console.
 import express from 'express';
+import { usersRouter } from './routes/users.js';
 
 const app = express();
 app.use(express.json());
+app.use('/users', usersRouter);
+
+app.get('/', (req, res) => {
+  res.json({ ok: true, routes: ['GET /users', 'POST /users'] });
+});
+
+const port = Number(process.env.PORT ?? 3000);
+app.listen(port, () => {
+  console.log(\`API listening on http://localhost:\${port}\`);
+});
+`;
+
+const usersJs = `import { Router } from 'express';
 
 const users = [
   { id: 1, name: 'Ada Lovelace', role: 'engineer' },
   { id: 2, name: 'Grace Hopper', role: 'engineer' },
 ];
 
-app.get('/users', (req, res) => {
+export const usersRouter = Router();
+
+usersRouter.get('/', (req, res) => {
   res.json(users);
 });
 
-app.post('/users', (req, res) => {
+usersRouter.post('/', (req, res) => {
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (name === '') {
     res.status(400).json({ error: 'name is required' });
@@ -24,9 +56,10 @@ app.post('/users', (req, res) => {
   users.push(user);
   res.status(201).json(user);
 });
-
-const port = Number(process.env.PORT ?? 3000);
-app.listen(port, () => {
-  console.log(\`API listening on http://localhost:\${port}\`);
-});
 `;
+
+export const expressApiFiles: readonly [TemplateFile, ...TemplateFile[]] = [
+  { path: 'index.js', content: indexJs },
+  { path: 'package.json', content: packageJson },
+  { path: 'routes/users.js', content: usersJs },
+];
