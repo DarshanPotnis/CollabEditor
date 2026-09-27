@@ -6,7 +6,8 @@
  */
 import type * as Y from 'yjs';
 import { z } from 'zod';
-import { MAX_NAME_LENGTH, MAX_PROJECT_NAME_LENGTH } from './limits.js';
+import { MAX_NAME_LENGTH, MAX_PROJECT_NAME_LENGTH, MAX_USER_NAME_LENGTH } from './limits.js';
+import { sanitizeUserName } from './presence.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -50,6 +51,17 @@ export const nodeFieldsSchema = z.object({
   // Added in Phase 2 without a schema bump: documents written before it have
   // no such key, which reads as "nobody recorded".
   deletedBy: z.string().min(1).nullable().default(null),
+  // The deleter's display name at the time, so "Recently deleted" can say who
+  // after they have left. Peer-written text, so it is sanitised like an
+  // awareness name, and a bad value reads as null rather than hiding the node.
+  deletedByName: z
+    .string()
+    .max(4096)
+    .transform(sanitizeUserName)
+    .pipe(z.string().min(1).max(MAX_USER_NAME_LENGTH))
+    .nullable()
+    .default(null)
+    .catch(null),
 });
 export type NodeFields = z.infer<typeof nodeFieldsSchema>;
 

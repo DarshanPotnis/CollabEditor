@@ -14,8 +14,8 @@ import {
   softDelete,
 } from './tree-ops.js';
 
-const alice = { userId: 'alice', now: 1_000 };
-const bob = { userId: 'bob', now: 2_000 };
+const alice = { userId: 'alice', userName: 'Alice', now: 1_000 };
+const bob = { userId: 'bob', userName: 'Bob', now: 2_000 };
 
 function paths(doc: Y.Doc): string[] {
   return [...resolveDocTree(doc).byId.values()].map((node) => node.path).sort();
@@ -157,6 +157,7 @@ describe('node limits', () => {
           createdBy: 'seed',
           deletedAt: deleted ? 5 : null,
           deletedBy: null,
+          deletedByName: null,
         });
       }
     });
@@ -259,7 +260,11 @@ describe('softDelete', () => {
   it('tombstones the node, records who, and keeps content', () => {
     const { doc, index } = project();
     softDelete(doc, index, bob);
-    expect(readNode(doc, index)).toMatchObject({ deletedAt: 2_000, deletedBy: 'bob' });
+    expect(readNode(doc, index)).toMatchObject({
+      deletedAt: 2_000,
+      deletedBy: 'bob',
+      deletedByName: 'Bob',
+    });
     expect(readFileContent(doc, index)).toBe('hi');
     expect(resolveDocTree(doc).hidden.get(index)?.deletedBy).toBe('bob');
   });
@@ -283,7 +288,11 @@ describe('restore', () => {
     const { doc, index } = project();
     softDelete(doc, index, bob);
     expect(restore(doc, index)).toEqual({ restoredIds: [index], renamed: [] });
-    expect(readNode(doc, index)).toMatchObject({ deletedAt: null, deletedBy: null });
+    expect(readNode(doc, index)).toMatchObject({
+      deletedAt: null,
+      deletedBy: null,
+      deletedByName: null,
+    });
   });
 
   it('restores a file hidden by its deleted folder by restoring the folder', () => {

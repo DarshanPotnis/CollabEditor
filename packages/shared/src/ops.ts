@@ -97,6 +97,7 @@ export function initProjectDoc(doc: Y.Doc, input: InitProjectDocInput): InitProj
         ['createdBy', createdBy],
         ['deletedAt', null],
         ['deletedBy', null],
+        ['deletedByName', null],
       ];
       nodes.set(id, new Y.Map<NodeFieldValue>(fields));
       contents.set(id, new Y.Text(file.content));

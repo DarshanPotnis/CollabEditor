@@ -118,6 +118,23 @@ describe('readAllNodes', () => {
     doc.destroy();
   });
 
+  it('sanitises deletedByName, and reads a hostile one as null instead of hiding the node', () => {
+    const doc = newProject();
+    const [file] = readNodes(doc);
+    const node = nodesMap(doc).get(file!.id);
+
+    node?.set('deletedByName', 'Mallory\u202e\n  Evil');
+    expect(readAllNodes(doc)[0]?.deletedByName).toBe('Mallory Evil');
+
+    node?.set('deletedByName', '\u200b\u200b');
+    expect(readAllNodes(doc)[0]?.deletedByName).toBeNull();
+
+    node?.set('deletedByName', 42);
+    expect(readAllNodes(doc)).toHaveLength(1);
+    expect(readAllNodes(doc)[0]?.deletedByName).toBeNull();
+    doc.destroy();
+  });
+
   it('skips a node whose id field disagrees with its key', () => {
     const doc = newProject();
     const [file] = readNodes(doc);

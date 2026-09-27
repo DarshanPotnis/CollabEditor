@@ -50,10 +50,13 @@ export type HiddenNode = {
   id: string;
   kind: NodeKind;
   name: string;
+  /** The parent after resolution (steps 1 and 2), which may itself be hidden. */
+  parentId: string | null;
   /** The nearest node, itself or an ancestor, that has a tombstone. */
   causeId: string;
   deletedAt: number;
   deletedBy: string | null;
+  deletedByName: string | null;
 };
 
 export type TreeConflictKind = 'duplicate-name' | 'cycle' | 'missing-parent';
@@ -226,9 +229,11 @@ export function resolveTree(nodes: readonly NodeFields[]): ResolvedTree {
         id: node.id,
         kind: node.kind,
         name: node.name,
+        parentId: parents.get(node.id) ?? null,
         causeId: cause.id,
         deletedAt: cause.deletedAt,
         deletedBy: cause.deletedBy,
+        deletedByName: cause.deletedByName,
       });
       continue;
     }

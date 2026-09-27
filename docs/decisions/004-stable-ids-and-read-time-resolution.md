@@ -72,8 +72,21 @@ system is. Only the write-time guard is case-insensitive.
   (Monaco models) has to follow the resolved path, not the stored name.
 - `createdAt` comes from client clocks. A skewed clock changes _which_ duplicate gets the suffix,
   never whether clients agree.
-- Tombstones and their content are kept forever so deletes can be undone. The document only
-  grows. A total-node cap bounds it. Purging old tombstones is future work.
+- Tombstones and their content are kept so deletes can be undone, which grows the document. A
+  cap on total nodes, deleted ones included, bounds it, and **Recently deleted** is the way back
+  under it: each item can be restored or deleted forever, and the list can be emptied.
+- **Purge is the one hard delete.** `purgeDeleted` removes the node maps and content of items
+  this client currently sees as deleted, and nothing else. A file someone creates inside a
+  purged folder at the same moment is not in the purging client's view, so it survives and the
+  missing-parent rule shows it at the root.
+- **Restore versus purge is decided by Yjs, and the purge wins.** Restore writes fields inside the
+  node's `Y.Map`, purge deletes that `Y.Map` from `nodes`, and Yjs discards changes made to a
+  deleted type. Both clients converge on the item being gone; a file created inside it by the
+  restorer survives at the root. We accept this because purge sits behind a confirmation that says
+  it cannot be undone for anyone, and the alternative (tombstoning tombstones) never lets the
+  document shrink. `purge-ops.test.ts` pins the outcome.
+- The deleter's name is stored with the tombstone (`deletedByName`) because Recently deleted
+  mostly shows deletions by people who have since left, whom awareness no longer knows.
 - **Scale.** Every file lives in one Y.Doc, which is fine up to a few hundred small files. The
   known next step is one Yjs subdocument per file's content, loaded when opened, with the
   `nodes` map staying in the root document. Not built.

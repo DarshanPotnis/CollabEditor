@@ -15,6 +15,7 @@ export function insertNode(doc: Y.Doc, fields: NodeFields, content?: string): vo
     ['createdBy', fields.createdBy],
     ['deletedAt', fields.deletedAt],
     ['deletedBy', fields.deletedBy],
+    ['deletedByName', fields.deletedByName],
   ];
   nodesMap(doc).set(fields.id, new Y.Map<NodeFieldValue>(entries));
   if (fields.kind === 'file') contentsMap(doc).set(fields.id, new Y.Text(content ?? ''));

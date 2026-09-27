@@ -25,6 +25,8 @@ import { findNameClash, freeName, moveProblem } from './tree-rules.js';
 export type TreeOpContext = {
   /** Awareness user id of whoever is acting. */
   userId: string;
+  /** Their display name, recorded on deletes so it outlives their session. */
+  userName: string;
   /** Injectable clock so tests are deterministic. */
   now?: number;
 };
@@ -107,7 +109,7 @@ function requireRoomForOneMore(doc: Y.Doc, tree: ResolvedTree): void {
   if (nodesMap(doc).size >= MAX_TOTAL_NODES) {
     throw new OpError(
       'too-many-nodes-total',
-      `This project has reached its limit of ${MAX_TOTAL_NODES.toLocaleString('en')} files and folders, counting deleted ones that are kept so they can be restored.`,
+      `This project has reached its limit of ${MAX_TOTAL_NODES.toLocaleString('en')} files and folders, counting deleted ones that are kept so they can be restored. Permanently delete some in Recently deleted to make room.`,
     );
   }
 }
@@ -139,6 +141,7 @@ function createNode(
         createdBy: context.userId,
         deletedAt: null,
         deletedBy: null,
+        deletedByName: null,
       },
       content,
     );
@@ -208,6 +211,7 @@ export function softDelete(doc: Y.Doc, nodeId: string, context: TreeOpContext): 
     const node = nodesMap(doc).get(nodeId);
     node?.set('deletedAt', context.now ?? Date.now());
     node?.set('deletedBy', context.userId);
+    node?.set('deletedByName', context.userName);
   }, OPS_ORIGIN);
 }
 
@@ -247,7 +251,13 @@ export function restore(doc: Y.Doc, nodeId: string): RestoreResult {
   const simulated = resolveTree(
     nodes.map((node) =>
       restoring.has(node.id)
-        ? { ...node, deletedAt: null, deletedBy: null, createdAt: Number.MAX_SAFE_INTEGER }
+        ? {
+            ...node,
+            deletedAt: null,
+            deletedBy: null,
+            deletedByName: null,
+            createdAt: Number.MAX_SAFE_INTEGER,
+          }
         : node,
     ),
   );
@@ -273,6 +283,7 @@ export function restore(doc: Y.Doc, nodeId: string): RestoreResult {
     for (const id of chain) {
       map.get(id)?.set('deletedAt', null);
       map.get(id)?.set('deletedBy', null);
+      map.get(id)?.set('deletedByName', null);
     }
     for (const change of renamed) map.get(change.id)?.set('name', change.to);
   }, OPS_ORIGIN);

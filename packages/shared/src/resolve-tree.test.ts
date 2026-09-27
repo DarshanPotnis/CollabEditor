@@ -11,6 +11,7 @@ function node(overrides: Partial<NodeFields> & Pick<NodeFields, 'id' | 'name'>):
     createdBy: 'user',
     deletedAt: null,
     deletedBy: null,
+    deletedByName: null,
     ...overrides,
   };
 }
