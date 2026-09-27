@@ -5,15 +5,24 @@
  * The note under the buttons says what that means: the code includes
  * collaborators' edits, and their changes restart the server.
  */
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Play, RotateCw, Square } from 'lucide-react';
 import type { ProjectSession } from '../../collab/useProject.js';
 import { canRun } from './run-state.js';
 import { runStatus, type RunStatus } from './run-status.js';
 import { runtimeSupport } from './runtime-support.js';
 import { useRuntime } from './useRuntime.js';
+import { ShellTab } from './ShellTab.js';
+import { Tabs, panelId, tabId, type TabDefinition } from '../ui/Tabs.js';
 
 const TerminalView = lazy(() => import('./TerminalView.js'));
+
+type RunTab = 'output' | 'shell';
+
+const RUN_TABS: readonly TabDefinition<RunTab>[] = [
+  { id: 'output', label: 'Output' },
+  { id: 'shell', label: 'Shell' },
+];
 
 const TONE_CLASS: Record<RunStatus['tone'], string> = {
   idle: 'text-zinc-400',
@@ -58,7 +67,9 @@ export type RunPanelProps = {
 };
 
 export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactElement {
-  const { state, output, dependenciesChanged, run, stop } = useRuntime(session, onSyncError);
+  const { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell } =
+    useRuntime(session, onSyncError);
+  const [tab, setTab] = useState<RunTab>('output');
   const support = useMemo(
     () =>
       runtimeSupport({
@@ -119,14 +130,24 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
         </p>
       </div>
 
-      <div className="min-h-0 flex-1">
-        {hasRun ? (
-          <Suspense fallback={<p className="p-3 text-xs text-zinc-500">Loading the terminal…</p>}>
-            <TerminalView label="Run output" source={output} />
-          </Suspense>
-        ) : (
-          <p className="p-3 text-xs text-zinc-500">Output appears here when you run the project.</p>
-        )}
+      <Tabs label="Run views" tabs={RUN_TABS} selected={tab} onSelect={setTab} idPrefix="run" />
+      <div
+        role="tabpanel"
+        id={panelId('run', tab)}
+        aria-labelledby={tabId('run', tab)}
+        className="min-h-0 flex-1"
+      >
+        {tab === 'output' &&
+          (hasRun ? (
+            <Suspense fallback={<p className="p-3 text-xs text-zinc-500">Loading the terminal…</p>}>
+              <TerminalView label="Run output" source={output} />
+            </Suspense>
+          ) : (
+            <p className="p-3 text-xs text-zinc-500">
+              Output appears here when you run the project.
+            </p>
+          ))}
+        {tab === 'shell' && <ShellTab shell={shell} canOpen={canOpenShell} onOpen={openShell} />}
       </div>
     </section>
   );

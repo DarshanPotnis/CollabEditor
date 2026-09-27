@@ -41,6 +41,8 @@ export type Runner = {
   stop: () => void;
   dispose: () => void;
   state: () => RunState;
+  /** The booted container, once a run has booted it. */
+  container: () => Container | null;
 };
 
 export const AUTO_RESTART_DELAY_MS = 500;
@@ -229,5 +231,6 @@ export function createRunner(options: RunnerOptions): Runner {
       if (graceTimer !== null) clearTimeout(graceTimer);
     },
     state: () => state,
+    container: () => container,
   };
 }

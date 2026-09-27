@@ -8,6 +8,7 @@ import type { ProjectSession } from '../../collab/useProject.js';
 import { createOutputBuffer, type OutputBuffer } from './output-buffer.js';
 import { createRunner, type Runner } from './process-runner.js';
 import { IDLE, type RunState } from './run-state.js';
+import { startShell, type ShellSession } from './shell-session.js';
 import { bootContainer, teardownContainer } from './webcontainer.js';
 
 export type RuntimeControls = {
@@ -16,7 +17,16 @@ export type RuntimeControls = {
   dependenciesChanged: boolean;
   run: () => void;
   stop: () => void;
+  /** Whether a container exists for a shell to run in. */
+  canOpenShell: boolean;
+  shell: ShellSession | null;
+  openShell: () => void;
 };
+
+function reportInternalError(error: unknown): void {
+  // eslint-disable-next-line no-console -- there is no logging service; the browser console is all we have
+  console.error('CollabCode runtime', error);
+}
 
 export function useRuntime(
   session: ProjectSession | null,
@@ -26,6 +36,8 @@ export function useRuntime(
   const [dependenciesChanged, setDependenciesChanged] = useState(false);
   const output = useMemo(() => createOutputBuffer(), []);
   const runner = useRef<Runner | null>(null);
+  const [shell, setShell] = useState<ShellSession | null>(null);
+  const shellRef = useRef<ShellSession | null>(null);
   const reportSyncError = useRef(onSyncError);
   useEffect(() => {
     reportSyncError.current = onSyncError;
@@ -47,13 +59,13 @@ export function useRuntime(
             : `Could not update ${path} in the running project: ${detail}`,
         );
       },
-      onInternalError: (error) => {
-        // eslint-disable-next-line no-console -- there is no logging service; the browser console is all we have
-        console.error('CollabCode runtime', error);
-      },
+      onInternalError: reportInternalError,
     });
     runner.current = created;
     return () => {
+      shellRef.current?.dispose();
+      shellRef.current = null;
+      setShell(null);
       created.dispose();
       runner.current = null;
       teardownContainer();
@@ -65,5 +77,23 @@ export function useRuntime(
   const run = useCallback(() => void runner.current?.run(), []);
   const stop = useCallback(() => runner.current?.stop(), []);
 
-  return { state, output, dependenciesChanged, run, stop };
+  const openShell = useCallback(() => {
+    const container = runner.current?.container();
+    if (!container || shellRef.current) return;
+    startShell(container, reportInternalError).then((started) => {
+      shellRef.current = started;
+      setShell(started);
+      void started.exited.then(() => {
+        if (shellRef.current !== started) return;
+        shellRef.current = null;
+        setShell(null);
+      });
+    }, reportInternalError);
+  }, []);
+
+  // A container exists once a run has got past booting.
+  const canOpenShell =
+    state.phase !== 'idle' && state.phase !== 'booting' && Boolean(runner.current?.container());
+
+  return { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell };
 }
