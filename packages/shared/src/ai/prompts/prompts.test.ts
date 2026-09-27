@@ -136,6 +136,19 @@ describe('prompt text', () => {
     expect(content).toContain('Code from routes/users.js around line 14');
     expect(content).toContain('14| x();');
   });
+
+  it('sends a file without a crash line when the line cannot be trusted', () => {
+    const content = userMessage(
+      PROMPTS['explain-error'].prepare({
+        outcome: 'stopped-listening',
+        terminalOutput: 'TypeError: x\n    at eval (file:///home/project/index.js:16:23)',
+        excerpt: { path: 'index.js', language: 'javascript', startLine: 1, code: 'const a = 1;' },
+      }),
+    );
+    expect(content).toContain('Code from index.js:');
+    expect(content).not.toContain('around line');
+    expect(content).toContain('1| const a = 1;');
+  });
 });
 
 describe('extractReplacement', () => {

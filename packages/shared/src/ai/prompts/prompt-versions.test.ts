@@ -46,7 +46,7 @@ const SAMPLE_INPUTS: Record<PromptId, unknown> = {
 const EXPECTED: Record<PromptId, { version: number; fingerprint: string }> = {
   'explain-selection': { version: 1, fingerprint: '3dda3dea2c866373' },
   'edit-selection': { version: 1, fingerprint: '12d771944879e728' },
-  'explain-error': { version: 1, fingerprint: '3a716f4ee020265c' },
+  'explain-error': { version: 2, fingerprint: '4ed6c3d63748c820' },
 };
 
 function fingerprint(id: PromptId): string {
