@@ -173,7 +173,7 @@ describe('rule: cycles', () => {
     ]);
 
     expect(paths(tree)).toEqual(['X', 'X/Y', 'X/Y/f.js']);
-    expect(tree.conflicts).toEqual([{ nodeId: 'x', kind: 'cycle' }]);
+    expect(tree.conflicts).toEqual([{ nodeId: 'x', kind: 'cycle', others: ['y'] }]);
   });
 
   it('breaks ties on createdAt by id', () => {
@@ -187,7 +187,7 @@ describe('rule: cycles', () => {
   it('breaks a self-parented folder', () => {
     const tree = resolveTree([folder({ id: 'x', name: 'X', parentId: 'x' })]);
     expect(paths(tree)).toEqual(['X']);
-    expect(tree.conflicts).toEqual([{ nodeId: 'x', kind: 'cycle' }]);
+    expect(tree.conflicts).toEqual([{ nodeId: 'x', kind: 'cycle', others: [] }]);
   });
 
   it('breaks a three-folder cycle and leaves a tail hanging off it intact', () => {
@@ -198,6 +198,7 @@ describe('rule: cycles', () => {
       folder({ id: 'tail', name: 'tail', parentId: 'a', createdAt: 50 }),
     ]);
     expect(paths(tree)).toEqual(['B', 'B/C', 'B/C/A', 'B/C/A/tail']);
+    expect(tree.conflicts).toEqual([{ nodeId: 'b', kind: 'cycle', others: ['c', 'a'] }]);
   });
 
   it('breaks two independent cycles independently', () => {

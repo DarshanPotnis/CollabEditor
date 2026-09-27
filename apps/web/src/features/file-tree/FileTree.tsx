@@ -14,9 +14,11 @@ import { ContextMenu, type ContextMenuItem } from '../ui/ContextMenu.js';
 import type { Point } from '../ui/menu-position.js';
 import { InlineNameInput } from './InlineNameInput.js';
 import { PresenceDots } from './PresenceDots.js';
+import { dropParent } from './drop-target.js';
 import { treeKeyAction } from './tree-keyboard.js';
 import type { ExpandedFolders } from './useExpandedFolders.js';
 import type { TreeActions } from './useTreeActions.js';
+import { useTreeDrag } from './useTreeDrag.js';
 import { ancestorIds, draftInsertIndex, visibleRows, type TreeRow } from './visible-rows.js';
 
 export type TreeEditing =
@@ -67,9 +69,17 @@ export function FileTree({
   const rowElements = useRef(new Map<string, HTMLDivElement>());
   const pendingFocus = useRef<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [cutId, setCutId] = useState<string | null>(null);
 
   // Reveal the active file: open every folder above it.
   const { expandAll, setExpanded } = folders;
+  const drag = useTreeDrag(
+    tree,
+    (id, parentId) => {
+      if (actions.move(id, parentId) && parentId !== null) setExpanded(parentId, true);
+    },
+    (id) => setExpanded(id, true),
+  );
   useEffect(() => {
     if (activeFileId !== null) expandAll(ancestorIds(tree, activeFileId));
   }, [activeFileId, tree, expandAll]);
@@ -116,15 +126,36 @@ export function FileTree({
     if (node) actions.remove(id, node.displayName, node.kind);
   };
 
+  /** Move the cut node next to or into `overId` (null is the root). */
+  const paste = (overId: string | null): void => {
+    if (cutId === null) return;
+    const parentId = dropParent(tree, overId);
+    if (actions.move(cutId, parentId)) {
+      if (parentId !== null) setExpanded(parentId, true);
+      setCutId(null);
+    }
+  };
+
   const menuItems = (targetId: string | null): ContextMenuItem[] => {
     const node = targetId === null ? undefined : tree.byId.get(targetId);
     const create: ContextMenuItem[] = [
       { label: 'New file', onSelect: () => startCreate('file', node?.id ?? null) },
       { label: 'New folder', onSelect: () => startCreate('folder', node?.id ?? null) },
     ];
-    if (!node) return create;
+    const pasteItem: ContextMenuItem[] =
+      cutId !== null && tree.byId.has(cutId)
+        ? [
+            {
+              label: `Paste “${tree.byId.get(cutId)?.displayName ?? ''}” here`,
+              onSelect: () => paste(node?.id ?? null),
+            },
+          ]
+        : [];
+    if (!node) return [...create, ...pasteItem];
     const edit: ContextMenuItem[] = [
       { label: 'Rename', onSelect: () => onEdit({ mode: 'rename', id: node.id }) },
+      { label: 'Cut', onSelect: () => setCutId(node.id) },
+      ...pasteItem,
       { label: 'Delete', onSelect: () => remove(node.id), danger: true },
     ];
     return node.kind === 'folder' ? [...create, ...edit] : edit;
@@ -153,6 +184,16 @@ export function FileTree({
       case 'delete':
         remove(action.id);
         break;
+      case 'cut':
+        setCutId(action.id);
+        break;
+      case 'paste':
+        paste(action.overId);
+        break;
+      case 'cancel':
+        if (cutId === null) return;
+        setCutId(null);
+        break;
       case 'menu': {
         const rect = rowElements.current.get(action.id)?.getBoundingClientRect();
         if (rect) setMenu({ anchor: { x: rect.left + 16, y: rect.bottom }, targetId: action.id });
@@ -172,6 +213,7 @@ export function FileTree({
     const active = row.id === activeFileId;
     const renaming = editing?.mode === 'rename' && editing.id === row.id;
     const node = tree.byId.get(row.id);
+    const dropHere = drag.dropParentId === row.id;
 
     return (
       <div
@@ -198,10 +240,15 @@ export function FileTree({
           onSelect(row.id);
           setMenu({ anchor: { x: event.clientX, y: event.clientY }, targetId: row.id });
         }}
+        {...drag.rowProps(row, !renaming)}
         style={indent(row.level)}
         className={`flex cursor-pointer items-center gap-1.5 py-1 pr-2 text-sm outline-none select-none focus-visible:ring-1 focus-visible:ring-sky-500 focus-visible:ring-inset ${
-          active ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-300 hover:bg-zinc-900'
-        }`}
+          dropHere
+            ? 'bg-sky-950 text-zinc-50 ring-1 ring-sky-600 ring-inset'
+            : active
+              ? 'bg-zinc-800 text-zinc-50'
+              : 'text-zinc-300 hover:bg-zinc-900'
+        } ${row.id === cutId ? 'opacity-50' : ''}`}
       >
         <ChevronRight
           aria-hidden
@@ -281,7 +328,10 @@ export function FileTree({
           event.preventDefault();
           setMenu({ anchor: { x: event.clientX, y: event.clientY }, targetId: null });
         }}
-        className="min-h-0 flex-1 overflow-y-auto py-1"
+        {...drag.rootProps}
+        className={`min-h-0 flex-1 overflow-y-auto py-1 ${
+          drag.dropParentId === null ? 'bg-sky-950/40' : ''
+        }`}
       >
         {rendered}
         {rows.length === 0 && !editing && (

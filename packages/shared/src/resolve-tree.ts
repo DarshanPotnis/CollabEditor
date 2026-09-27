@@ -61,7 +61,10 @@ export type HiddenNode = {
 
 export type TreeConflictKind = 'duplicate-name' | 'cycle' | 'missing-parent';
 
-export type TreeConflict = { nodeId: string; kind: TreeConflictKind };
+export type TreeConflict =
+  | { nodeId: string; kind: 'duplicate-name' | 'missing-parent' }
+  /** `others` are the rest of the cycle, oldest first, so the UI can name them. */
+  | { nodeId: string; kind: 'cycle'; others: readonly string[] };
 
 export type ResolvedTree = {
   /** Visible nodes only. */
@@ -137,10 +140,10 @@ function breakCycles(
         const node = byId.get(id);
         return node ? [node] : [];
       });
-      const [oldest] = cycle.sort(byAge);
+      const [oldest, ...others] = cycle.sort(byAge);
       if (oldest) {
         parents.set(oldest.id, null);
-        conflicts.push({ nodeId: oldest.id, kind: 'cycle' });
+        conflicts.push({ nodeId: oldest.id, kind: 'cycle', others: others.map((node) => node.id) });
       }
     }
 

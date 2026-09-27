@@ -402,7 +402,7 @@ describe('concurrency: what write-time checks cannot see', () => {
 
     expect(paths(a)).toEqual(['X', 'X/Y']);
     expect(paths(b)).toEqual(paths(a));
-    expect(resolveDocTree(a).conflicts).toEqual([{ nodeId: x, kind: 'cycle' }]);
+    expect(resolveDocTree(a).conflicts).toEqual([{ nodeId: x, kind: 'cycle', others: [y] }]);
   });
 
   it('a file created in a concurrently deleted folder is hidden with it', () => {

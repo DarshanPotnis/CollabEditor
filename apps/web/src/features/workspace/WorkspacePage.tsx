@@ -10,6 +10,7 @@ import { useProject } from '../../collab/useProject.js';
 import { useCollaborators, usePublishIdentity } from '../../collab/useCollaborators.js';
 import { remoteOnly } from '../../collab/collaborators.js';
 import { entryFileId } from '../../collab/entry-file.js';
+import { useCycleNotice } from '../../collab/useCycleNotice.js';
 import { useFilePresence } from '../../collab/useFilePresence.js';
 import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
@@ -70,6 +71,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     [toasts],
   );
   const showDeleted = useCallback(() => setFilesView('deleted'), []);
+  useCycleNotice(tree, toasts);
   const actions = useTreeActions(session, identity, toasts, {
     onCreatedFile: setOpenedFileId,
     onShowDeleted: showDeleted,

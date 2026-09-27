@@ -8,6 +8,7 @@ import {
   OpError,
   createFile,
   createFolder,
+  move,
   purgeDeleted,
   rename,
   restore,
@@ -23,6 +24,8 @@ import { runOp, type OpResult } from './run-op.js';
 export type TreeActions = {
   create: (kind: NodeKind, parentId: string | null, name: string) => OpResult<string>;
   rename: (id: string, name: string) => OpResult<void>;
+  /** Returns whether the move happened; a refusal is shown as a toast. */
+  move: (id: string, parentId: string | null) => boolean;
   remove: (id: string, name: string, kind: NodeKind) => void;
   restore: (id: string) => void;
   purge: (items: readonly string[] | 'all') => void;
@@ -93,6 +96,13 @@ export function useTreeActions(
       rename(id, name) {
         if (!session) return notReady();
         return runOp(() => rename(session.doc, id, name));
+      },
+
+      move(id, parentId) {
+        if (!session) return false;
+        const result = runOp(() => move(session.doc, id, parentId));
+        if (!result.ok) showError(result.error);
+        return result.ok;
       },
 
       remove(id, name, kind) {

@@ -12,6 +12,9 @@ export type TreeKeyAction =
   | { type: 'rename'; id: string }
   | { type: 'delete'; id: string }
   | { type: 'menu'; id: string }
+  | { type: 'cut'; id: string }
+  | { type: 'paste'; overId: string }
+  | { type: 'cancel' }
   | { type: 'none' };
 
 export type TreeKey = {
@@ -29,7 +32,7 @@ export function treeKeyAction(
   rows: readonly TreeRow[],
   focusedId: string | null,
 ): TreeKeyAction {
-  if (event.altKey || event.ctrlKey) return NONE;
+  if (event.altKey) return NONE;
 
   const index = rows.findIndex((row) => row.id === focusedId);
   const row = rows[index];
@@ -44,6 +47,16 @@ export function treeKeyAction(
 
   const focus = (target: TreeRow | undefined): TreeKeyAction =>
     target ? { type: 'focus', id: target.id } : NONE;
+
+  // Cut and paste is the keyboard way to move, alongside drag and drop.
+  if (event.ctrlKey || event.metaKey) {
+    const letter = event.key.toLowerCase();
+    if (letter === 'x') return { type: 'cut', id: row.id };
+    if (letter === 'v') return { type: 'paste', overId: row.id };
+    // macOS laptops have no Delete key; Cmd+Backspace is Finder's shortcut.
+    if (event.key === 'Backspace' && event.metaKey) return { type: 'delete', id: row.id };
+    return NONE;
+  }
 
   switch (event.key) {
     case 'ArrowDown':
@@ -73,9 +86,8 @@ export function treeKeyAction(
       return { type: 'menu', id: row.id };
     case 'Delete':
       return { type: 'delete', id: row.id };
-    case 'Backspace':
-      // macOS has no Delete key on laptops; Cmd+Backspace is Finder's shortcut.
-      return event.metaKey ? { type: 'delete', id: row.id } : NONE;
+    case 'Escape':
+      return { type: 'cancel' };
     default:
       return NONE;
   }
