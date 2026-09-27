@@ -95,3 +95,41 @@ export async function runPaletteCommand(page: Page, label: string): Promise<void
   await page.keyboard.type(label);
   await page.locator('.quick-input-list').getByRole('option', { name: label, exact: true }).click();
 }
+
+/**
+ * A file tree row by (part of) its accessible name. The name also carries
+ * presence ("index.js Open by Ada"), so use treeRow for an exact match.
+ */
+export function treeItem(page: Page, name: string): Locator {
+  return page.getByRole('tree').getByRole('treeitem', { name });
+}
+
+/** The file tree row at exactly this path (rows carry their path as a title). */
+export function treeRow(page: Page, path: string): Locator {
+  return page.getByRole('tree').locator(`[role="treeitem"][title="${path}"]`);
+}
+
+/** Creates a file at the project root from the Files header, and waits for it. */
+export async function createRootFile(page: Page, name: string): Promise<void> {
+  await page.getByRole('tree').click({ button: 'right', position: { x: 40, y: 400 } });
+  await page.getByRole('menuitem', { name: 'New file' }).click();
+  await page.getByRole('textbox', { name: 'Name for the new file' }).fill(name);
+  await page.keyboard.press('Enter');
+}
+
+/** Creates a folder at the project root. */
+export async function createRootFolder(page: Page, name: string): Promise<void> {
+  await page.getByRole('tree').click({ button: 'right', position: { x: 40, y: 400 } });
+  await page.getByRole('menuitem', { name: 'New folder' }).click();
+  await page.getByRole('textbox', { name: 'Name for the new folder' }).fill(name);
+  await page.keyboard.press('Enter');
+}
+
+/** Every visible tree row's path (rows carry their path as a title), sorted. */
+export async function treePaths(page: Page): Promise<string[]> {
+  const titles = await page
+    .getByRole('tree')
+    .getByRole('treeitem')
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute('title') ?? ''));
+  return titles.sort();
+}
