@@ -41,7 +41,15 @@ export const API_ERROR_CODES = [
   'bad-request',
   'forbidden',
   'not-found',
+  'payload-too-large',
+  /** Too many requests in a short window: try again shortly. */
   'rate-limited',
+  /** A daily allowance is used up: try tomorrow, or use your own AI key. */
+  'quota-exhausted',
+  /** The AI provider refused the caller's own key. */
+  'invalid-key',
+  /** Something we depend on is missing or down (for example, no shared AI key). */
+  'unavailable',
   'internal',
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
