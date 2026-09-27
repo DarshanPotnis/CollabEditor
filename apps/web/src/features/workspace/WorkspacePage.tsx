@@ -25,11 +25,14 @@ import { useTreeActions } from '../file-tree/useTreeActions.js';
 import { ToastProvider, useToasts } from '../notifications/ToastProvider.js';
 import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
+import { AiPanel } from '../ai/AiPanel.js';
+import { useAiRequest } from '../ai/useAiRequest.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
 import { RunPanel } from '../runtime/RunPanel.js';
 import { EditorPane } from '../tabs/EditorPane.js';
 import { useTabs } from '../tabs/useTabs.js';
 import { NotFoundPage } from './NotFoundPage.js';
+import { SidePanel, type SideView } from './SidePanel.js';
 import { useProjectSummary } from './useProjectSummary.js';
 import { WorkspaceHeader } from './WorkspaceHeader.js';
 import { WorkspaceLayout } from './WorkspaceLayout.js';
@@ -41,6 +44,8 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   const [identity, setIdentity] = useState(() => loadIdentity(browserStorage()));
   const toasts = useToasts();
   const [filesView, setFilesView] = useState<FilesView>('files');
+  const [sideView, setSideView] = useState<SideView>('run');
+  const aiRequest = useAiRequest();
 
   const collaborators = useCollaborators(session);
   const tree = useResolvedTree(session);
@@ -151,7 +156,14 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
               <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
             )
           }
-          run={<RunPanel session={session} onSyncError={showError} />}
+          side={
+            <SidePanel
+              view={sideView}
+              onViewChange={setSideView}
+              run={<RunPanel session={session} onSyncError={showError} />}
+              ai={<AiPanel request={aiRequest} />}
+            />
+          }
         />
       </main>
     </div>

@@ -1,5 +1,5 @@
 /**
- * The three panes: file tree | editor | run panel. Sizes are remembered per
+ * The three panes: file tree | editor | side panel (Run or AI). Sizes are remembered per
  * browser, and the separators are keyboard-resizable (arrow keys) because
  * react-resizable-panels implements the ARIA separator pattern.
  */
@@ -14,7 +14,7 @@ const layoutStorage = bestEffortStorage(browserStorage());
 export type WorkspaceLayoutProps = {
   tree: ReactNode;
   editor: ReactNode;
-  run: ReactNode;
+  side: ReactNode;
 };
 
 function ResizeHandle({ label }: { label: string }): React.ReactElement {
@@ -26,7 +26,7 @@ function ResizeHandle({ label }: { label: string }): React.ReactElement {
   );
 }
 
-export function WorkspaceLayout({ tree, editor, run }: WorkspaceLayoutProps): React.ReactElement {
+export function WorkspaceLayout({ tree, editor, side }: WorkspaceLayoutProps): React.ReactElement {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: 'collabcode.workspace.v1',
     storage: layoutStorage,
@@ -47,9 +47,10 @@ export function WorkspaceLayout({ tree, editor, run }: WorkspaceLayoutProps): Re
       <Panel id="editor" minSize="30%">
         <PaneErrorBoundary pane="editor">{editor}</PaneErrorBoundary>
       </Panel>
-      <ResizeHandle label="Resize the run panel" />
+      <ResizeHandle label="Resize the side panel" />
+      {/* Still "run" from before the AI view existed, so saved sizes keep working. */}
       <Panel id="run" defaultSize="24%" minSize="180px" maxSize="50%">
-        <PaneErrorBoundary pane="run panel">{run}</PaneErrorBoundary>
+        <PaneErrorBoundary pane="side panel">{side}</PaneErrorBoundary>
       </Panel>
     </Group>
   );

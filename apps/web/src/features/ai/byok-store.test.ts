@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   OWN_KEY_STORAGE_KEY,
+  changeOwnKeyModel,
   forgetOwnKey,
   loadOwnKey,
+  ownKeyChoice,
   saveOwnKey,
   type KeyStorage,
   type OwnKey,
@@ -39,7 +41,7 @@ const blocked: KeyStorage = {
 describe('saveOwnKey and loadOwnKey', () => {
   it('round-trips a key with its provider and model', () => {
     const storage = memoryStorage();
-    expect(saveOwnKey(storage, OWN_KEY)).toEqual({ ok: true, ownKey: OWN_KEY });
+    expect(saveOwnKey(storage, OWN_KEY)).toEqual({ ok: true, choice: OWN_KEY.choice });
     expect(loadOwnKey(storage)).toEqual(OWN_KEY);
   });
 
@@ -87,6 +89,39 @@ describe('loadOwnKey', () => {
     ['a missing key', JSON.stringify({ choice: OWN_KEY.choice })],
   ])('ignores %s', (_label, stored) => {
     expect(loadOwnKey(memoryStorage(stored))).toBeNull();
+  });
+});
+
+describe('changeOwnKeyModel', () => {
+  it("keeps the key when moving to another of its provider's models", () => {
+    const storage = memoryStorage();
+    saveOwnKey(storage, OWN_KEY);
+    const choice = { provider: 'anthropic', model: 'claude-opus-5-5' } as const;
+    expect(changeOwnKeyModel(storage, choice)).toEqual({ ok: true, choice });
+    expect(loadOwnKey(storage)).toEqual({ choice, key: OWN_KEY.key });
+  });
+
+  it('asks for a key when the provider changes, and keeps the old one meanwhile', () => {
+    const storage = memoryStorage();
+    saveOwnKey(storage, OWN_KEY);
+    expect(changeOwnKeyModel(storage, { provider: 'openai', model: 'gpt-5.5' })).toEqual({
+      ok: false,
+      message: 'Enter your OpenAI API key.',
+    });
+    expect(loadOwnKey(storage)).toEqual(OWN_KEY);
+  });
+
+  it('asks for a key when none is saved', () => {
+    expect(changeOwnKeyModel(memoryStorage(), OWN_KEY.choice)).toMatchObject({ ok: false });
+  });
+});
+
+describe('ownKeyChoice', () => {
+  it('gives the provider and model of the saved key, or null', () => {
+    const storage = memoryStorage();
+    expect(ownKeyChoice(storage)).toBeNull();
+    saveOwnKey(storage, OWN_KEY);
+    expect(ownKeyChoice(storage)).toEqual(OWN_KEY.choice);
   });
 });
 
