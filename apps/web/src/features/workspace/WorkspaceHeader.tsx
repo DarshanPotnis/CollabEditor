@@ -41,6 +41,8 @@ function ShareLink(): React.ReactElement {
 export type WorkspaceHeaderProps = {
   projectName: string;
   collaborators: readonly Collaborator[];
+  describeCollaborator: (collaborator: Collaborator) => string;
+  onFollow: (collaborator: Collaborator) => void;
   identity: AwarenessUser;
   onRename: (name: string) => void;
 };
@@ -48,6 +50,8 @@ export type WorkspaceHeaderProps = {
 export function WorkspaceHeader({
   projectName,
   collaborators,
+  describeCollaborator,
+  onFollow,
   identity,
   onRename,
 }: WorkspaceHeaderProps): React.ReactElement {
@@ -61,7 +65,11 @@ export function WorkspaceHeader({
         <h1 className="text-sm text-zinc-300">{projectName}</h1>
       </div>
       <div className="flex items-center gap-4">
-        <PresenceBar collaborators={collaborators} />
+        <PresenceBar
+          collaborators={collaborators}
+          describe={describeCollaborator}
+          onFollow={onFollow}
+        />
         <IdentityField identity={identity} onRename={onRename} />
         <ShareLink />
       </div>

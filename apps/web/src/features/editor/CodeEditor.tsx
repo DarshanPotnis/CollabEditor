@@ -13,10 +13,14 @@ import { isAtFileSizeLimit, isTextInsertingKey, pasteWouldExceedLimit } from './
 
 setupMonaco();
 
+/** Scroll to a character offset in a file once it is shown. */
+export type RevealRequest = { fileId: string; index: number; requestId: number };
+
 export type CodeEditorProps = {
   awareness: Awareness;
   specs: ReadonlyMap<string, ModelSpec>;
   activeId: string | null;
+  reveal: RevealRequest | null;
   /** Called when an edit was blocked because the file is at its size limit. */
   onFileSizeLimit: () => void;
 };
@@ -40,6 +44,7 @@ export function CodeEditor({
   awareness,
   specs,
   activeId,
+  reveal,
   onFileSizeLimit,
 }: CodeEditorProps): React.ReactElement {
   const container = useRef<HTMLDivElement>(null);
@@ -79,6 +84,12 @@ export function CodeEditor({
   useEffect(() => {
     mounted?.registry.sync(specs, activeId);
   }, [mounted, specs, activeId]);
+
+  // Declared after the sync effect so that, when a follow opens a new tab
+  // and asks to reveal in the same render, the model exists and is shown.
+  useEffect(() => {
+    if (reveal) mounted?.registry.reveal(reveal.fileId, reveal.index);
+  }, [mounted, reveal]);
 
   // The per-file size limit. Editor keystrokes bypass packages/shared's ops
   // (y-monaco writes into Y.Text directly), so this is where it is enforced.

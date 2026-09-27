@@ -47,6 +47,8 @@ export type ModelRegistry = {
   redo: () => void;
   /** The Y.Text shown in the editor, for the file size guard. */
   activeText: () => Y.Text | null;
+  /** Scroll a shown file so that a character offset is in view. */
+  reveal: (fileId: string, index: number) => void;
   destroy: () => void;
 };
 
@@ -191,6 +193,12 @@ export function createModelRegistry(
     },
 
     activeText: () => shown()?.spec.ytext ?? null,
+
+    reveal(fileId, index) {
+      const entry = entries.get(fileId);
+      if (!entry || editor.getModel() !== entry.model) return;
+      editor.revealPositionInCenter(entry.model.getPositionAt(index));
+    },
 
     destroy() {
       editor.setModel(null);

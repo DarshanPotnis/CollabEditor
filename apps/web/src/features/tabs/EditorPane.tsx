@@ -5,7 +5,7 @@
  */
 import type { Awareness } from 'y-protocols/awareness';
 import type { ResolvedTree } from '@collabcode/shared';
-import { CodeEditor } from '../editor/CodeEditor.js';
+import { CodeEditor, type RevealRequest } from '../editor/CodeEditor.js';
 import type { ModelSpec } from '../editor/model-registry.js';
 import { DeletedBanner, PurgedNotice } from './FileStateBanner.js';
 import { TabBar } from './TabBar.js';
@@ -17,6 +17,7 @@ export type EditorPaneProps = {
   tabs: Tabs;
   specs: ReadonlyMap<string, ModelSpec>;
   awareness: Awareness;
+  reveal: RevealRequest | null;
   myUserId: string;
   onRestore: (id: string) => void;
   onFileSizeLimit: () => void;
@@ -27,6 +28,7 @@ export function EditorPane({
   tabs,
   specs,
   awareness,
+  reveal,
   myUserId,
   onRestore,
   onFileSizeLimit,
@@ -51,6 +53,7 @@ export function EditorPane({
           awareness={awareness}
           specs={specs}
           activeId={activeId}
+          reveal={reveal}
           onFileSizeLimit={onFileSizeLimit}
         />
         {!showsEditor && (

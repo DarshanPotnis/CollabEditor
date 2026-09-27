@@ -8,13 +8,16 @@ import {
 } from '@collabcode/shared';
 import { useProject } from '../../collab/useProject.js';
 import { useCollaborators, usePublishIdentity } from '../../collab/useCollaborators.js';
-import { remoteOnly } from '../../collab/collaborators.js';
+import { remoteOnly, type Collaborator } from '../../collab/collaborators.js';
+import { followLabel, followTarget } from '../../collab/follow.js';
+import { remoteCursorIndex } from '../../collab/remote-selection.js';
 import { entryFileId } from '../../collab/entry-file.js';
 import { useCycleNotice } from '../../collab/useCycleNotice.js';
 import { useFilePresence } from '../../collab/useFilePresence.js';
 import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
+import type { RevealRequest } from '../editor/CodeEditor.js';
 import { editorSpecs } from '../editor/editor-specs.js';
 import type { ModelSpec } from '../editor/model-registry.js';
 import { FilesPane, type FilesView } from '../file-tree/FilesPane.js';
@@ -73,6 +76,27 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     onShowDeleted: showDeleted,
   });
 
+  const [reveal, setReveal] = useState<RevealRequest | null>(null);
+  const describeCollaborator = useCallback(
+    (collaborator: Collaborator) => followLabel(collaborator, tree),
+    [tree],
+  );
+  const follow = useCallback(
+    (collaborator: Collaborator) => {
+      const target = followTarget(collaborator, tree);
+      if (target.kind === 'nowhere') {
+        toasts.show({ message: target.message, tone: 'info' });
+        return;
+      }
+      tabs.open(target.fileId);
+      const ytext = session ? readFileText(session.doc, target.fileId) : undefined;
+      const state = session?.provider.awareness?.getStates().get(collaborator.clientId);
+      const index = ytext ? remoteCursorIndex(state, ytext) : null;
+      if (index !== null) setReveal({ fileId: target.fileId, index, requestId: Date.now() });
+    },
+    [session, tree, tabs, toasts],
+  );
+
   const specs = useMemo(
     () =>
       session
@@ -87,6 +111,8 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
       <WorkspaceHeader
         projectName={project.name}
         collaborators={collaborators}
+        describeCollaborator={describeCollaborator}
+        onFollow={follow}
         identity={identity}
         onRename={rename}
       />
@@ -116,6 +142,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
                 tabs={tabs}
                 specs={specs}
                 awareness={awareness}
+                reveal={reveal}
                 myUserId={identity.id}
                 onRestore={actions.restore}
                 onFileSizeLimit={onFileSizeLimit}

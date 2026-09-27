@@ -9,36 +9,68 @@ function initials(name: string): string {
   return letters.join('').toUpperCase();
 }
 
-function Avatar({ collaborator }: { collaborator: Collaborator }): React.ReactElement {
-  const label = collaborator.isYou ? `${collaborator.user.name} (you)` : collaborator.user.name;
+function Avatar({
+  collaborator,
+  label,
+  onFollow,
+}: {
+  collaborator: Collaborator;
+  label: string;
+  onFollow: (() => void) | null;
+}): React.ReactElement {
+  const className = `flex size-7 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-2 ${
+    collaborator.isYou ? 'ring-zinc-100' : 'ring-zinc-900'
+  }`;
+  // The colour is one of a fixed palette (enforced by the awareness schema),
+  // so it is safe as an inline style.
+  const style = { backgroundColor: collaborator.user.color };
+  const letters = initials(collaborator.user.name);
+
+  if (!onFollow) {
+    return (
+      <span title={label} aria-label={label} style={style} className={className}>
+        {letters}
+      </span>
+    );
+  }
   return (
-    <span
+    <button
+      type="button"
       title={label}
       aria-label={label}
-      // The colour is one of a fixed palette (enforced by the awareness
-      // schema), so it is safe as an inline style.
-      style={{ backgroundColor: collaborator.user.color }}
-      className={`flex size-7 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-2 ${
-        collaborator.isYou ? 'ring-zinc-100' : 'ring-zinc-900'
-      }`}
+      onClick={onFollow}
+      style={style}
+      className={`${className} cursor-pointer hover:z-10 hover:ring-zinc-400 focus-visible:z-10 focus-visible:ring-sky-400 focus-visible:outline-none`}
     >
-      {initials(collaborator.user.name)}
-    </span>
+      {letters}
+    </button>
   );
 }
 
+export type PresenceBarProps = {
+  collaborators: readonly Collaborator[];
+  /** Where clicking a collaborator goes, for their label. */
+  describe: (collaborator: Collaborator) => string;
+  onFollow: (collaborator: Collaborator) => void;
+};
+
 export function PresenceBar({
   collaborators,
-}: {
-  collaborators: readonly Collaborator[];
-}): React.ReactElement {
+  describe,
+  onFollow,
+}: PresenceBarProps): React.ReactElement {
   const count = collaborators.length;
 
   return (
     <div className="flex items-center gap-3">
       <div className="flex -space-x-2">
         {collaborators.map((collaborator) => (
-          <Avatar key={collaborator.clientId} collaborator={collaborator} />
+          <Avatar
+            key={collaborator.clientId}
+            collaborator={collaborator}
+            label={collaborator.isYou ? `${collaborator.user.name} (you)` : describe(collaborator)}
+            onFollow={collaborator.isYou ? null : () => onFollow(collaborator)}
+          />
         ))}
       </div>
       <span className="text-xs text-zinc-400">
