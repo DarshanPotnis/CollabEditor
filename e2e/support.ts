@@ -87,3 +87,11 @@ export async function typeAtEnd(page: Page, text: string): Promise<void> {
  * expects Ctrl everywhere. ControlOrMeta would send Cmd on a Mac and miss.
  */
 export const MOD = 'Control';
+
+/** Runs a command from the editor's command palette (F1) by its exact label. */
+export async function runPaletteCommand(page: Page, label: string): Promise<void> {
+  await page.locator(EDITOR).click();
+  await page.keyboard.press('F1');
+  await page.keyboard.type(label);
+  await page.locator('.quick-input-list').getByRole('option', { name: label, exact: true }).click();
+}

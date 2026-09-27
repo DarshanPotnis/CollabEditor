@@ -13,13 +13,16 @@
  * per file tracking only that binding undoes this person's typing and never a
  * collaborator's. The manager lives on the file, not the model: when a rename
  * forces a new model and binding, the new binding is added to its tracked
- * origins and the history carries over.
+ * origins and the history carries over. Each model's own undo and redo are
+ * routed to that manager (route-history.ts), so no Monaco path, keybinding,
+ * menu or command, can reach Monaco's shared stack.
  */
 import * as monaco from 'monaco-editor';
 import * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
 import { MonacoBinding } from 'y-monaco';
 import { planModels } from './model-plan.js';
+import { routeModelHistory } from './route-history.js';
 
 export type ModelSpec = {
   uri: monaco.Uri;
@@ -108,6 +111,7 @@ export function createModelRegistry(
     const model = monaco.editor.createModel(spec.ytext.toJSON(), spec.language, spec.uri);
     const binding = new MonacoBinding(spec.ytext, model, new Set([editor]), awareness);
     history.undo.addTrackedOrigin(binding);
+    routeModelHistory(model, history.undo);
     entries.set(fileId, { key: spec.uri.toString(), spec, model, binding });
   };
 

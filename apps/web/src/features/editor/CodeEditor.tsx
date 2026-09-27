@@ -51,28 +51,26 @@ export function CodeEditor({
     const editor = monaco.editor.create(element, { ...EDITOR_OPTIONS, model: null });
     const registry = createModelRegistry(editor, awareness);
 
-    // Undo and redo go to this person's history for the file, never Monaco's
-    // own stack, which also holds collaborators' edits. editor.onKeyDown runs
-    // before Monaco's keybindings, so preventing the event here stops the
-    // built-in undo; `equals` matches Cmd on a Mac and Ctrl elsewhere, the
-    // same way Monaco's own shortcuts do.
-    const { KeyMod, KeyCode } = monaco;
-    const history = editor.onKeyDown((event) => {
-      const undo = event.equals(KeyMod.CtrlCmd | KeyCode.KeyZ);
-      const redo =
-        event.equals(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ) ||
-        event.equals(KeyMod.CtrlCmd | KeyCode.KeyY);
-      if (!undo && !redo) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (undo) registry.undo();
-      else registry.redo();
+    // Undo and redo already reach this person's history from every built-in
+    // path (route-history.ts). Monaco's standalone command palette lists only
+    // editor actions, and its built-in undo is not one, so these give the
+    // palette an Undo and Redo that go to the same place.
+    const paletteUndo = editor.addAction({
+      id: 'collabcode.undo',
+      label: 'Undo',
+      run: () => registry.undo(),
+    });
+    const paletteRedo = editor.addAction({
+      id: 'collabcode.redo',
+      label: 'Redo',
+      run: () => registry.redo(),
     });
 
     setMounted({ editor, registry });
     return () => {
       setMounted(null);
-      history.dispose();
+      paletteUndo.dispose();
+      paletteRedo.dispose();
       registry.destroy();
       editor.dispose();
     };
