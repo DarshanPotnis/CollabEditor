@@ -2,9 +2,10 @@
 
 A living description of how the system works **today**. Each phase updates this file.
 
-Current state: **v1 (Phase 1)** — a Yjs CRDT synced by Hocuspocus, persisted as Postgres
-snapshots, with a single file per project. The multi-file workspace (Phase 2) and in-browser
-execution (Phase 3) are described in `docs/PLAN.md` and are not built yet.
+Current state: **v2 (Phase 2)** — a multi-file workspace on a Yjs CRDT synced by Hocuspocus and
+persisted as Postgres snapshots: a file tree with presence, tabs, per-person undo, and
+deterministic resolution of concurrent tree edits. In-browser execution (Phase 3) is described in
+`docs/PLAN.md` and is not built yet.
 
 | Tag                   | What it is                                                                |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -16,27 +17,30 @@ the point of Phase 1 is what changed between them and now.
 
 ---
 
-## v1: today
+## v2: today
 
 ### Shape
 
 ```
-┌──────────────────────── Browser (apps/web) ─────────────────────────┐
-│  React 19 + Vite                                                    │
-│                                                                     │
-│  Monaco ──► y-monaco MonacoBinding ──► Y.Text ─┐                    │
-│  (bundled locally, not from a CDN)             │                    │
-│                                                ├─ Y.Doc             │
-│  React UI ──► packages/shared ops ─────────────┘   │                │
-│                                                    │                │
-│  Awareness (name, colour, activeFileId) ───────────┤                │
-│                                                    ▼                │
-│                                         HocuspocusProvider          │
-└────────────────────────────────────────────────────┬────────────────┘
-                                                     │
-                     REST (fetch)                    │ WebSocket
-                     /health, /api/projects          │ /collab
-                                                     ▼
+┌──────────────────────────── Browser (apps/web) ─────────────────────────────┐
+│  React 19 + Vite                                                            │
+│                                                                             │
+│  file tree ◄── tree store ◄── resolveTree ◄── nodes (Y.Map) ──┐             │
+│      │         (observes nodes only)                          │             │
+│      └──► tree ops (packages/shared) ── transact ────────────►├─ Y.Doc      │
+│                                                               │   │         │
+│  tabs ──► model registry: per open tab                        │   │         │
+│           Monaco model ◄─ y-monaco binding ─► contents[id] ───┘   │         │
+│           + a Y.UndoManager per file (only your binding)          │         │
+│                                                                   │         │
+│  Awareness (name, colour, activeFileId, selection) ───────────────┤         │
+│                                                                   ▼         │
+│                                                        HocuspocusProvider   │
+└───────────────────────────────────────────────────────────────────┬─────────┘
+                                                                    │
+                     REST (fetch)                                   │ WebSocket
+                     /health, /api/projects                         │ /collab
+                                                                    ▼
 ┌─────────────────────── Render (apps/server) ────────────────────────┐
 │  @hocuspocus/server owns the Node HTTP server                       │
 │    ├─ onRequest  ──► Express app (health, projects, CORS)           │
@@ -50,8 +54,9 @@ the point of Phase 1 is what changed between them and now.
                             └───────────────────────┘
 ```
 
-**The server syncs and stores. It never runs or interprets user code.** Nothing in Phase 1
-executes anything a user typed; Phase 3 runs code only in the browser of whoever clicks Run.
+**The server syncs and stores. It never runs or interprets user code.** It does not even
+interpret the file tree: every structural rule lives in `packages/shared` and runs in the
+browsers. Phase 3 runs code only in the browser of whoever clicks Run.
 
 ### Where the truth lives
 
@@ -63,25 +68,116 @@ doc.getMap('nodes'); // nodeId -> Y.Map<NodeFields>
 doc.getMap('contents'); // fileId -> Y.Text
 ```
 
-Phase 1 only ever creates one file node, but it uses the full schema so Phase 2's file tree
-needs no migration. Node IDs are nanoids and never derived from paths, so a rename cannot move
-anyone's cursor or orphan their edits.
+Each node is `{ id, kind, name, parentId, createdAt, createdBy, deletedAt, deletedBy,
+deletedByName }`. Node IDs are nanoids and never derived from paths: rename writes `name`, move
+writes `parentId`, delete writes a tombstone, restore clears it. Because identity survives a
+rename, someone typing in a file that gets renamed keeps their cursor, their edits and their undo
+history. `deletedBy` and `deletedByName` were added in Phase 2 as optional fields that read as
+`null` when absent, so Phase 1 documents need no migration.
 
-Reads are defensive. `readNode`, `readNodes` and `readMeta` parse with zod and return `null` or
+Reads are defensive. `readNode`, `readAllNodes` and `readMeta` parse with zod and return `null` or
 skip the entry when another client has written something that does not match the schema; they
-never throw. A malformed node cannot take the UI down.
+never throw. A malformed node cannot take the UI down, and `deletedByName`, which is peer-written
+text, is sanitised like an awareness name and reads as `null` rather than hiding the node.
 
 ### The write path, and its one exception
 
-Every structural mutation goes through `packages/shared/src/ops.ts`, inside
-`doc.transact(fn, OPS_ORIGIN)`. Phase 1 needs only `initProjectDoc`, which the server calls once
-when a project is created. The tree ops arrive in Phase 2 with the UI that needs them.
+Every structural mutation goes through `packages/shared`, inside `doc.transact(fn, OPS_ORIGIN)`:
+`initProjectDoc` in `ops.ts` (called once, on the server, from a template), the tree ops in
+`tree-ops.ts` (`createFile`, `createFolder`, `rename`, `move`, `softDelete`, `restore`) and
+`purgeDeleted` in `purge-ops.ts`. The UI calls them through one hook, `useTreeActions`, and a
+refusal comes back as an `OpError` whose message is written to be shown as-is.
+
+Each tree op resolves the tree as this client sees it and checks the write first
+(`tree-rules.ts`, shared with the UI so a drag only offers valid drop targets):
+
+- names are valid, NFC-normalised, and **do not clash with a visible sibling, compared
+  case-insensitively**, so a project cloned onto macOS or Windows cannot collide;
+- a folder cannot be moved into itself or below itself;
+- at most 500 visible nodes, and at most 2,000 counting deleted ones, whose content is kept so
+  they can be restored. The second limit's message points to Recently deleted.
+
+`restore` clears the tombstone on the node and on any deleted ancestor hiding it; if the name has
+been taken meanwhile it takes the next free `name (n)`, for real, and says so.
 
 **The exception is y-monaco.** It writes editor keystrokes straight into the file's `Y.Text`,
 bypassing `ops.ts` entirely. That is why the per-file size limit is enforced at the editor
 (`apps/web/src/features/editor/file-size-guard.ts`) rather than in `ops.ts`: insertions and
 oversized pastes are refused at the limit with a message, and deletions always work so a file can
 be brought back under. This exception is recorded in `CLAUDE.md`.
+
+### Concurrent tree edits: read-time resolution
+
+Write-time checks see only this client's copy. Two people creating `utils.js` in the same folder
+before either has seen the other, or moving folder X into Y while the other moves Y into X, produce
+states nobody drew. Nobody repairs them with a write, because several clients repairing at once
+would race. Instead every client runs the same pure function, `resolveTree`
+(`packages/shared/src/resolve-tree.ts`), over the same nodes, and draws the same tree:
+
+1. a parent that is missing or is a file resolves to the root;
+2. a cycle is broken by moving its oldest `(createdAt, id)` member to the root;
+3. a node is hidden when it or an ancestor is tombstoned;
+4. visible siblings with the same exact name keep it in `(createdAt, id)` order and the rest show
+   as `name (2).ext`, skipping any suffix a sibling really has;
+5. folders sort first, then names by a fixed code-point comparison, never the browser's locale.
+
+The output also records, for every hidden node, which tombstone hid it and who made it, which is
+what the "Deleted by …" banner and Recently deleted use. Display names are what paths, Monaco URIs
+and (in Phase 3) the WebContainer see. A seeded test has two replicas make random offline edits,
+exchange them, and requires identical output. See `docs/decisions/004-stable-ids-and-read-time-resolution.md`.
+
+When a cycle appears, both people get a toast naming the folders, because one of them sees their
+move "turned around".
+
+### Deleting, restoring, and deleting forever
+
+Delete is a tombstone: the node and its content stay, and an Undo toast restores it. Recently
+deleted lists the top of each deleted subtree with where it was, who deleted it and when, and
+offers Restore, Delete forever and Empty all. The last two go through a confirmation that states
+how many items go and that it cannot be undone for anyone.
+
+`purgeDeleted` is the only hard delete. It removes the node maps and content of what **this
+client** sees as deleted, and nothing else, so a file someone creates inside a purged folder at
+the same moment survives and shows at the root. If a restore and a purge of the same item race,
+the purge wins everywhere: the restore writes into a `Y.Map` that the purge deleted, and Yjs
+discards changes to deleted types. Both outcomes are pinned by tests.
+
+### The editor: tabs, models, bindings and undo
+
+Tabs are local to each browser tab and hold node IDs, so they follow a file through renames and
+moves. `features/editor/model-registry.ts` keeps, for every open tab, a Monaco model and a
+y-monaco binding; switching tabs is `editor.setModel`. Keeping every open tab bound, not only the
+active one, matters: an unbound model falls behind remote edits, and rebinding it calls
+`setValue`, which wipes its undo stack and moves the cursor. y-monaco supports several bindings on
+one editor because each handler checks `editor.getModel() === model`; the same check is why remote
+cursors only ever draw in the file they belong to.
+
+- **URIs** are `URI.file('/' + path)`, which percent-encodes `#`, `?`, `%`, spaces and
+  parentheses, so the TypeScript worker can resolve imports between open files. A URI cannot
+  change, so a new resolved path (rename, move, parent rename, a duplicate gaining `(2)`) means a
+  new model, with view state and focus carried across. A deleted file moves to a
+  `collabcode-deleted:` URI keyed by its ID, since a new file may take its old path while it is
+  still open; it is read-only, with the deleter's name and Restore.
+- **Undo is per person.** y-monaco tags its transactions with the binding itself as the origin,
+  so a `Y.UndoManager` per file that tracks only this person's binding undoes their typing and
+  never a collaborator's. It lives on the file, so when a rename forces a new binding, the new one
+  joins its tracked origins and history carries over. Every Monaco undo path (keybindings, menus,
+  `editor.trigger`, the suggest and paste widgets) ends in `model.undo()`, and each model routes
+  that to the file's manager (`route-history.ts`); the command palette gets Undo and Redo backed
+  by the same manager. Monaco's own stack is never used: it would undo collaborators' edits, and
+  since remote edits arrive through `applyEdits` without being recorded there, replaying it after
+  remote changes would apply old edits at shifted offsets.
+- **Cursors on tab switch.** Monaco fires no cursor event on `setModel`, so the registry
+  publishes the new selection itself, in y-monaco's awareness format. Otherwise collaborators
+  would keep seeing your caret in the file you left.
+- **Follow.** Clicking a collaborator's avatar opens the file they are in and scrolls to their
+  cursor.
+
+### Keeping React off the keystroke path
+
+The tree store observes only `nodes`. Keystrokes change `contents`, so typing never re-resolves the
+tree or re-renders it; a rename or move does, synchronously, so the tree, the tabs and the models
+see one snapshot. Presence dots use a map that keeps its identity while only cursors move.
 
 ### Sync and persistence lifecycle
 
@@ -130,8 +226,12 @@ Every boundary is validated, and the awkward one is presence.
 - **Remote awareness states are untrusted input.** They are written by other browsers and
   relayed without inspection. `parseAwarenessState` parses each one and drops anything
   malformed; colours must be members of a fixed palette; names are stripped of control,
-  zero-width and bidi characters and capped; unknown keys (such as y-monaco's own `selection`)
-  are ignored rather than rejected, so a peer on a newer client still appears.
+  zero-width and bidi characters and capped; unknown keys are ignored rather than rejected, so a
+  peer on a newer client still appears.
+- **A peer's cursor position is parsed before it touches the document.** Following someone reads
+  y-monaco's `selection` from their awareness state. Positions must name an item or a type, and a
+  `tname` is refused outright: resolving one makes Yjs call `doc.get(tname)`, which would let a
+  peer create root types in your document.
 - **Nothing from a peer is interpolated into CSS or HTML.** Remote cursor rules are generated
   per client id (checked with `Number.isSafeInteger`), and names pass through `escapeCssString`
   before entering a CSS string. There are unit tests for hostile names and colours.
@@ -170,18 +270,27 @@ refusal is final.
 - **One server instance.** Hocuspocus holds documents in memory per process, so a second Render
   instance would serve a different live document for the same project. Fine on the free tier,
   and the reason there is no horizontal scaling story yet.
-- **No file tree, no tabs, no running code.** Phases 2 and 3.
-- **`resolveTree` does not exist yet.** Deterministic read-time resolution of concurrent tree
-  anomalies lands with the tree in Phase 2.
+- **No running code.** Phase 3.
+- **Every file lives in one `Y.Doc`.** Fine up to a few hundred small files, which the node
+  limits keep us under. The next step, one subdocument per file loaded when opened, is recorded
+  in ADR 004 and not built.
+- **Tabs are not remembered across a reload**, and closing a tab discards that file's undo
+  history, as in most editors. Pane sizes and expanded folders are remembered per browser.
+- **A stored cycle stays in the data** until someone moves one of its folders again. Everyone
+  reads through `resolveTree`, so nobody sees it.
+- **y-monaco 0.1.6 leaks one cursor listener per binding it creates**, because `destroy()` does
+  not remove it. The leftover listeners do nothing (they check the model first) and the count grows
+  only with tabs opened and files renamed, not tab switches. Vendoring the binding would fix it;
+  deferred as an optimisation.
 
 ### How it is verified
 
-| Layer                                | What it covers                                                                                                                                                                                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit (`packages/shared`, `apps/web`) | Document schema and ops, awareness hardening including hostile names and colours, CSS escaping, the connection state machine, the file-size guard, identity storage, language mapping, config parsing                                                                    |
-| Integration (`apps/server`)          | The real Hocuspocus + Express composition against an in-memory repo: convergence, late joiners, offline merge, refusal of unknown and malformed IDs, the store beating document unload, restart survival, the Express mount, CORS preflight and rejection, rate limiting |
-| Postgres (`apps/server`)             | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                             |
-| End-to-end (`e2e`)                   | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors appearing and leaving, persistence across reload and across closing the tab, 404, redirect, join-by-link                                                  |
+| Layer                                | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (`packages/shared`, `apps/web`) | Document schema and ops; every `resolveTree` rule, combinations, input-order independence and a seeded two-replica convergence run; tree ops, limits, restore and purge including their races; tree rows and keyboard, tabs, model URIs and plans, remote cursor parsing; awareness hardening, CSS escaping, the connection state machine, the file-size guard, identity storage, language mapping, config parsing                                                                                      |
+| Integration (`apps/server`)          | The real Hocuspocus + Express composition against an in-memory repo: convergence, late joiners, offline merge, refusal of unknown and malformed IDs, the store beating document unload, restart survival, the Express mount, CORS preflight and rejection, rate limiting                                                                                                                                                                                                                                |
+| Postgres (`apps/server`)             | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                                                                                                                                                                                                                                                            |
+| End-to-end (`e2e`)                   | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors, persistence, 404, redirect; and Phase 2's definition of done: presence in the tree, rename while typing, delete and restore, delete forever while open, duplicate refusal, concurrent duplicate create and cross-move (one window offline), per-person undo from keys and the command palette, undo across a rename, cursor behaviour on tab switch and close, following a collaborator |
 
 ---
 
@@ -339,7 +448,7 @@ Both exist to compensate for last-write-wins. Both are scheduled for removal in 
 
 **These were the point of Phase 1, and all but one are now fixed.** 1 and 2 are gone: the CRDT
 merges concurrent edits and relative positions keep cursors anchored to the text they sit in.
-3 is gone: Postgres snapshots. 5 is gone as far as one file goes; the file tree is Phase 2.
+3 is gone: Postgres snapshots. 5 is gone: projects have a file tree (Phase 2).
 6 is gone: Monaco is bundled locally. 4 stands — see "One server instance" above.
 
 1. **Sync is still last-write-wins over the whole document.** Two people typing at the same

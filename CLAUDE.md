@@ -44,6 +44,11 @@ source of truth for architecture, data model, phase scope and definitions of don
   enforced at the editor (`apps/web/src/features/editor/file-size-guard.ts`), not in `ops.ts`;
   and a `Y.Text` change may carry no ops origin tag, so never assume one. Do not add other
   exceptions without an ADR.
+- Undo is per person and never uses Monaco's own undo stack, which also holds collaborators'
+  edits. Every Monaco model must be created through the model registry
+  (`apps/web/src/features/editor/model-registry.ts`), which routes `model.undo()`/`redo()` to the
+  file's `Y.UndoManager`. That manager writes to `Y.Text` outside `packages/shared`, but it only
+  reverts the binding's own edits, so it falls under the y-monaco exception above, not a new one.
 - React: effects must be StrictMode-safe (create and destroy resources in the same effect).
 - Pure logic (tree resolution, path mapping, diffing) gets unit tests in the same change.
 
