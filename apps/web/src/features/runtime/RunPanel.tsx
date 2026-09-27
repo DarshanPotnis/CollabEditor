@@ -6,8 +6,10 @@
  * collaborators' edits, and their changes restart the server.
  */
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { Play, RotateCw, Square } from 'lucide-react';
+import { Play, RotateCw, Sparkles, Square } from 'lucide-react';
 import type { ProjectSession } from '../../collab/useProject.js';
+import { runFailure, type RunFailure } from '../ai/prompts/error-prompt.js';
+import { RAW_OUTPUT_CHARS } from '../ai/terminal-text.js';
 import { canRun } from './run-state.js';
 import { runStatus, type RunStatus } from './run-status.js';
 import { runtimeSupport } from './runtime-support.js';
@@ -68,9 +70,15 @@ function Button({
 export type RunPanelProps = {
   session: ProjectSession | null;
   onSyncError: (message: string) => void;
+  /** Explain with AI, offered when the run stopped on an error. */
+  onExplainError: (failure: RunFailure) => void;
 };
 
-export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactElement {
+export function RunPanel({
+  session,
+  onSyncError,
+  onExplainError,
+}: RunPanelProps): React.ReactElement {
   const { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell, send } =
     useRuntime(session, onSyncError);
   const [tab, setTab] = useState<RunTab>('output');
@@ -117,6 +125,17 @@ export function RunPanel({ session, onSyncError }: RunPanelProps): React.ReactEl
       </div>
 
       <div className="space-y-1.5 border-b border-zinc-800 px-3 py-2 text-xs">
+        {runFailure(state, '') !== null && (
+          <Button
+            label="Explain with AI"
+            onClick={() => {
+              const failure = runFailure(state, output.recent(RAW_OUTPUT_CHARS));
+              if (failure) onExplainError(failure);
+            }}
+          >
+            <Sparkles className="size-3.5" aria-hidden />
+          </Button>
+        )}
         {support.kind !== 'supported' && <p className="text-amber-200">{support.message}</p>}
         {dependenciesChanged && (
           <p className="text-amber-200">

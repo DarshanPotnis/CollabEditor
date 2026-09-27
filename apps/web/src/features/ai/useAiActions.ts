@@ -11,6 +11,7 @@ import { anchorSelection, type SelectionAnchor } from '../editor/selection-ancho
 import type { ActiveSelection } from '../editor/model-registry.js';
 import { describeSelection } from './ai-messages.js';
 import { editProposal, type EditProposal, type EditTarget } from './edit-proposal.js';
+import { explainErrorStep, type ProjectFiles, type RunFailure } from './prompts/error-prompt.js';
 import {
   editSelectionStep,
   explainSelectionStep,
@@ -27,12 +28,16 @@ export type AiActionsDeps = {
   showAiView: () => void;
   openFile: (fileId: string) => void;
   notify: (message: string, tone: 'info' | 'error') => void;
+  /** The project's files, or null before the project has loaded. */
+  files: () => ProjectFiles | null;
 };
 
 type PendingEdit = { selection: ActiveSelection; anchor: SelectionAnchor };
 
 export type AiActions = {
   onEditorAction: (action: EditorAiAction) => void;
+  /** Explain with AI on a run that stopped on an error. */
+  explainError: (failure: RunFailure) => void;
   /** What the instruction dialog is for, while it is open. */
   instructionTarget: string | null;
   submitInstruction: (instruction: string) => string | null;
@@ -64,6 +69,7 @@ export function useAiActions({
   showAiView,
   openFile,
   notify,
+  files,
 }: AiActionsDeps): AiActions {
   const [pending, setPending] = useState<PendingEdit | null>(null);
   const [target, setTarget] = useState<EditTarget | null>(null);
@@ -87,6 +93,22 @@ export function useAiActions({
       start(built.step);
     },
     [projectId, notify, showAiView, start],
+  );
+
+  const explainError = useCallback(
+    (failure: RunFailure) => {
+      const project = files();
+      if (!project) return;
+      const built = explainErrorStep(projectId, failure, project);
+      if (!built.ok) {
+        notify(built.message, 'error');
+        return;
+      }
+      setTarget(null);
+      showAiView();
+      start(built.step);
+    },
+    [files, projectId, notify, showAiView, start],
   );
 
   const submitInstruction = useCallback(
@@ -150,6 +172,7 @@ export function useAiActions({
 
   return {
     onEditorAction,
+    explainError,
     instructionTarget,
     submitInstruction,
     cancelInstruction: () => setPending(null),

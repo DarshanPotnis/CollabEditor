@@ -29,6 +29,7 @@ import { AiDiffView } from '../ai/AiDiffView.js';
 import { AiPanel } from '../ai/AiPanel.js';
 import { describeStep } from '../ai/ai-messages.js';
 import { EditInstructionDialog } from '../ai/EditInstructionDialog.js';
+import { projectFiles } from '../ai/project-files.js';
 import { useAiActions } from '../ai/useAiActions.js';
 import { useAiRequest } from '../ai/useAiRequest.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
@@ -121,6 +122,10 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     (message: string, tone: 'info' | 'error') => toasts.show({ message, tone }),
     [toasts],
   );
+  const files = useCallback(
+    () => (session ? projectFiles(tree, session.doc) : null),
+    [session, tree],
+  );
   const ai = useAiActions({
     projectId: project.id,
     request: aiRequest,
@@ -128,6 +133,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     showAiView,
     openFile: tabs.open,
     notify,
+    files,
   });
   const { proposal } = ai;
   const editOverlay =
@@ -196,7 +202,13 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
             <SidePanel
               view={sideView}
               onViewChange={setSideView}
-              run={<RunPanel session={session} onSyncError={showError} />}
+              run={
+                <RunPanel
+                  session={session}
+                  onSyncError={showError}
+                  onExplainError={ai.explainError}
+                />
+              }
               ai={<AiPanel request={aiRequest} edit={proposal} onShowEdit={ai.showEdit} />}
             />
           }

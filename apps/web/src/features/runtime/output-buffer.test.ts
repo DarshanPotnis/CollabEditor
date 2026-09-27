@@ -40,4 +40,13 @@ describe('createOutputBuffer', () => {
     buffer.attach(terminal);
     expect(terminal.text).toBe('56789');
   });
+
+  it('gives the most recent output without a terminal attached', () => {
+    const buffer = createOutputBuffer();
+    buffer.write('first line\r\n');
+    buffer.write('Error: boom\r\n');
+    expect(buffer.recent(13)).toBe('Error: boom\r\n');
+    expect(buffer.recent(1_000)).toBe('first line\r\nError: boom\r\n');
+    expect(buffer.recent(0)).toBe('');
+  });
 });
