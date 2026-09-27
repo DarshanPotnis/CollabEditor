@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Check, Copy } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { fileSizeLimitMessage, readFileText, type ProjectSummary } from '@collabcode/shared';
 import { useProject } from '../../collab/useProject.js';
 import { useCollaborators, usePublishIdentity } from '../../collab/useCollaborators.js';
@@ -11,44 +10,13 @@ import { useSlowFlag } from '../../lib/useSlowFlag.js';
 import { CodeEditor } from '../editor/CodeEditor.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
-import { PresenceBar } from '../presence/PresenceBar.js';
-import { IdentityField } from '../presence/IdentityField.js';
+import { RunPanelPlaceholder } from '../runtime/RunPanelPlaceholder.js';
 import { NotFoundPage } from './NotFoundPage.js';
 import { useProjectSummary } from './useProjectSummary.js';
+import { WorkspaceHeader } from './WorkspaceHeader.js';
+import { WorkspaceLayout } from './WorkspaceLayout.js';
 
 const COLD_START_AFTER_MS = 2_000;
-
-function ShareLink(): React.ReactElement {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1_500);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [copied]);
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(window.location.href).then(
-          () => setCopied(true),
-          () => setCopied(false),
-        );
-      }}
-      className="flex items-center gap-1.5 rounded-md border border-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
-    >
-      {copied ? (
-        <Check className="size-3.5" aria-hidden />
-      ) : (
-        <Copy className="size-3.5" aria-hidden />
-      )}
-      {copied ? 'Link copied' : 'Copy invite link'}
-    </button>
-  );
-}
 
 function Workspace({ project }: { project: ProjectSummary }): React.ReactElement {
   const { session, connection } = useProject(project.id);
@@ -86,25 +54,12 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="text-sm font-semibold tracking-tight hover:text-white">
-            CollabCode
-          </Link>
-          <span className="text-zinc-700">/</span>
-          <h1 className="text-sm text-zinc-300">{project.name}</h1>
-          {entryFile && (
-            <span className="rounded bg-zinc-900 px-2 py-0.5 font-mono text-xs text-zinc-400">
-              {entryFile.name}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          <PresenceBar collaborators={collaborators} />
-          <IdentityField identity={identity} onRename={rename} />
-          <ShareLink />
-        </div>
-      </header>
+      <WorkspaceHeader
+        projectName={project.name}
+        collaborators={collaborators}
+        identity={identity}
+        onRename={rename}
+      />
 
       <ConnectionBanner state={connection} />
 
@@ -118,16 +73,28 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
       )}
 
       <main className="min-h-0 flex-1">
-        {ytext && awareness && entryFile ? (
-          <CodeEditor
-            ytext={ytext}
-            awareness={awareness}
-            fileName={entryFile.name}
-            onFileSizeLimit={onFileSizeLimit}
-          />
-        ) : (
-          <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
-        )}
+        <WorkspaceLayout
+          tree={
+            <section aria-label="Files" className="h-full">
+              {entryFile && (
+                <p className="px-3 py-2 font-mono text-xs text-zinc-400">{entryFile.name}</p>
+              )}
+            </section>
+          }
+          editor={
+            ytext && awareness && entryFile ? (
+              <CodeEditor
+                ytext={ytext}
+                awareness={awareness}
+                fileName={entryFile.name}
+                onFileSizeLimit={onFileSizeLimit}
+              />
+            ) : (
+              <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
+            )
+          }
+          run={<RunPanelPlaceholder />}
+        />
       </main>
     </div>
   );
