@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint, typecheck, tests, build
+    runs-on: ubuntu-latest
+
+    services:
+      # The Postgres repo and the migration runner are the one part of the
+      # server the in-memory tests cannot cover, so CI gives them a real
+      # database. Everything else runs without one.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: collabcode_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/collabcode_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # packages/shared is consumed from its build output, so type-aware
+      # linting and the typecheck need it to exist first.
+      - run: npm run build:shared
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npx playwright install --with-deps chromium
+
+      # Starts the in-memory API server and serves the production web bundle;
+      # no database involved.
+      - run: npm run e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

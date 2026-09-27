@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+}
+
+/* Monaco fills its pane; the container controls the size. */
+.monaco-editor,
+.monaco-editor .overflow-guard {
+  border-radius: 0.5rem;
+}
