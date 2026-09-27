@@ -7,3 +7,5 @@ export * from './protocol.js';
 export * from './resolve-tree.js';
 export * from './schema.js';
 export * from './templates/index.js';
+export * from './tree-ops.js';
+export * from './tree-rules.js';

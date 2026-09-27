@@ -9,8 +9,8 @@
  * straight into the file's Y.Text. That is the one bypass, and it is why the
  * per-file size limit is enforced at the editor rather than here.
  *
- * Phase 1 only needs document creation. The tree ops (createFile, createFolder,
- * rename, move, softDelete, restore) arrive with the file tree in Phase 2.
+ * This module creates a project's document. The tree ops (createFile,
+ * createFolder, rename, move, softDelete, restore) live in tree-ops.ts.
  */
 import * as Y from 'yjs';
 import {
@@ -25,21 +25,9 @@ import {
 } from './schema.js';
 import { createNodeId } from './ids.js';
 import { getTemplate, type TemplateId } from './templates/index.js';
+import { OPS_ORIGIN, OpError } from './op-error.js';
 
-/** Origin tag on every transaction this module performs. */
-export const OPS_ORIGIN = 'collabcode:ops';
-
-export type OpErrorCode = 'already-initialised' | 'invalid-name' | 'invalid-meta';
-
-export class OpError extends Error {
-  readonly code: OpErrorCode;
-
-  constructor(code: OpErrorCode, message: string) {
-    super(message);
-    this.name = 'OpError';
-    this.code = code;
-  }
-}
+export { OPS_ORIGIN, OpError, type OpErrorCode } from './op-error.js';
 
 export type InitProjectDocInput = {
   name: string;
