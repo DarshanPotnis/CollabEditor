@@ -659,13 +659,24 @@ endpoints, and it reloads as collaborators edit.
   (`useSyncExternalStore`) so a keystroke doesn't re-render the whole workspace. Tree resolution
   is not debounced: it observes only `nodes`, which keystrokes never change, so it runs only on
   structural edits, and a debounce would only delay renames on screen. Debounce the FS sync.
-- **Known optimisation, deliberately not built: the Monaco bundle.** Importing all of
-  `monaco-editor` produces a 4.36 MB main chunk (**1.14 MB gzipped**). Importing
-  `monaco-editor/editor/editor.api` plus only the language contributions we use would cut that
-  roughly in half. It is deferred until **after Phase 2**, when the real set of file types the
-  workspace supports is known — doing it now would mean guessing that set and then revisiting
-  it, and every new language would become a registration someone has to remember. Revisit it as
-  part of the Phase 3 asset audit, since cross-origin isolation touches the same loading path.
+- **The Monaco bundle: measured in Phase 3, and not worth splitting.** Importing all of
+  `monaco-editor` produces a 4.3 MB main chunk (1.13 MB gzipped). The plan expected that importing
+  `monaco-editor/editor/editor.api` plus only the features and languages we use would roughly
+  halve it. Built and measured against what a visitor actually downloads to see the Express
+  template's `index.js` (the resources the page loaded, gzipped):
+
+  |           | Before   | Lean entry | Change        |
+  | --------- | -------- | ---------- | ------------- |
+  | Page code | 1,235 kB | 1,227 kB   | −8 kB (−0.6%) |
+  | Workers   | 1,582 kB | 1,582 kB   | none          |
+
+  The 84 syntax-highlighting languages were already split into chunks loaded on first use, and
+  `editor.api` alone brings in the editor core and its services, which is nearly all of the
+  weight; the features we could drop were small. Below the 20% bar set before measuring, so it
+  was reverted: it would have made every new language or feature a registration to remember for
+  under 1%. The real cost is the TypeScript worker (1.5 MB gzipped, loaded when the first JS/TS
+  file opens), which is the TypeScript compiler itself; it loads in a worker, off the main thread.
+
 - **Accessibility:** keyboard-reachable controls, visible focus states, sufficient contrast in
   both themes, and remote-cursor labels that stay readable.
 - **Error handling:** an error boundary per pane; user-facing errors are specific and
