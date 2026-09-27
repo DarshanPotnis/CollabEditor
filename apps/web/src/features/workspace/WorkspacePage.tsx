@@ -26,7 +26,7 @@ import { ToastProvider, useToasts } from '../notifications/ToastProvider.js';
 import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
-import { RunPanelPlaceholder } from '../runtime/RunPanelPlaceholder.js';
+import { RunPanel } from '../runtime/RunPanel.js';
 import { EditorPane } from '../tabs/EditorPane.js';
 import { useTabs } from '../tabs/useTabs.js';
 import { NotFoundPage } from './NotFoundPage.js';
@@ -151,7 +151,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
               <p className="p-4 text-sm text-zinc-400">Loading the project…</p>
             )
           }
-          run={<RunPanelPlaceholder />}
+          run={<RunPanel session={session} onSyncError={showError} />}
         />
       </main>
     </div>

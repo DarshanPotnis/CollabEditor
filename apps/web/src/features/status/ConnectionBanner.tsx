@@ -17,6 +17,7 @@ export function ConnectionBanner({ state }: { state: ConnectionState }): React.R
   return (
     <div
       role="status"
+      aria-label="Connection"
       aria-live="polite"
       className={`flex items-start gap-3 border-b px-4 py-2.5 text-sm ${TONE_CLASSES[message.tone]}`}
     >
