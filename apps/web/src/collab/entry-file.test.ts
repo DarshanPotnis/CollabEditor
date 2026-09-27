@@ -1,19 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { resolveTree, type NodeFields, type ProjectMeta } from '@collabcode/shared';
+import { resolveTree, type ProjectMeta } from '@collabcode/shared';
+import { node } from '../test/nodes.js';
 import { entryFileId } from './entry-file.js';
-
-function node(overrides: Partial<NodeFields> & Pick<NodeFields, 'id' | 'name'>): NodeFields {
-  return {
-    kind: 'file',
-    parentId: null,
-    createdAt: 1,
-    createdBy: 'system',
-    deletedAt: null,
-    deletedBy: null,
-    deletedByName: null,
-    ...overrides,
-  };
-}
 
 const meta: ProjectMeta = { schemaVersion: 1, name: 'T', template: 'express-api', createdAt: 1 };
 

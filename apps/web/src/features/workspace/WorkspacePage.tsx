@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { fileSizeLimitMessage, readFileText, type ProjectSummary } from '@collabcode/shared';
+import {
+  fileSizeLimitMessage,
+  readFileText,
+  readMeta,
+  type ProjectSummary,
+} from '@collabcode/shared';
 import { useProject } from '../../collab/useProject.js';
 import { useCollaborators, usePublishIdentity } from '../../collab/useCollaborators.js';
 import { remoteOnly } from '../../collab/collaborators.js';
-import { useEntryFile } from '../../collab/useEntryFile.js';
+import { entryFileId } from '../../collab/entry-file.js';
+import { useFilePresence } from '../../collab/useFilePresence.js';
+import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
 import { CodeEditor } from '../editor/CodeEditor.js';
+import { FileTree } from '../file-tree/FileTree.js';
+import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
 import { RunPanelPlaceholder } from '../runtime/RunPanelPlaceholder.js';
@@ -24,8 +33,21 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   const [notice, setNotice] = useState<string | null>(null);
 
   const collaborators = useCollaborators(session);
-  const entryFile = useEntryFile(session);
-  usePublishIdentity(session, identity, entryFile?.id ?? null);
+  const tree = useResolvedTree(session);
+  const presence = useFilePresence(collaborators);
+  const folders = useExpandedFolders(project.id);
+  const [openedFileId, setOpenedFileId] = useState<string | null>(null);
+
+  // Until someone picks a file, show the template's entry file.
+  const activeFileId =
+    openedFileId !== null && tree.byId.has(openedFileId)
+      ? openedFileId
+      : session
+        ? entryFileId(tree, readMeta(session.doc))
+        : null;
+  const activeFile = activeFileId === null ? undefined : tree.byId.get(activeFileId);
+
+  usePublishIdentity(session, identity, activeFileId);
   useRemoteCursorStyles(remoteOnly(collaborators));
 
   const rename = useCallback((name: string) => {
@@ -47,8 +69,8 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   }, [notice]);
 
   const ytext = useMemo(
-    () => (session && entryFile ? (readFileText(session.doc, entryFile.id) ?? null) : null),
-    [session, entryFile],
+    () => (session && activeFileId ? (readFileText(session.doc, activeFileId) ?? null) : null),
+    [session, activeFileId],
   );
   const awareness = session?.provider.awareness ?? null;
 
@@ -75,18 +97,20 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
       <main className="min-h-0 flex-1">
         <WorkspaceLayout
           tree={
-            <section aria-label="Files" className="h-full">
-              {entryFile && (
-                <p className="px-3 py-2 font-mono text-xs text-zinc-400">{entryFile.name}</p>
-              )}
-            </section>
+            <FileTree
+              tree={tree}
+              folders={folders}
+              activeFileId={activeFileId}
+              presence={presence}
+              onOpenFile={setOpenedFileId}
+            />
           }
           editor={
-            ytext && awareness && entryFile ? (
+            ytext && awareness && activeFile ? (
               <CodeEditor
                 ytext={ytext}
                 awareness={awareness}
-                fileName={entryFile.name}
+                fileName={activeFile.path}
                 onFileSizeLimit={onFileSizeLimit}
               />
             ) : (
