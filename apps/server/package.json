@@ -13,9 +13,13 @@
     "e2e-server": "tsx src/test/e2e-server.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.65",
+    "@ai-sdk/google": "4.0.82",
+    "@ai-sdk/openai": "4.0.78",
     "@collabcode/shared": "*",
     "@hocuspocus/extension-database": "^4.7.0",
     "@hocuspocus/server": "^4.7.0",
+    "ai": "7.0.118",
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",

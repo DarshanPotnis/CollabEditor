@@ -17,6 +17,14 @@ const originSchema = z.string().refine(
   { message: 'must be an origin such as https://app.example.com (no path, no trailing slash)' },
 );
 
+/** A whole number from the environment, where an empty value means "use the default". */
+function envCount(fallback: number) {
+  return z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.coerce.number().int().nonnegative().max(1_000_000).default(fallback),
+  );
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().max(65535).default(8080),
@@ -45,6 +53,28 @@ const envSchema = z.object({
    * See http/client-ip.ts.
    */
   CLIENT_IP_SOURCE: z.enum(CLIENT_IP_SOURCES).default('render'),
+  /**
+   * Key for the shared free tier (Google AI Studio). Optional: without it the
+   * shared tier is off and callers can still use their own key. Never logged.
+   */
+  GEMINI_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed === undefined || trimmed === '' ? undefined : trimmed;
+    }),
+  /** The Gemini model the shared tier calls. */
+  AI_DEFAULT_MODEL: z
+    .string()
+    .regex(/^gemini-[a-z0-9.-]{1,60}$/, { message: 'must be a Gemini model id' })
+    .default('gemini-3.5-flash-lite'),
+  /** Shared-tier requests per day for everyone together: 80% of the free quota. */
+  AI_GLOBAL_DAILY_REQUESTS: envCount(400),
+  /** Shared-tier requests per day from one visitor (client IP, IPv6 by /56). */
+  AI_PER_IP_DAILY_REQUESTS: envCount(30),
+  /** Shared-tier requests per day for one project. */
+  AI_PER_PROJECT_DAILY_REQUESTS: envCount(60),
 });
 
 export type ServerConfig = z.infer<typeof envSchema>;
