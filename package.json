@@ -11,10 +11,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @collabcode/shared && npm run build -w @collabcode/server && npm run build -w @collabcode/web",
-    "build:shared": "npm run build -w @collabcode/shared",
-    "dev": "npm run build:shared && concurrently -n shared,server,web -c gray,blue,magenta \"npm:dev:shared\" \"npm:dev:server\" \"npm:dev:web\"",
+    "build": "npm run build:shared && npm run build -w @collabcode/server && npm run build -w @collabcode/web",
+    "build:shared": "npm run build -w @collabcode/shared && npm run build -w @collabcode/agent",
+    "dev": "npm run build:shared && concurrently -n shared,agent,server,web -c gray,cyan,blue,magenta \"npm:dev:shared\" \"npm:dev:agent\" \"npm:dev:server\" \"npm:dev:web\"",
     "dev:shared": "npm run dev -w @collabcode/shared",
+    "dev:agent": "npm run dev -w @collabcode/agent",
     "dev:server": "npm run dev -w @collabcode/server",
     "dev:web": "npm run dev -w @collabcode/web",
     "test": "npm run build:shared && vitest run",

@@ -83,8 +83,8 @@ Run from the repository root.
 | `npm install`                            | Installs every workspace                                             |
 | `npm run dev`                            | Shared package in watch mode, server on :8080, web on :5173          |
 | `npm run dev:server` / `npm run dev:web` | One of them on its own                                               |
-| `npm run build`                          | Builds shared, then server (tsup), then web (vite)                   |
-| `npm run build:shared`                   | Just the shared package. Lint and typecheck need its output to exist |
+| `npm run build`                          | Builds shared and agent, then server (tsup), then web (vite)         |
+| `npm run build:shared`                   | `packages/shared`, then `packages/agent`. Lint and typecheck need it |
 | `npm test`                               | Unit + integration (Vitest). Needs no database                       |
 | `npm run typecheck`                      | Every workspace, plus the root and e2e configs                       |
 | `npm run lint`                           | ESLint, type-aware                                                   |

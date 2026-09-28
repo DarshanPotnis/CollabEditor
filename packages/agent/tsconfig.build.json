@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    // No DOM and no Node types: the agent core runs in the browser and, for the
+    // evals, in Node, so it may use neither. Time and stopping come in through
+    // the Clock and StopSignal it is given.
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/test/**"]
+}
