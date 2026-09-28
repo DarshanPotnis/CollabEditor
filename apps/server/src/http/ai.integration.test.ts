@@ -10,12 +10,14 @@ import {
   apiErrorSchema,
   type AiStreamEvent,
 } from '@collabcode/shared';
+import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   startTestServer,
   type StartTestServerOptions,
   type TestServer,
 } from '../collab/test-server.js';
+import { createLogger } from '../lib/logger.js';
 import { createFakeModelGateway, type FakeReply } from '../test/fake-model-gateway.js';
 import { seedProject, waitUntil } from '../test/support.js';
 
@@ -396,12 +398,38 @@ describe('POST /api/ai/step', () => {
     ]);
   });
 
-  it('gives up on a model that takes too long', async () => {
+  it('gives up on a model that takes too long, and logs it as a warning', async () => {
+    const lines: string[] = [];
+    const logger = createLogger(
+      'info',
+      false,
+      new Writable({
+        write(chunk: Buffer, _encoding, done) {
+          lines.push(chunk.toString());
+          done();
+        },
+      }),
+    );
     const gateway = scripted({ kind: 'text', chunks: ['late'], delayMs: 2_000 });
-    const { server, projectId } = await serve({ ai: { gateway, callTimeoutMs: 100 } });
+    const { server, projectId } = await serve({ logger, ai: { gateway, callTimeoutMs: 100 } });
     const response = await step(server, explainBody(projectId));
     expect(response.status).toBe(503);
     expect((await apiError(response)).message).toContain('took too long');
+
+    const logged = lines
+      .map((line) => JSON.parse(line) as { level: number; msg: string; ai?: unknown })
+      .find((entry) => entry.msg === 'ai step timed out');
+    expect(logged).toMatchObject({ level: 40, ai: { failure: 'timeout', firstEventMs: null } });
+  });
+
+  it('never calls a failure that came before the time limit a timeout', async () => {
+    const gateway = scripted({ kind: 'fail', failure: 'unavailable', statusCode: 503 });
+    const { server, projectId } = await serve({ ai: { gateway, callTimeoutMs: 5_000 } });
+    const response = await step(server, explainBody(projectId));
+    expect(response.status).toBe(503);
+    expect((await apiError(response)).message).toBe(
+      'The AI provider is not answering right now. Try again in a minute.',
+    );
   });
 
   it('stops the model call when the caller goes away mid-answer', async () => {

@@ -217,6 +217,9 @@ export function createAiRouter({
         outcome.status === 'failed' && outcome.failure === 'invalid-key' && !meta.ownKey;
       if (sharedKeyRefused || (outcome.status === 'failed' && outcome.unexpected !== null)) {
         req.log.error({ ai: meta }, 'ai step failed');
+      } else if (outcome.status === 'failed' && outcome.failure === 'timeout') {
+        // firstEventMs says whether the provider had started answering.
+        req.log.warn({ ai: meta }, 'ai step timed out');
       } else {
         req.log.info({ ai: meta }, 'ai step');
       }
