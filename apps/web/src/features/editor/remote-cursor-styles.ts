@@ -33,12 +33,14 @@ export function remoteCursorStyles(cursors: readonly RemoteCursor[]): string {
     .map(({ clientId, user }) => {
       const color = user.color;
       const label = escapeCssString(user.name);
+      // An AI agent's caret is dashed, so its typing is never mistaken for a person's.
+      const caret = user.kind === 'agent' ? 'dashed' : 'solid';
       return `.yRemoteSelection-${String(clientId)} {
   background-color: ${color}${SELECTION_ALPHA};
 }
 .yRemoteSelectionHead-${String(clientId)} {
   position: relative;
-  border-left: 2px solid ${color};
+  border-left: 2px ${caret} ${color};
   border-top: 2px solid ${color};
   height: 100%;
   box-sizing: border-box;

@@ -13,6 +13,7 @@
     "preview:e2e": "vite preview --mode e2e --port 4173 --strictPort --host 127.0.0.1"
   },
   "dependencies": {
+    "@collabcode/agent": "*",
     "@collabcode/shared": "*",
     "@hocuspocus/provider": "^4.7.0",
     "@webcontainer/api": "^1.6.4",

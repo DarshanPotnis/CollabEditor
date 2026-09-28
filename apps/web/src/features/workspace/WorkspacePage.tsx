@@ -14,6 +14,7 @@ import { remoteCursorIndex } from '../../collab/remote-selection.js';
 import { entryFileId } from '../../collab/entry-file.js';
 import { useCycleNotice } from '../../collab/useCycleNotice.js';
 import { useFilePresence } from '../../collab/useFilePresence.js';
+import { useLastEditPresence } from '../../collab/useLastEditPresence.js';
 import { useResolvedTree } from '../../collab/useResolvedTree.js';
 import { browserStorage, loadIdentity, saveIdentity, withName } from '../../lib/identity.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
@@ -61,6 +62,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   const activeId = tabs.state.activeId;
 
   usePublishIdentity(session, identity, activeId);
+  useLastEditPresence(session);
   useRemoteCursorStyles(remoteOnly(collaborators));
   useCycleNotice(tree, toasts);
 
@@ -88,8 +90,8 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
 
   const [reveal, setReveal] = useState<RevealRequest | null>(null);
   const describeCollaborator = useCallback(
-    (collaborator: Collaborator) => followLabel(collaborator, tree),
-    [tree],
+    (collaborator: Collaborator) => followLabel(collaborator, tree, collaborators),
+    [tree, collaborators],
   );
   const follow = useCallback(
     (collaborator: Collaborator) => {

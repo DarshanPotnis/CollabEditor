@@ -183,3 +183,47 @@ describe('document shape', () => {
     expect(tree.byId.size).toBe(TEMPLATES['blank-node'].files.length);
   });
 });
+
+describe('an AI agent as a peer', () => {
+  /**
+   * What apps/web/src/features/agent/agent-peer.ts does: a second Y.Doc in the
+   * person's tab, on its own connection. The server has nothing special for it.
+   */
+  it('is just another connection: its edits and presence reach everyone, and leave with it', async () => {
+    const project = await seedProject(server.repo);
+    const host = track(await connectClient(server.collabUrl, project));
+    const agent = await connectClient(server.collabUrl, project);
+    const collaborator = track(await connectClient(server.collabUrl, project));
+    const awarenessOf = (client: Client): NonNullable<HocuspocusProvider['awareness']> => {
+      const awareness = client.provider.awareness;
+      if (!awareness) throw new Error('no awareness');
+      return awareness;
+    };
+
+    expect(agent.doc.clientID).not.toBe(host.doc.clientID);
+    awarenessOf(agent).setLocalState({ user: { id: 'agent-s1', kind: 'agent' } });
+    agent.doc.transact(() => agent.text.insert(0, '// by the agent\n'), 'collabcode:agent:s1');
+
+    for (const client of [host, collaborator]) {
+      await waitUntil(
+        () => client.text.toJSON().startsWith('// by the agent'),
+        'the agent edit to arrive',
+      );
+      await waitUntil(
+        () => awarenessOf(client).getStates().get(agent.doc.clientID) !== undefined,
+        'the agent to appear',
+      );
+    }
+
+    agent.destroy();
+    await waitUntil(
+      () => awarenessOf(collaborator).getStates().get(agent.doc.clientID) === undefined,
+      'the agent to leave',
+    );
+    host.text.insert(0, 'still here ');
+    await waitUntil(
+      () => collaborator.text.toJSON().startsWith('still here'),
+      'the host to keep working',
+    );
+  });
+});

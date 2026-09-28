@@ -1,3 +1,4 @@
+import { Bot } from 'lucide-react';
 import type { Collaborator } from '../../collab/collaborators.js';
 
 function initials(name: string): string {
@@ -24,7 +25,13 @@ function Avatar({
   // The colour is one of a fixed palette (enforced by the awareness schema),
   // so it is safe as an inline style.
   const style = { backgroundColor: collaborator.user.color };
-  const letters = initials(collaborator.user.name);
+  // An AI agent shows a robot rather than initials, whatever name it gives.
+  const letters =
+    collaborator.user.kind === 'agent' ? (
+      <Bot aria-hidden="true" className="size-4" />
+    ) : (
+      initials(collaborator.user.name)
+    );
 
   if (!onFollow) {
     return (
@@ -54,13 +61,22 @@ export type PresenceBarProps = {
   onFollow: (collaborator: Collaborator) => void;
 };
 
+/** "Just you", "3 people here", "You and an AI teammate here". */
+function whoIsHere(collaborators: readonly Collaborator[]): string {
+  const agents = collaborators.filter((collaborator) => collaborator.user.kind === 'agent').length;
+  const people = collaborators.length - agents;
+  if (collaborators.length === 0) return 'Connecting…';
+  if (agents === 0) return people === 1 ? 'Just you' : `${String(people)} people here`;
+  const humans = people === 1 ? 'You' : `${String(people)} people`;
+  const ais = agents === 1 ? 'an AI teammate' : `${String(agents)} AI teammates`;
+  return `${humans} and ${ais} here`;
+}
+
 export function PresenceBar({
   collaborators,
   describe,
   onFollow,
 }: PresenceBarProps): React.ReactElement {
-  const count = collaborators.length;
-
   return (
     <div className="flex items-center gap-3">
       <div className="flex -space-x-2">
@@ -73,9 +89,7 @@ export function PresenceBar({
           />
         ))}
       </div>
-      <span className="text-xs text-zinc-400">
-        {count === 0 ? 'Connecting…' : count === 1 ? 'Just you' : `${String(count)} people here`}
-      </span>
+      <span className="text-xs text-zinc-400">{whoIsHere(collaborators)}</span>
     </div>
   );
 }
