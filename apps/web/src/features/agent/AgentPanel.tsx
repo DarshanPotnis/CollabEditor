@@ -4,6 +4,7 @@
  * Download trace. Everything the model wrote is shown as text (AiText), never
  * as HTML.
  */
+import type { SessionChanges } from '@collabcode/agent';
 import { AGENT_STEP_LIMITS } from '@collabcode/shared';
 import { Bot, Check, Eye, LoaderCircle, X } from 'lucide-react';
 import { useState } from 'react';
@@ -11,6 +12,7 @@ import { useNow } from '../../lib/useNow.js';
 import { AiText } from '../ai/AiText.js';
 import { PrivacyNotice } from '../ai/PrivacyNotice.js';
 import { loadLiveTyping, saveLiveTyping } from './agent-preferences.js';
+import { changesText } from './changes-text.js';
 import {
   outcomeText,
   runningStatus,
@@ -191,6 +193,17 @@ function duration(ms: number): string {
     : `${String(Math.floor(seconds / 60))} min ${String(seconds % 60)} s`;
 }
 
+/** For an ending without the model's summary: what it changed, from its trace. */
+function ChangesSoFar({ changes }: { changes: SessionChanges }): React.ReactElement {
+  const text = changesText(changes);
+  return (
+    <div className="space-y-1 text-xs text-zinc-500">
+      <p>What it changed so far is still there.</p>
+      {text !== null && <p className="text-zinc-300">{text}</p>}
+    </div>
+  );
+}
+
 function EndedView({
   state,
   controls,
@@ -251,7 +264,7 @@ function EndedView({
         <p className="text-xs text-zinc-500">It did not change any files.</p>
       )}
       {undo.kind === 'available' && outcome.kind !== 'finished' && (
-        <p className="text-xs text-zinc-500">What it changed so far is still there.</p>
+        <ChangesSoFar changes={state.changes} />
       )}
       {undo.kind === 'undone' && (
         <div role="status" className="space-y-1 text-xs text-zinc-300">

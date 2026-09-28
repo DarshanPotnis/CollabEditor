@@ -21,6 +21,7 @@ import {
   type ToolResult,
 } from '@collabcode/shared';
 import { fitConversation } from './conversation-fit.js';
+import { sessionChanges } from './session-changes.js';
 import { dispatchToolCall } from './dispatch.js';
 import type { AgentEvent } from './events.js';
 import { AGENT_LIMITS, MAX_INVALID_STEPS, type AgentLimits } from './limits.js';
@@ -106,8 +107,9 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     session.dispose();
     totals.durationMs = clock.now() - startedAt;
     trace.finish(outcome, totals);
-    emit({ type: 'finished', outcome, totals: { ...totals } });
-    return { outcome, trace: trace.snapshot(), conversation };
+    const snapshot = trace.snapshot();
+    emit({ type: 'finished', outcome, totals: { ...totals }, changes: sessionChanges(snapshot) });
+    return { outcome, trace: snapshot, conversation };
   };
   const interrupted = (): AgentOutcome =>
     options.stop.aborted

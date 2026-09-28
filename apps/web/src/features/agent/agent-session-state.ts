@@ -3,7 +3,7 @@
  * reports (the core's AgentEvents) and what the person does. Kept apart from
  * React so every state is easy to reach in a test.
  */
-import type { AgentEvent, AgentOutcome, AgentTotals } from '@collabcode/agent';
+import type { AgentEvent, AgentOutcome, AgentTotals, SessionChanges } from '@collabcode/agent';
 import { toolStatus } from './agent-status.js';
 
 /** A tool's output shown in the log is capped; the trace keeps all of it. */
@@ -53,7 +53,14 @@ export type AgentSessionState =
       /** The agent's awareness client, which follow mode watches. */
       agentClientId: number;
     })
-  | (Common & { phase: 'ended'; outcome: AgentOutcome; totals: AgentTotals; undo: UndoView });
+  | (Common & {
+      phase: 'ended';
+      outcome: AgentOutcome;
+      totals: AgentTotals;
+      /** What it changed, from its trace, for an ending without the model's summary. */
+      changes: SessionChanges;
+      undo: UndoView;
+    });
 
 export type AgentSessionEvent =
   | { type: 'request'; goal: string; consented: boolean }
@@ -135,6 +142,7 @@ function running(
         remainingToday: state.remainingToday,
         outcome: event.outcome,
         totals: event.totals,
+        changes: event.changes,
         undo: { kind: 'available' },
       };
   }

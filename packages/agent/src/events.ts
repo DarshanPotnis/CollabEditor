@@ -4,6 +4,7 @@
  * facts, kept for later.
  */
 import type { AiFinishReason, AiProvider } from '@collabcode/shared';
+import type { SessionChanges } from './session-changes.js';
 import type { AgentOutcome, AgentTotals } from './trace.js';
 import type { TokenUsage } from './types.js';
 
@@ -31,4 +32,10 @@ export type AgentEvent =
     }
   /** A ModelClient or ToolHost broke its contract by throwing; the caller should log it. */
   | { type: 'crashed'; where: 'model' | 'tool'; error: unknown }
-  | { type: 'finished'; outcome: AgentOutcome; totals: AgentTotals };
+  | {
+      type: 'finished';
+      outcome: AgentOutcome;
+      totals: AgentTotals;
+      /** What it changed, from its trace: the panel's summary when the model gave none. */
+      changes: SessionChanges;
+    };

@@ -11,6 +11,7 @@ export * from './loop.js';
 export * from './model-retry.js';
 export * from './presence-rule.js';
 export * from './scripted-model.js';
+export * from './session-changes.js';
 export * from './stop-source.js';
 export * from './tool-output.js';
 export * from './trace.js';

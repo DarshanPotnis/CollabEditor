@@ -129,6 +129,21 @@ describe('limits', () => {
     expect(model.requests).toHaveLength(3);
   });
 
+  it('ends by saying what it changed, for a panel with no summary to show', async () => {
+    const script = [
+      answerWith([toolCall('edit_file', { path: 'routes/users.js', oldText: 'a', newText: 'b' })]),
+      answerWith([toolCall('create_file', { path: 'scratch.js', content: '' })]),
+      answerWith([toolCall('delete_file', { path: 'scratch.js' })]),
+    ];
+    const { result, events } = session(script, { limits: tight({ maxSteps: 3 }) });
+    await result();
+    expect(events.at(-1)).toMatchObject({
+      type: 'finished',
+      outcome: { kind: 'limit', limit: 'steps' },
+      changes: { created: [], edited: ['routes/users.js'], renamed: [], deleted: [] },
+    });
+  });
+
   it('stops at the time limit, stopping the tool that is running', async () => {
     const tools = recordingHost((_call, signal) => untilStopped(signal));
     const { result } = session([answerWith([toolCall('run_project', {})])], { tools });

@@ -11,6 +11,7 @@ import {
 } from './agent-session-state.js';
 
 const totals = { steps: 2, inputTokens: 1_800, outputTokens: 60, durationMs: 42_000 };
+const changes = { created: [], edited: ['routes/users.js'], renamed: [], deleted: [] };
 
 function play(...events: AgentSessionEvent[]): AgentSessionState {
   return events.reduce(agentSessionReducer, IDLE_AGENT_SESSION);
@@ -142,16 +143,16 @@ describe('agentSessionReducer', () => {
         toolName: 'run_project',
         input: {},
       }),
-      agent({ type: 'finished', outcome: { kind: 'stopped' }, totals }),
+      agent({ type: 'finished', outcome: { kind: 'stopped' }, totals, changes }),
     );
-    expect(state).toMatchObject({ phase: 'ended', totals, undo: { kind: 'available' } });
+    expect(state).toMatchObject({ phase: 'ended', totals, changes, undo: { kind: 'available' } });
     expect(state.phase === 'ended' && state.log[0]).toMatchObject({ state: 'error' });
   });
 
   it('confirms an undo only when asked, and records the result', () => {
     const ended = play(
       ...begin,
-      agent({ type: 'finished', outcome: { kind: 'finished', summary: 'Done.' }, totals }),
+      agent({ type: 'finished', outcome: { kind: 'finished', summary: 'Done.' }, totals, changes }),
     );
     const asking = agentSessionReducer(ended, {
       type: 'undo-asked',
@@ -180,7 +181,10 @@ describe('agentSessionReducer', () => {
   });
 
   it('ignores events from a session that has ended', () => {
-    const ended = play(...begin, agent({ type: 'finished', outcome: { kind: 'stopped' }, totals }));
+    const ended = play(
+      ...begin,
+      agent({ type: 'finished', outcome: { kind: 'stopped' }, totals, changes }),
+    );
     expect(agentSessionReducer(ended, agent({ type: 'text', step: 1, delta: 'late' }))).toBe(ended);
   });
 });
