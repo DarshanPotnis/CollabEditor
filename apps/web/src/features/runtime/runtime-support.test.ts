@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { browserFamily, runtimeSupport } from './runtime-support.js';
+import {
+  browserFamily,
+  isolationProblem,
+  runtimeSupport,
+  type PageIsolation,
+} from './runtime-support.js';
 
 const UA = {
   chrome:
@@ -23,27 +28,61 @@ describe('browserFamily', () => {
   });
 });
 
+const ISOLATED: PageIsolation = {
+  crossOriginIsolated: true,
+  isSecureContext: true,
+  embedded: false,
+};
+const HEADERS_MISSING: PageIsolation = { ...ISOLATED, crossOriginIsolated: false };
+
+describe('isolationProblem', () => {
+  it('has nothing to say about an isolated page', () => {
+    expect(isolationProblem(ISOLATED)).toBeNull();
+  });
+
+  it('names the cause, so the person knows what to fix', () => {
+    expect(isolationProblem({ ...ISOLATED, crossOriginIsolated: undefined })).toContain(
+      'this browser does not have',
+    );
+    expect(isolationProblem({ ...HEADERS_MISSING, isSecureContext: false })).toContain(
+      'only on HTTPS or localhost',
+    );
+    expect(isolationProblem({ ...HEADERS_MISSING, embedded: true })).toContain(
+      "inside another site's frame",
+    );
+    expect(isolationProblem(HEADERS_MISSING)).toContain('without the headers that turn it on');
+  });
+
+  it('says editing still works, and never blames cookies, which cannot cause it', () => {
+    for (const page of [
+      HEADERS_MISSING,
+      { ...HEADERS_MISSING, isSecureContext: false },
+      { ...HEADERS_MISSING, embedded: true },
+      { ...ISOLATED, crossOriginIsolated: undefined },
+    ]) {
+      expect(isolationProblem(page)).toContain('You can still edit.');
+      expect(isolationProblem(page)).not.toMatch(/cookie/i);
+    }
+  });
+});
+
 describe('runtimeSupport', () => {
   it('refuses when the page is not cross-origin isolated, whatever the browser', () => {
-    expect(runtimeSupport({ crossOriginIsolated: false, userAgent: UA.chrome })).toMatchObject({
+    expect(runtimeSupport({ ...HEADERS_MISSING, userAgent: UA.chrome })).toEqual({
       kind: 'unsupported',
-      message: expect.stringContaining('You can still edit') as unknown,
+      message: isolationProblem(HEADERS_MISSING),
     });
   });
 
   it('fully supports Chromium browsers', () => {
-    expect(runtimeSupport({ crossOriginIsolated: true, userAgent: UA.edge })).toEqual({
-      kind: 'supported',
-    });
+    expect(runtimeSupport({ ...ISOLATED, userAgent: UA.edge })).toEqual({ kind: 'supported' });
   });
 
   it('warns, without refusing, on Safari and Firefox', () => {
-    expect(runtimeSupport({ crossOriginIsolated: true, userAgent: UA.safari })).toMatchObject({
+    expect(runtimeSupport({ ...ISOLATED, userAgent: UA.safari })).toMatchObject({
       kind: 'limited',
       message: expect.stringContaining('16.4') as unknown,
     });
-    expect(runtimeSupport({ crossOriginIsolated: true, userAgent: UA.firefox }).kind).toBe(
-      'limited',
-    );
+    expect(runtimeSupport({ ...ISOLATED, userAgent: UA.firefox }).kind).toBe('limited');
   });
 });

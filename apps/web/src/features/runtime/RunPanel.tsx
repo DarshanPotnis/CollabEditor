@@ -12,7 +12,7 @@ import { runFailure, type RunFailure } from '../ai/prompts/error-prompt.js';
 import { RAW_OUTPUT_CHARS } from '../ai/terminal-text.js';
 import { canRun } from './run-state.js';
 import { runStatus, type RunStatus } from './run-status.js';
-import { runtimeSupport } from './runtime-support.js';
+import { pageIsolation, runtimeSupport } from './runtime-support.js';
 import type { RuntimeControls } from './useRuntime.js';
 import { ShellTab } from './ShellTab.js';
 import { ApiConsole } from './api-console/ApiConsole.js';
@@ -80,11 +80,7 @@ export function RunPanel({ session, runtime, onExplainError }: RunPanelProps): R
     runtime;
   const [tab, setTab] = useState<RunTab>('output');
   const support = useMemo(
-    () =>
-      runtimeSupport({
-        crossOriginIsolated: window.crossOriginIsolated,
-        userAgent: navigator.userAgent,
-      }),
+    () => runtimeSupport({ ...pageIsolation(), userAgent: navigator.userAgent }),
     [],
   );
   const status = runStatus(state);

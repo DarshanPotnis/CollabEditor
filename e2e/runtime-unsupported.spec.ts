@@ -21,7 +21,7 @@ test('without cross-origin isolation, Run is off, the banner explains, and editi
   expect(await page.evaluate(() => window.crossOriginIsolated)).toBe(false);
 
   await expect(page.getByRole('button', { name: 'Run', exact: true })).toBeDisabled();
-  await expect(page.getByText(/Running code needs a browser feature/)).toBeVisible();
+  await expect(page.getByText(/loaded without the headers that turn it on/)).toBeVisible();
 
   await typeAtEnd(page, '// still editable');
   await expect(page.locator(EDITOR)).toContainText('still editable');

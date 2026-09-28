@@ -5,6 +5,10 @@
  * that, StackBlitz supports Chromium browsers fully, Safari 16.4+ in beta and
  * Firefox in alpha (webcontainers.io/guides/browser-support). Editing never
  * depends on any of this.
+ *
+ * A page that is not isolated is told why, since each cause has its own fix:
+ * isolation needs HTTPS or localhost, a page of its own (not another site's
+ * frame), and the COOP and COEP headers (isolation-headers.ts).
  */
 export type RuntimeSupport =
   | { kind: 'supported' }
@@ -21,17 +25,45 @@ export function browserFamily(userAgent: string): BrowserFamily {
 }
 
 const BEST = 'Chrome or Edge work best.';
+const STILL_EDIT = 'You can still edit.';
 
-export function runtimeSupport(input: {
-  crossOriginIsolated: boolean;
-  userAgent: string;
-}): RuntimeSupport {
-  if (!input.crossOriginIsolated) {
-    return {
-      kind: 'unsupported',
-      message: `Running code needs a browser feature this page can't use here. You can still edit. ${BEST}`,
-    };
+/** What decides whether this page is cross-origin isolated. */
+export type PageIsolation = {
+  /** Undefined in a browser that does not have the feature at all. */
+  crossOriginIsolated: boolean | undefined;
+  isSecureContext: boolean;
+  /** Inside another page's frame. */
+  embedded: boolean;
+};
+
+/** This page's isolation, as the browser reports it. */
+export function pageIsolation(page: Window = window): PageIsolation {
+  const isolated: unknown = page.crossOriginIsolated;
+  return {
+    crossOriginIsolated: typeof isolated === 'boolean' ? isolated : undefined,
+    isSecureContext: page.isSecureContext,
+    embedded: page.top !== page.self,
+  };
+}
+
+/** Why this page cannot run code, in words for the person, or null when it can. */
+export function isolationProblem(page: PageIsolation): string | null {
+  if (page.crossOriginIsolated === true) return null;
+  if (page.crossOriginIsolated === undefined) {
+    return `Running code needs cross-origin isolation, which this browser does not have. ${BEST} ${STILL_EDIT}`;
   }
+  if (!page.isSecureContext) {
+    return `Running code needs cross-origin isolation, which works only on HTTPS or localhost, and this page is on neither. ${STILL_EDIT}`;
+  }
+  if (page.embedded) {
+    return `Running code needs cross-origin isolation, which this page does not get inside another site's frame. Open it in a tab of its own. ${STILL_EDIT}`;
+  }
+  return `Running code needs cross-origin isolation, and this page was loaded without the headers that turn it on (Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy). ${STILL_EDIT}`;
+}
+
+export function runtimeSupport(input: PageIsolation & { userAgent: string }): RuntimeSupport {
+  const problem = isolationProblem(input);
+  if (problem !== null) return { kind: 'unsupported', message: problem };
   switch (browserFamily(input.userAgent)) {
     case 'chromium':
       return { kind: 'supported' };
