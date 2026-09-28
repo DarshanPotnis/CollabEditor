@@ -71,10 +71,6 @@ test('Explain: the privacy notice comes first, then the answer streams in', asyn
   await selectLine(page, 3);
   await chooseFromMenu(page, 'console.log(a + b);', 'Explain with AI');
 
-  await expect(page.getByRole('tab', { name: 'AI', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
   await acceptPrivacyNotice(page);
   await expect(page.getByText(EXPLANATION)).toBeVisible();
   await expect(page.getByText('Answer complete.')).toBeVisible();
@@ -184,7 +180,6 @@ test('Stop keeps what arrived and offers Try again', async ({ page }) => {
 test('an own key the provider refuses says so and points to the settings', async ({ page }) => {
   await createProject(page);
   await replaceEditorText(page, CODE);
-  await page.getByRole('tab', { name: 'AI', exact: true }).click();
   await page.getByRole('button', { name: 'AI settings' }).click();
   const settings = page.getByRole('dialog');
   await settings.getByLabel('Provider').selectOption('gemini');

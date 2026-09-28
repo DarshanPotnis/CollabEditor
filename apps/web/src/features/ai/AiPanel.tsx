@@ -1,11 +1,14 @@
 /**
- * The AI view of the right-hand pane: one request at a time, from the privacy
- * notice through the streamed answer to what it cost, plus AI settings. The
- * request itself is owned by the workspace (useAiRequest), so switching to
- * the Run view never stops it.
+ * The AI panel, above the Run views: the AI teammate (AgentPanel), then the
+ * one-shot helpers' answer, one request at a time, from the privacy notice
+ * through the streamed answer to what it cost, plus AI settings. Both are
+ * owned by the workspace (useAgentSession, useAiRequest), so they outlive
+ * anything the panel shows.
  */
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
+import { AgentPanel } from '../agent/AgentPanel.js';
+import type { AgentSessionControls } from '../agent/useAgentSession.js';
 import type { AiRequestState } from './ai-request-state.js';
 import { describeStep, finishNote, keyStatus, settingsAction, usageLine } from './ai-messages.js';
 import { AiSettingsDialog } from './AiSettingsDialog.js';
@@ -16,6 +19,7 @@ import type { AiRequestControls } from './useAiRequest.js';
 import { useOwnKeyChoice } from './useOwnKeyChoice.js';
 
 export type AiPanelProps = {
+  agent: AgentSessionControls;
   request: AiRequestControls;
   /** The Edit with AI answer on screen, if it is one. */
   edit: EditProposal;
@@ -53,13 +57,12 @@ function PanelButton({
 
 function EmptyState(): React.ReactElement {
   return (
-    <div className="space-y-2 text-sm text-zinc-400">
-      <p className="text-zinc-300">Ask AI about your code.</p>
+    <div className="space-y-2 text-xs text-zinc-500">
       <p>
-        Select code in the editor, then right-click and choose Explain with AI or Edit with AI. When
-        a run crashes, Explain with AI appears in the Run view.
+        Or ask about your code: select some in the editor, then right-click and choose Explain with
+        AI or Edit with AI. When a run crashes, Explain with AI appears in the Run view. Only you
+        see these answers.
       </p>
-      <p>Only you see these answers. Edits you apply reach everyone like your own typing.</p>
     </div>
   );
 }
@@ -127,7 +130,7 @@ function RequestView({
   );
 }
 
-export function AiPanel({ request, edit, onShowEdit }: AiPanelProps): React.ReactElement {
+export function AiPanel({ agent, request, edit, onShowEdit }: AiPanelProps): React.ReactElement {
   const ownKey = useOwnKeyChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { state } = request;
@@ -147,7 +150,9 @@ export function AiPanel({ request, edit, onShowEdit }: AiPanelProps): React.Reac
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+        <AgentPanel controls={agent} usingOwnKey={ownKey.choice !== null} />
+        <hr className="border-zinc-800" />
         {state.phase === 'idle' && <EmptyState />}
         {state.phase === 'needs-consent' && (
           <PrivacyNotice onAccept={request.acceptPrivacyNotice} onCancel={request.dismiss} />

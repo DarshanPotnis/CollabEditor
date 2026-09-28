@@ -1,12 +1,12 @@
 /**
  * What the model answers in the end-to-end suite: scripted by prompt, and by
  * markers a test puts in the code, so a test can ask for a slow answer or a
- * refused key with no network and no real model. e2e/ai.spec.ts repeats the
- * marker strings; keep the two in step.
+ * refused key with no network and no real model. e2e/ai.spec.ts and
+ * e2e/agent.spec.ts repeat the marker strings; keep them in step.
  */
-import { fencedBlocks } from '@collabcode/shared';
+import { conversationSteps, fencedBlocks } from '@collabcode/shared';
 import type { ModelCall } from '../ai/model-gateway.js';
-import type { FakeReply } from './fake-model-gateway.js';
+import { toolCallReply, type FakeReply } from './fake-model-gateway.js';
 
 /** An own key the fake provider refuses, the way a real one refuses a bad key. */
 const E2E_REFUSED_KEY = 'sk-e2e-refused-0000';
@@ -24,10 +24,51 @@ function editedSelection(content: string): string {
   return [`${first}${E2E_EDIT_MARK}`, ...rest].join('\n');
 }
 
+/** An AI teammate goal containing this answers slowly enough to stop. */
+const E2E_SLOW_AGENT = 'e2e-slow-agent';
+/** The route the scripted AI teammate adds to the Express template. */
+const E2E_AGENT_ROUTE = "usersRouter.delete('/:id', (req, res) => {";
+const USERS_ROUTER = 'export const usersRouter = Router();\n';
+
+/**
+ * The AI teammate, on the Express template: read the users route, add a
+ * DELETE route to it, finish. The same three steps every time.
+ */
+function agentReply(call: ModelCall): FakeReply {
+  const goal = call.messages.map((message) => message.content).join('\n');
+  if (goal.includes(E2E_SLOW_AGENT)) {
+    const chunks = Array.from({ length: 60 }, (_, index) => `Thinking ${String(index + 1)}. `);
+    return { kind: 'text', chunks, delayMs: 250 };
+  }
+  switch (conversationSteps(call.toolUse?.conversation ?? [])) {
+    case 0:
+      return toolCallReply(
+        [{ toolName: 'read_file', input: { path: 'routes/users.js' } }],
+        'Let me look at the users route.',
+      );
+    case 1:
+      return toolCallReply([
+        {
+          toolName: 'edit_file',
+          input: {
+            path: 'routes/users.js',
+            oldText: USERS_ROUTER,
+            newText: `${USERS_ROUTER}\n${E2E_AGENT_ROUTE}\n  res.status(204).end();\n});\n`,
+          },
+        },
+      ]);
+    default:
+      return toolCallReply([
+        { toolName: 'finish', input: { summary: 'Added DELETE /users/:id to routes/users.js.' } },
+      ]);
+  }
+}
+
 export function e2eModelReply(call: ModelCall): FakeReply {
   if (call.target.apiKey === E2E_REFUSED_KEY) {
     return { kind: 'fail', failure: 'invalid-key', statusCode: 401 };
   }
+  if (call.toolUse) return agentReply(call);
   const content = call.messages.map((message) => message.content).join('\n');
   if (content.includes(E2E_SLOW_MARKER)) {
     const chunks = Array.from({ length: 60 }, (_, index) => `Part ${String(index + 1)}. `);

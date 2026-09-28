@@ -25,6 +25,8 @@ export type RuntimeControls = {
   openShell: () => void;
   /** Send an API console request to the running server, waiting out a restart. */
   send: (request: ApiRequest) => Promise<ConsoleResult>;
+  /** The runner for this session, for the AI agent's run tools; null before there is one. */
+  runner: () => Runner | null;
 };
 
 export type ConsoleResult = ApiResult | { kind: 'unavailable'; message: string };
@@ -117,5 +119,18 @@ export function useRuntime(
   const canOpenShell =
     state.phase !== 'idle' && state.phase !== 'booting' && Boolean(runner.current?.container());
 
-  return { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell, send };
+  const currentRunner = useCallback(() => runner.current, []);
+
+  return {
+    state,
+    output,
+    dependenciesChanged,
+    run,
+    stop,
+    canOpenShell,
+    shell,
+    openShell,
+    send,
+    runner: currentRunner,
+  };
 }

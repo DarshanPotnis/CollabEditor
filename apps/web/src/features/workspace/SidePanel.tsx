@@ -1,50 +1,50 @@
 /**
- * The right-hand pane: a Run | AI switch, so the layout stays at three panes
- * while AI-1's helpers are one-shot. AI-2 revisits this so the agent's panel
- * and the terminal can be seen together (docs/PLAN-AI.md §7).
- *
- * Both views stay mounted and the other one is only hidden: a run keeps going
- * while the AI view is shown, and its terminal refits when shown again.
+ * The right-hand pane: the AI panel above the Run views, both visible at once
+ * (docs/PLAN-AI.md §7 AI-2). The AI teammate's work is mostly running the
+ * project and reading its output, so the person watches the agent's log and
+ * the terminal together. The split is resizable and remembered per browser.
  */
 import type { ReactNode } from 'react';
-import { Tabs, panelId, tabId, type TabDefinition } from '../ui/Tabs.js';
+import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
+import { bestEffortStorage } from '../../lib/best-effort-storage.js';
+import { browserStorage } from '../../lib/identity.js';
+import { PaneErrorBoundary } from './PaneErrorBoundary.js';
 
-export type SideView = 'run' | 'ai';
-
-const SIDE_TABS: readonly TabDefinition<SideView>[] = [
-  { id: 'run', label: 'Run' },
-  { id: 'ai', label: 'AI' },
-];
+const layoutStorage = bestEffortStorage(browserStorage());
 
 export type SidePanelProps = {
-  view: SideView;
-  onViewChange: (view: SideView) => void;
   run: ReactNode;
   ai: ReactNode;
 };
 
-export function SidePanel({ view, onViewChange, run, ai }: SidePanelProps): React.ReactElement {
+export function SidePanel({ run, ai }: SidePanelProps): React.ReactElement {
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: 'collabcode.side.v1',
+    storage: layoutStorage,
+    onlySaveAfterUserInteractions: true,
+  });
+
   return (
-    <div className="flex h-full flex-col">
-      <Tabs
-        label="Side panel"
-        tabs={SIDE_TABS}
-        selected={view}
-        onSelect={onViewChange}
-        idPrefix="side"
+    <Group
+      orientation="vertical"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
+      className="h-full"
+    >
+      <Panel id="ai" defaultSize="50%" minSize="120px">
+        <section aria-label="AI" className="h-full">
+          <PaneErrorBoundary pane="AI panel">{ai}</PaneErrorBoundary>
+        </section>
+      </Panel>
+      <Separator
+        aria-label="Resize the AI and Run panels"
+        className="h-px bg-zinc-800 outline-none transition-colors data-[separator=active]:bg-sky-500 data-[separator=focus]:bg-sky-500 data-[separator=hover]:bg-zinc-500"
       />
-      {SIDE_TABS.map(({ id }) => (
-        <div
-          key={id}
-          role="tabpanel"
-          id={panelId('side', id)}
-          aria-labelledby={tabId('side', id)}
-          hidden={view !== id}
-          className="min-h-0 flex-1"
-        >
-          {id === 'run' ? run : ai}
-        </div>
-      ))}
-    </div>
+      <Panel id="run" minSize="160px">
+        <section aria-label="Run" className="h-full">
+          <PaneErrorBoundary pane="Run panel">{run}</PaneErrorBoundary>
+        </section>
+      </Panel>
+    </Group>
   );
 }

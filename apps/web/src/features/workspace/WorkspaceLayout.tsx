@@ -1,5 +1,5 @@
 /**
- * The three panes: file tree | editor | side panel (Run or AI). Sizes are remembered per
+ * The three panes: file tree | editor | side panel (AI above Run). Sizes are remembered per
  * browser, and the separators are keyboard-resizable (arrow keys) because
  * react-resizable-panels implements the ARIA separator pattern.
  */
@@ -49,8 +49,8 @@ export function WorkspaceLayout({ tree, editor, side }: WorkspaceLayoutProps): R
       </Panel>
       <ResizeHandle label="Resize the side panel" />
       {/* Still "run" from before the AI view existed, so saved sizes keep working. */}
-      <Panel id="run" defaultSize="24%" minSize="180px" maxSize="50%">
-        <PaneErrorBoundary pane="side panel">{side}</PaneErrorBoundary>
+      <Panel id="run" defaultSize="28%" minSize="220px" maxSize="50%">
+        {side}
       </Panel>
     </Group>
   );

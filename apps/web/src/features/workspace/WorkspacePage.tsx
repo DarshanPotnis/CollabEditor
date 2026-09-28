@@ -35,10 +35,12 @@ import { useAiActions } from '../ai/useAiActions.js';
 import { useAiRequest } from '../ai/useAiRequest.js';
 import { ConnectionBanner } from '../status/ConnectionBanner.js';
 import { RunPanel } from '../runtime/RunPanel.js';
+import { useRuntime } from '../runtime/useRuntime.js';
+import { useAgentSession } from '../agent/useAgentSession.js';
 import { EditorPane } from '../tabs/EditorPane.js';
 import { useTabs } from '../tabs/useTabs.js';
 import { NotFoundPage } from './NotFoundPage.js';
-import { SidePanel, type SideView } from './SidePanel.js';
+import { SidePanel } from './SidePanel.js';
 import { useProjectSummary } from './useProjectSummary.js';
 import { WorkspaceHeader } from './WorkspaceHeader.js';
 import { WorkspaceLayout } from './WorkspaceLayout.js';
@@ -50,7 +52,6 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   const [identity, setIdentity] = useState(() => loadIdentity(browserStorage()));
   const toasts = useToasts();
   const [filesView, setFilesView] = useState<FilesView>('files');
-  const [sideView, setSideView] = useState<SideView>('run');
   const aiRequest = useAiRequest();
 
   const collaborators = useCollaborators(session);
@@ -83,6 +84,12 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     [toasts],
   );
   const showDeleted = useCallback(() => setFilesView('deleted'), []);
+  const runtime = useRuntime(session, showError);
+  const agentHost = useMemo(
+    () => ({ userId: identity.id, name: identity.name }),
+    [identity.id, identity.name],
+  );
+  const agent = useAgentSession({ projectId: project.id, session, host: agentHost, runtime });
   const actions = useTreeActions(session, identity, toasts, {
     onCreatedFile: tabs.open,
     onShowDeleted: showDeleted,
@@ -119,7 +126,6 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   const awareness = session?.provider.awareness ?? null;
 
   const editorRef = useRef<CodeEditorHandle>(null);
-  const showAiView = useCallback(() => setSideView('ai'), []);
   const notify = useCallback(
     (message: string, tone: 'info' | 'error') => toasts.show({ message, tone }),
     [toasts],
@@ -132,7 +138,6 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
     projectId: project.id,
     request: aiRequest,
     editor: editorRef,
-    showAiView,
     openFile: tabs.open,
     notify,
     files,
@@ -202,16 +207,17 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
           }
           side={
             <SidePanel
-              view={sideView}
-              onViewChange={setSideView}
               run={
-                <RunPanel
-                  session={session}
-                  onSyncError={showError}
-                  onExplainError={ai.explainError}
+                <RunPanel session={session} runtime={runtime} onExplainError={ai.explainError} />
+              }
+              ai={
+                <AiPanel
+                  agent={agent}
+                  request={aiRequest}
+                  edit={proposal}
+                  onShowEdit={ai.showEdit}
                 />
               }
-              ai={<AiPanel request={aiRequest} edit={proposal} onShowEdit={ai.showEdit} />}
             />
           }
         />

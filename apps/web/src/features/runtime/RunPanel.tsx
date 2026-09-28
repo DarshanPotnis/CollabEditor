@@ -1,5 +1,5 @@
 /**
- * The right-hand pane: run the project in this browser (PLAN.md §10).
+ * The Run views: run the project in this browser (PLAN.md §10).
  *
  * Nothing runs until this person clicks Run, and their run is theirs alone.
  * The note under the status says what that means: the code includes
@@ -13,7 +13,7 @@ import { RAW_OUTPUT_CHARS } from '../ai/terminal-text.js';
 import { canRun } from './run-state.js';
 import { runStatus, type RunStatus } from './run-status.js';
 import { runtimeSupport } from './runtime-support.js';
-import { useRuntime } from './useRuntime.js';
+import type { RuntimeControls } from './useRuntime.js';
 import { ShellTab } from './ShellTab.js';
 import { ApiConsole } from './api-console/ApiConsole.js';
 import { PreviewTab } from './PreviewTab.js';
@@ -69,18 +69,15 @@ function Button({
 
 export type RunPanelProps = {
   session: ProjectSession | null;
-  onSyncError: (message: string) => void;
+  /** Owned by the workspace, which the AI agent shares it with. */
+  runtime: RuntimeControls;
   /** Explain with AI, offered when the run stopped on an error. */
   onExplainError: (failure: RunFailure) => void;
 };
 
-export function RunPanel({
-  session,
-  onSyncError,
-  onExplainError,
-}: RunPanelProps): React.ReactElement {
+export function RunPanel({ session, runtime, onExplainError }: RunPanelProps): React.ReactElement {
   const { state, output, dependenciesChanged, run, stop, canOpenShell, shell, openShell, send } =
-    useRuntime(session, onSyncError);
+    runtime;
   const [tab, setTab] = useState<RunTab>('output');
   const support = useMemo(
     () =>

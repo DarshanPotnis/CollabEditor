@@ -24,8 +24,6 @@ export type AiActionsDeps = {
   projectId: string;
   request: AiRequestControls;
   editor: RefObject<CodeEditorHandle | null>;
-  /** Shows the AI view of the side panel. */
-  showAiView: () => void;
   openFile: (fileId: string) => void;
   notify: (message: string, tone: 'info' | 'error') => void;
   /** The project's files, or null before the project has loaded. */
@@ -66,7 +64,6 @@ export function useAiActions({
   projectId,
   request,
   editor,
-  showAiView,
   openFile,
   notify,
   files,
@@ -89,10 +86,9 @@ export function useAiActions({
         return;
       }
       setTarget(null);
-      showAiView();
       start(built.step);
     },
-    [projectId, notify, showAiView, start],
+    [projectId, notify, start],
   );
 
   const explainError = useCallback(
@@ -105,10 +101,9 @@ export function useAiActions({
         return;
       }
       setTarget(null);
-      showAiView();
       start(built.step);
     },
-    [files, projectId, notify, showAiView, start],
+    [files, projectId, notify, start],
   );
 
   const submitInstruction = useCallback(
@@ -127,11 +122,10 @@ export function useAiActions({
         startLine: lineOfOffset(selection.text, selection.start),
         anchor,
       });
-      showAiView();
       start(built.step);
       return null;
     },
-    [pending, projectId, showAiView, start],
+    [pending, projectId, start],
   );
 
   const proposal = editProposal(request.state, target);

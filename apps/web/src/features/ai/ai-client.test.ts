@@ -1,7 +1,7 @@
 import { AI_KEY_HEADER, type AiStreamEvent } from '@collabcode/shared';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import { ApiError } from '../../lib/api-error.js';
-import { streamAiStep, type AiAnswerEvent, type AiStep } from './ai-client.js';
+import { AiStepError, streamAiStep, type AiAnswerEvent, type AiStep } from './ai-client.js';
 import type { OwnKey } from './byok-store.js';
 
 const API_URL = 'http://api.test';
@@ -292,5 +292,41 @@ describe('streamAiStep: stopping', () => {
     expect(events).toHaveLength(1);
     expect(error).not.toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('what a failure says', () => {
+  async function failure(fetch: typeof globalThis.fetch): Promise<AiStepError> {
+    try {
+      await collect(fetch);
+    } catch (error) {
+      if (error instanceof AiStepError) return error;
+      throw error;
+    }
+    throw new Error('expected the request to fail');
+  }
+
+  it('marks a refusal before any answer as up front, with how long to wait', async () => {
+    const response = new Response(
+      JSON.stringify({ error: { code: 'rate-limited', message: 'Busy minute.' } }),
+      { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '45' } },
+    );
+    const error = await failure(fakeFetch(response));
+    expect(error).toMatchObject({ code: 'rate-limited', upFront: true, retryAfterMs: 45_000 });
+    expect(error).toBeInstanceOf(ApiError);
+  });
+
+  it('marks a failure in the stream as not up front: the model had started', async () => {
+    const response = streamResponse(
+      sse(
+        { type: 'text-delta', text: 'Half' },
+        { type: 'error', error: { code: 'busy', message: 'Busy.' } },
+      ),
+    );
+    expect(await failure(fakeFetch(response))).toMatchObject({
+      code: 'busy',
+      upFront: false,
+      retryAfterMs: null,
+    });
   });
 });
