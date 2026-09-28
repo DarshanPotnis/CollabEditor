@@ -6,7 +6,7 @@ import {
   presenceColorFor,
   sanitizeUserName,
 } from './presence.js';
-import { MAX_USER_NAME_LENGTH } from './limits.js';
+import { MAX_AGENT_STATUS_LENGTH, MAX_USER_NAME_LENGTH } from './limits.js';
 
 const validState = {
   user: { id: 'user-1', name: 'Ada', color: PRESENCE_COLORS[0], kind: 'human' },
@@ -43,6 +43,46 @@ describe('parseAwarenessState', () => {
     ['activeFileId with a slash', { ...validState, activeFileId: '../etc/passwd' }],
   ])('rejects %s', (_label, raw) => {
     expect(parseAwarenessState(raw)).toBeNull();
+  });
+
+  describe('agents and edit times', () => {
+    const agentState = {
+      user: { id: 'agent-s1', name: 'AI teammate', color: PRESENCE_COLORS[1], kind: 'agent' },
+      activeFileId: 'abc123',
+      lastEditAt: 1_700_000_000_000,
+      agent: { hostUserId: 'user-1', hostName: 'Ada', sessionId: 's1', status: 'Editing a.js' },
+    };
+
+    it('accepts an agent with its host, session and status', () => {
+      expect(parseAwarenessState(agentState)).toEqual(agentState);
+    });
+
+    it('drops a malformed edit time or agent info, but keeps the peer', () => {
+      const parsed = parseAwarenessState({
+        ...agentState,
+        lastEditAt: 'yesterday',
+        agent: { ...agentState.agent, hostUserId: 'a"b' },
+      });
+      expect(parsed).toEqual({ user: agentState.user, activeFileId: 'abc123' });
+    });
+
+    it('sanitises and caps the host name and status like a name', () => {
+      const parsed = parseAwarenessState({
+        ...agentState,
+        agent: { ...agentState.agent, hostName: 'Ada‮\n', status: `Running\n${'x'.repeat(200)}` },
+      });
+      expect(parsed?.agent?.hostName).toBe('Ada');
+      expect(parsed?.agent?.status).toHaveLength(MAX_AGENT_STATUS_LENGTH);
+      expect(parsed?.agent?.status.startsWith('Running x')).toBe(true);
+    });
+
+    it('drops agent info whose status is empty after sanitising', () => {
+      const parsed = parseAwarenessState({
+        ...agentState,
+        agent: { ...agentState.agent, status: '​' },
+      });
+      expect(parsed?.agent).toBeUndefined();
+    });
   });
 
   describe('malicious colors', () => {
