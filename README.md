@@ -9,10 +9,12 @@ offline, or closes the tab mid-keystroke.
 It runs entirely on free infrastructure: Vercel for the web app, Render for the sync server, Neon
 for Postgres.
 
-**Status: Phase 3 complete.** Projects are multi-file workspaces (a file tree with presence,
-drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, following a collaborator
-to their cursor), and each person can run the backend in their browser with WebContainers: run
-output, a shell, an API console and a preview. The plan is [`docs/PLAN.md`](docs/PLAN.md).
+**Status: Phase 3 and AI-1 complete.** Projects are multi-file workspaces (a file tree with
+presence, drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, following a
+collaborator to their cursor), and each person can run the backend in their browser with
+WebContainers: run output, a shell, an API console and a preview. AI helpers explain or edit a
+selection and explain a crashed run, on a free shared tier or your own key. The plans are
+[`docs/PLAN.md`](docs/PLAN.md) and [`docs/PLAN-AI.md`](docs/PLAN-AI.md).
 
 ---
 
@@ -69,7 +71,7 @@ The server syncs and stores. It never runs or interprets user code: running happ
 browser of the person who clicks Run, in a WebContainer that the project's files are copied into,
 one way.
 
-Six decisions are written up in full:
+Seven decisions are written up in full:
 
 - [001 — a CRDT instead of last-write-wins, and why not operational transformation](docs/decisions/001-crdt-over-last-write-wins.md)
 - [002 — Hocuspocus with whole-document Postgres snapshots](docs/decisions/002-persistence.md)
@@ -77,6 +79,7 @@ Six decisions are written up in full:
 - [004 — stable node IDs and deterministic read-time resolution of the file tree](docs/decisions/004-stable-ids-and-read-time-resolution.md)
 - [005 — one-way sync from the document into the WebContainer](docs/decisions/005-one-way-yjs-to-webcontainer-sync.md)
 - [006 — running projects in the browser with WebContainers](docs/decisions/006-in-browser-execution-with-webcontainers.md)
+- [007 — the model as the brain, the browser as the hands, and a stateless model proxy](docs/decisions/007-brain-and-hands-model-proxy.md)
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the system as it stands today,
 including the trust boundaries and what is deliberately missing.
@@ -110,6 +113,27 @@ production usage of the API in a commercial, for-profit setting", and that proto
 one. CollabCode is a non-commercial open-source project and uses no API key; a commercial fork
 would need a licence first.
 
+## AI helpers
+
+- **Explain with AI** and **Edit with AI…**: select code, right-click, and choose one. An
+  explanation streams into the **AI** view of the right-hand pane. An edit asks what to change,
+  then shows the suggestion as a diff over the editor with **Apply** and **Discard**. An applied
+  edit reaches everyone like your own typing, and one undo takes it back. If a collaborator
+  changes the selected code before you apply, Apply refuses instead of overwriting their work.
+- **Explain with AI** on a run: when your run crashes or fails, the Run view offers it. It sends
+  the end of the output and the code of the file the crash points at.
+- **Who pays.** By default requests use a shared free tier on Google Gemini, with a daily limit
+  for everyone and per visitor; the app says how many you have left. In **AI settings** you can
+  use your own Gemini, Anthropic or OpenAI key instead. It is kept in that browser tab only, sent
+  with each request, used by the server for that one call and never stored or logged.
+- **Privacy.** Before your first request the app shows a one-time notice: your request and the
+  code or output it is about go through this project's server to the AI provider, and on the
+  free tier Google may use what you send to improve its products. Leave out secrets and code you
+  cannot share; your own key avoids the shared tier. This project's server does not store or log
+  what you send.
+
+How it works, and why, is in [ADR 007](docs/decisions/007-brain-and-hands-model-proxy.md).
+
 ## Running it locally
 
 **Prerequisites:** Node 24 (see `.nvmrc`) and a Postgres database. The free
@@ -120,7 +144,8 @@ npm install
 
 # Server configuration
 cp apps/server/.env.example apps/server/.env
-#   then set DATABASE_URL to your Postgres connection string
+#   then set DATABASE_URL to your Postgres connection string,
+#   and GEMINI_API_KEY if you want the shared AI tier (optional)
 npm run migrate -w @collabcode/server
 
 # Web configuration (the defaults point at the local server)
@@ -136,17 +161,27 @@ per-browser.
 
 To run just one piece: `npm run dev:server` or `npm run dev:web`.
 
+`npm run dev` and `npm run migrate` read `apps/server/.env` with its values taking precedence
+over variables already set in your shell, and log the names (never the values) of any they
+replace. Node's own `--env-file` would let a machine-wide `DATABASE_URL` win.
+
 ### Environment variables
 
-| Variable           | App    | Purpose                                                                             |
-| ------------------ | ------ | ----------------------------------------------------------------------------------- |
-| `DATABASE_URL`     | server | Postgres connection string. Use Neon's **pooled** endpoint with `?sslmode=require`  |
-| `ALLOWED_ORIGINS`  | server | Comma-separated web origins allowed to call the API. No wildcard, no trailing slash |
-| `PORT`             | server | Injected by Render; defaults to 8080                                                |
-| `LOG_LEVEL`        | server | pino level; `info` in production                                                    |
-| `CLIENT_IP_SOURCE` | server | Where per-IP limits read the client address: `render` (default) or `direct`         |
-| `VITE_API_URL`     | web    | Base URL of the REST API                                                            |
-| `VITE_COLLAB_URL`  | web    | WebSocket URL, e.g. `wss://your-server/collab`                                      |
+| Variable                        | App    | Purpose                                                                                                                           |
+| ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | server | Postgres connection string. Use Neon's **pooled** endpoint with `?sslmode=require`                                                |
+| `ALLOWED_ORIGINS`               | server | Comma-separated web origins allowed to call the API. No wildcard, no trailing slash                                               |
+| `PORT`                          | server | Injected by Render; defaults to 8080                                                                                              |
+| `LOG_LEVEL`                     | server | pino level; `info` in production                                                                                                  |
+| `CLIENT_IP_SOURCE`              | server | Where per-IP limits read the client address: `render` (default) or `direct`                                                       |
+| `GEMINI_API_KEY`                | server | Key for the shared free AI tier (Google AI Studio). Optional: unset turns the shared tier off; people can still use their own key |
+| `AI_DEFAULT_MODEL`              | server | The shared tier's Gemini model; `gemini-3.5-flash-lite` by default                                                                |
+| `AI_GLOBAL_DAILY_REQUESTS`      | server | Shared-tier requests a day for everyone together; 400 by default (80% of the free 500)                                            |
+| `AI_PER_IP_DAILY_REQUESTS`      | server | Shared-tier requests a day per visitor; 30 by default                                                                             |
+| `AI_PER_PROJECT_DAILY_REQUESTS` | server | Shared-tier requests a day per project; 60 by default                                                                             |
+| `AI_GLOBAL_REQUESTS_PER_MINUTE` | server | Shared-tier requests in any 60 seconds, everyone together; 12 by default (80% of the free 15)                                     |
+| `VITE_API_URL`                  | web    | Base URL of the REST API                                                                                                          |
+| `VITE_COLLAB_URL`               | web    | WebSocket URL, e.g. `wss://your-server/collab`                                                                                    |
 
 Configuration is parsed with zod at start-up, so a missing or malformed value fails immediately
 and names the variable rather than breaking at the first request.
@@ -163,7 +198,7 @@ npm run e2e       # Playwright, two browser contexts against the production bund
 RUN_WEBCONTAINER_E2E=1 npm run e2e -- runtime.spec.ts
 ```
 
-`npm test` runs without a database. The integration tests start the real Express + Hocuspocus
+`npm test` runs without a database or an AI key. The integration tests start the real Express + Hocuspocus
 composition on an ephemeral port against an in-memory repository, so they exercise the production
 wiring rather than a stub. The Postgres repository, the `bytea` round trip and the migration
 runner are covered by a spec that skips unless `TEST_DATABASE_URL` is set; CI provides one.
@@ -171,7 +206,8 @@ runner are covered by a spec that skips unless `TEST_DATABASE_URL` is set; CI pr
 `npm run e2e` builds the web app and serves it with `vite preview`, because the fragile part of
 the frontend is what bundling produces — Monaco and its web workers. It is served cross-origin
 isolated, exactly like production, so every spec also checks the app still works under those
-headers. CI also runs the API console's request helper on Node 22, the version inside the
+headers. The AI specs run against a scripted model built into the e2e server, so they need no key
+and spend no quota. CI also runs the API console's request helper on Node 22, the version inside the
 WebContainer.
 
 ## Deploying
@@ -183,8 +219,12 @@ SPA rewrites come from `apps/web/vercel.json`.
 **Render** (server): root directory is the repository root. Build
 `npm ci && npm run build -w @collabcode/shared && npm run build -w @collabcode/server`, start
 `npm run start -w @collabcode/server`, and run `npm run migrate -w @collabcode/server` on deploy.
-Set `DATABASE_URL`, `ALLOWED_ORIGINS` and `LOG_LEVEL`. `CLIENT_IP_SOURCE` defaults to `render`,
-which is what Render needs.
+Set `DATABASE_URL`, `ALLOWED_ORIGINS` and `LOG_LEVEL`, and `GEMINI_API_KEY` for the shared AI
+tier. `CLIENT_IP_SOURCE` defaults to `render`, which is what Render needs. Create the Gemini key
+in a Google Cloud project used only for this app: the free limits are per project, not per key,
+and the AI limit defaults assume that project's page at
+[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) shows 15 requests a
+minute and 500 a day for the model.
 
 ### Launch checklist: cross-origin isolation
 
@@ -224,6 +264,25 @@ hosting:
 2. From a different network (a phone on mobile data), the count starts at the full limit, so
    visitors are not sharing one proxy address.
 
+### Launch checklist: AI
+
+1. The server's start-up log shows `sharedAi: "gemini-3.5-flash-lite"` (or your model), and no
+   key anywhere in it.
+2. Answers stream through Render's proxy. With a project ID from the site:
+
+   ```bash
+   curl -sN -X POST https://<your-server>/api/ai/step \
+     -H 'content-type: application/json' -H 'origin: https://<your-site>' \
+     -d '{"projectId":"<id>","promptId":"explain-selection","inputs":{"path":"index.js","language":"javascript","startLine":1,"selection":"console.log(1);"}}'
+   ```
+
+   `data:` lines should arrive over a second or two, not all at once. All at once still works, but
+   means a proxy is buffering.
+
+3. The same request without the `origin` header is refused with 403.
+4. Render's logs show one `ai step` line per request, with ids, model, tokens and timings, and no
+   code, prompt or key.
+
 A free Render instance sleeps when idle, so the first connection after a quiet period can take up
 to a minute. The app expects this: the landing page pings `/health` on load to start the wake
 early, and the workspace explains the wait instead of showing a spinner.
@@ -232,10 +291,11 @@ early, and the workspace explains the wait instead of showing a spinner.
 
 ```
 apps/web/          React + Vite + Monaco. File tree, tabs, editor models and undo, presence,
-                   and the runtime: WebContainer, file sync, terminal, API console, preview
-apps/server/       Hocuspocus + Express + Postgres
+                   the runtime (WebContainer, file sync, terminal, API console, preview) and
+                   the AI panel, helpers and client
+apps/server/       Hocuspocus + Express + Postgres, and the model proxy
 packages/shared/   Document schema, tree resolution, write-path ops, awareness validation,
-                   templates, limits
+                   templates, limits, AI prompts and the model-proxy contract
 e2e/               Playwright specs
 docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
 ```
@@ -246,9 +306,12 @@ docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
   read-time resolution of concurrent tree edits so every client computes the same view.
 - **Phase 3** (done) — run the project's Node backend inside the browser with WebContainers, with
   run output, a shell, an API console and a sandboxed preview.
+- **AI-1** (done) — a stateless model proxy, and helpers that explain or edit a selection and
+  explain a crashed run.
+- **AI-2 to AI-5** (planned, [`docs/PLAN-AI.md`](docs/PLAN-AI.md)) — an AI agent that joins the
+  project as its own CRDT peer, with presence-aware proposals, evals and a context engine.
 
-Later, deliberately out of scope for now: accounts, an AI agent participating through the same
-sync system, checkpoints, and pushing to GitHub.
+Later, deliberately out of scope for now: accounts, checkpoints, and pushing to GitHub.
 
 ## Licence
 

@@ -98,8 +98,9 @@ Try a path of `users` (no slash), then `http://localhost:3000/users`.
 **In A:** type `this is not javascript` on the first line of `routes/users.js`.
 
 - [ ] **Output** shows a `SyntaxError` and `Failed running 'index.js'. Waiting for file changes`.
-- [ ] Within a few seconds the status turns red: **The server stopped. Fix the error; the run
-      restarts when a file changes.**
+- [ ] Within a few seconds the status turns red: **The program crashed. Fix the error; the run
+      restarts when a file changes.** (Before AI-1 this read "The server stopped", after a 3 s
+      wait.)
 - [ ] **Send** in the API console says there is no server because the program crashed.
 
 Press **Cmd+Z** to undo the line.
@@ -207,8 +208,8 @@ default e2e suite checks that case.
 RUN_WEBCONTAINER_E2E=1 npm run e2e -- runtime.spec.ts
 ```
 
-- [ ] Three tests pass: Run and the API console, a crash that recovers, and the container's Node
-      version.
+- [ ] Five tests pass: Run and the API console, a crash that recovers, a crash before the server
+      listens, Explain with AI on a crash (added in AI-1), and the container's Node version.
 
 ---
 
