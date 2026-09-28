@@ -95,6 +95,7 @@ export function createFakeModelGateway(
       yield {
         type: 'finish',
         finishReason: script.finishReason ?? 'stop',
+        rawFinishReason: null,
         usage: { inputTokens: 100, outputTokens: chunks.length },
         ...(call.toolUse && {
           message: script.message ?? {

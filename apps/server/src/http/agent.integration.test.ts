@@ -89,6 +89,7 @@ describe('an agent step', () => {
     expect(received.at(-1)).toEqual({
       type: 'finish',
       finishReason: 'tool-calls',
+      rawFinishReason: null,
       usage: { inputTokens: 100, outputTokens: 0 },
       prompt: { id: 'agent', version: PROMPTS.agent.version },
       model: { provider: 'gemini', id: 'gemini-3.5-flash-lite' },

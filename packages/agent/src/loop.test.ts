@@ -267,6 +267,14 @@ describe('malformed model output', () => {
     expect(results[1]?.output).toMatch(/^The input for read_file is not valid: path: /);
   });
 
+  it('carries out the calls of an answer that ended for an "other" reason', async () => {
+    // Gemini's stream can end without a finish reason; the provider then says "other".
+    const other = { ...answerWith([toolCall('list_files', {})]), finishReason: 'other' as const };
+    const { result, tools } = session([other, finish()]);
+    expect((await result()).outcome.kind).toBe('finished');
+    expect(hostOf(tools).calls).toEqual([{ name: 'list_files', input: {} }]);
+  });
+
   it('says an invalid call may have been cut off at the output limit', async () => {
     const cutOff = {
       ...answerWith([toolCall('edit_file', { path: 'a.js' })]),

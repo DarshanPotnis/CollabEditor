@@ -48,7 +48,7 @@ describe('the trace', () => {
 
     expect(trace).toMatchObject({
       format: TRACE_FORMAT,
-      version: 1,
+      version: 2,
       sessionId: 'session-7',
       startedAt: 1_700_000_000_000,
       project: { template: 'express-api', filesFingerprint: 'fp-123' },
@@ -59,7 +59,10 @@ describe('the trace', () => {
       totals: { steps: 3 },
     });
     expect(trace.steps).toHaveLength(3);
-    expect(trace.steps[0]?.waits).toEqual([{ reason: 'busy', waitMs: 5_000 }]);
+    expect(trace.steps[0]?.waits).toEqual([{ reason: 'busy', waitMs: 5_000, attemptMs: 0 }]);
+    // The model time is the attempt that answered, not the wait before it.
+    expect(trace.steps[0]?.model?.durationMs).toBe(0);
+    expect(trace.steps[0]?.model?.rawFinishReason).toBeNull();
     expect(trace.steps[0]?.model?.message).toEqual(
       script[1] && 'message' in script[1] ? script[1].message : null,
     );
@@ -81,9 +84,33 @@ describe('the trace', () => {
 
   it('refuses something that is not a trace of this version', async () => {
     const { result } = await recordedSession(createScriptedModel(script));
-    expect(parseTrace({ ...result.trace, version: 2 })).toBeNull();
+    expect(parseTrace({ ...result.trace, version: 3 })).toBeNull();
     expect(parseTrace({ ...result.trace, format: 'other' })).toBeNull();
     expect(parseTrace('not a trace')).toBeNull();
+  });
+
+  it('reads a version 1 trace, with what it did not record left null', async () => {
+    const { result } = await recordedSession(createScriptedModel(script));
+    const v1 = {
+      ...result.trace,
+      version: 1,
+      steps: result.trace.steps.map((step) => ({
+        ...step,
+        waits: step.waits.map(({ reason, waitMs }) => ({ reason, waitMs })),
+        model: step.model && {
+          provider: step.model.provider,
+          id: step.model.id,
+          durationMs: 137_000,
+          finishReason: step.model.finishReason,
+          usage: step.model.usage,
+          message: step.model.message,
+        },
+      })),
+    };
+    const upgraded = parseTrace(JSON.parse(JSON.stringify(v1)));
+    expect(upgraded?.version).toBe(2);
+    expect(upgraded?.steps[0]?.waits).toEqual([{ reason: 'busy', waitMs: 5_000, attemptMs: null }]);
+    expect(upgraded?.steps[0]?.model).toMatchObject({ durationMs: 137_000, rawFinishReason: null });
   });
 
   it('replays with no model: the same calls, in the same order, to the same end', async () => {

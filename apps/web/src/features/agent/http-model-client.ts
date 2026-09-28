@@ -73,6 +73,7 @@ export function createHttpModelClient({
           return {
             message: event.message,
             finishReason: event.finishReason,
+            rawFinishReason: event.rawFinishReason ?? null,
             usage: event.usage,
             model: event.model,
             prompt: event.prompt,

@@ -141,10 +141,10 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
 
     trace.startStep(step, clock.now() - startedAt);
     emit({ type: 'step-started', step, maxSteps: limits.maxSteps });
-    const callStarted = clock.now();
     let answer: ModelStep;
+    let attemptMs: number;
     try {
-      answer = await stepWithRetries({
+      ({ step: answer, attemptMs } = await stepWithRetries({
         client: options.model,
         request: {
           inputs,
@@ -158,9 +158,9 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
         deadline,
         onWait: (wait) => {
           trace.recordWait(wait);
-          emit({ type: 'waiting', step, ...wait });
+          emit({ type: 'waiting', step, reason: wait.reason, waitMs: wait.waitMs });
         },
-      });
+      }));
     } catch (error) {
       if (session.signal.aborted) return end(interrupted());
       if (error instanceof ModelStepError) {
@@ -178,7 +178,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     totals.inputTokens += answer.usage.inputTokens ?? estimatedTokens(conversation);
     totals.outputTokens += answer.usage.outputTokens ?? 0;
     conversation.push(answer.message);
-    trace.recordModel(answer, clock.now() - callStarted);
+    trace.recordModel(answer, attemptMs);
     emit({
       type: 'model-answered',
       step,

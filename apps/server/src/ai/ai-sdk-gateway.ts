@@ -79,6 +79,7 @@ export function createAiSdkGateway({
               finish = {
                 type: 'finish',
                 finishReason: part.finishReason,
+                rawFinishReason: part.rawFinishReason?.slice(0, 64) ?? null,
                 usage: {
                   inputTokens: part.totalUsage.inputTokens ?? null,
                   outputTokens: part.totalUsage.outputTokens ?? null,

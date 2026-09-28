@@ -41,6 +41,8 @@ export type ModelStep = {
   /** The model's whole message, to send back unchanged next step. */
   message: AssistantMessage;
   finishReason: AiFinishReason;
+  /** The provider's own reason, such as Gemini's "STOP"; null when it sent none. */
+  rawFinishReason: string | null;
   usage: TokenUsage;
   model: { provider: AiProvider; id: string };
   prompt: { id: string; version: number };

@@ -34,6 +34,8 @@ export type ModelEvent =
   | {
       type: 'finish';
       finishReason: AiFinishReason;
+      /** The provider's own reason, such as Gemini's "STOP"; null when it sent none. */
+      rawFinishReason: string | null;
       usage: ModelUsage;
       /** With tools: the model's whole message, tool calls and providerOptions included. */
       message?: AssistantMessage;

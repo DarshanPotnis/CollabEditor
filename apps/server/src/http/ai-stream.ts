@@ -37,7 +37,12 @@ export type ModelTargets = readonly [ModelTarget, ...ModelTarget[]];
 type Timing = { firstEventMs: number | null; totalMs: number; attempts: number };
 
 export type StreamOutcome =
-  | ({ status: 'finished'; finishReason: AiFinishReason; usage: ModelUsage } & Timing)
+  | ({
+      status: 'finished';
+      finishReason: AiFinishReason;
+      rawFinishReason: string | null;
+      usage: ModelUsage;
+    } & Timing)
   | ({
       status: 'failed';
       failure: StepFailure;
@@ -130,6 +135,7 @@ export async function streamAnswer({
           encodeSseEvent({
             type: 'finish',
             finishReason: event.finishReason,
+            rawFinishReason: event.rawFinishReason,
             usage: event.usage,
             model: { provider: target.provider, id: target.model },
             ...finish,
@@ -139,6 +145,7 @@ export async function streamAnswer({
         return {
           status: 'finished',
           finishReason: event.finishReason,
+          rawFinishReason: event.rawFinishReason,
           usage: event.usage,
           firstEventMs,
           totalMs: elapsed(),

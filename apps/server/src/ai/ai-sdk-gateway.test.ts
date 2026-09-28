@@ -83,7 +83,12 @@ describe('the AI SDK gateway', () => {
     expect(await collect(gateway.stream(call()))).toEqual([
       { type: 'text-delta', text: 'It logs ' },
       { type: 'text-delta', text: '"hi".' },
-      { type: 'finish', finishReason: 'stop', usage: { inputTokens: 120, outputTokens: 7 } },
+      {
+        type: 'finish',
+        finishReason: 'stop',
+        rawFinishReason: 'STOP',
+        usage: { inputTokens: 120, outputTokens: 7 },
+      },
     ]);
   });
 

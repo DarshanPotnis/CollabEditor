@@ -67,6 +67,7 @@ describe('POST /api/ai/step', () => {
       {
         type: 'finish',
         finishReason: 'stop',
+        rawFinishReason: null,
         usage: { inputTokens: 100, outputTokens: 2 },
         prompt: { id: 'explain-selection', version: PROMPTS['explain-selection'].version },
         model: { provider: 'gemini', id: 'gemini-3.5-flash-lite' },

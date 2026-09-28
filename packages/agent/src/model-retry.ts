@@ -23,7 +23,11 @@ import {
   type ModelStepRequest,
 } from './types.js';
 
-export type RetryWait = { reason: 'busy' | 'rate-limited'; waitMs: number };
+/** A wait before trying again, and how long the attempt that failed had taken. */
+export type RetryWait = { reason: 'busy' | 'rate-limited'; waitMs: number; attemptMs: number };
+
+/** The answer, and how long the attempt that gave it took (waits and failed tries excluded). */
+export type RetriedStep = { step: ModelStep; attemptMs: number };
 
 export type RetryOptions = {
   client: ModelClient;
@@ -40,7 +44,7 @@ function waitFor(
   error: ModelStepError,
   retries: { busy: number; rate: number },
   random: () => number,
-): RetryWait | null {
+): Omit<RetryWait, 'attemptMs'> | null {
   if (!error.upFront) return null;
   if (error.kind === 'busy') {
     const delay = BUSY_RETRY_DELAYS_MS[retries.busy];
@@ -64,16 +68,18 @@ export async function stepWithRetries({
   random,
   deadline,
   onWait,
-}: RetryOptions): Promise<ModelStep> {
+}: RetryOptions): Promise<RetriedStep> {
   const retries = { busy: 0, rate: 0 };
   for (;;) {
+    const started = clock.now();
     try {
-      return await client.step(request);
+      const step = await client.step(request);
+      return { step, attemptMs: clock.now() - started };
     } catch (error) {
       if (!(error instanceof ModelStepError)) throw error;
       const wait = waitFor(error, retries, random);
       if (wait === null || clock.now() + wait.waitMs >= deadline) throw error;
-      onWait(wait);
+      onWait({ ...wait, attemptMs: clock.now() - started });
       await clock.sleep(wait.waitMs, request.signal);
       if (request.signal.aborted)
         throw new ModelStepError('stopped', 'Stopped.', { upFront: true });

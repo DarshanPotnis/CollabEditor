@@ -80,6 +80,7 @@ export function createScriptedModel(
       return {
         message: reply.message,
         finishReason: reply.finishReason ?? 'tool-calls',
+        rawFinishReason: null,
         usage: reply.usage ?? { inputTokens: 1_000, outputTokens: 50 },
         model,
         prompt: { id: PROMPTS.agent.id, version: PROMPTS.agent.version },

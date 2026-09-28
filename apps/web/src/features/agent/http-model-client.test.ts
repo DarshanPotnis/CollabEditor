@@ -155,7 +155,7 @@ describe('the browser model client', () => {
     ]);
     const { outcome, trace } = await session(server.fetch, null);
     expect(outcome.kind).toBe('finished');
-    expect(trace.steps[0]?.waits).toEqual([{ reason: 'busy', waitMs: 5_000 }]);
+    expect(trace.steps[0]?.waits).toMatchObject([{ reason: 'busy', waitMs: 5_000 }]);
   });
 
   it('waits out a per-minute limit for as long as the server says', async () => {
@@ -165,7 +165,7 @@ describe('the browser model client', () => {
       stream(finishEvent(done)),
     ]);
     const { trace } = await session(server.fetch, null);
-    expect(trace.steps[0]?.waits).toEqual([{ reason: 'rate-limited', waitMs: 30_500 }]);
+    expect(trace.steps[0]?.waits).toMatchObject([{ reason: 'rate-limited', waitMs: 30_500 }]);
   });
 
   it('ends the session with the server’s message for anything else', async () => {

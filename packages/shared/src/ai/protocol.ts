@@ -105,6 +105,8 @@ export const aiStreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('finish'),
     finishReason: z.enum(AI_FINISH_REASONS),
+    /** The provider's own finish reason, for diagnosing an 'other'; null when it sent none. */
+    rawFinishReason: z.string().max(64).nullable().optional(),
     usage: z.object({ inputTokens: tokenCountSchema, outputTokens: tokenCountSchema }),
     prompt: z.object({ id: z.enum(PROMPT_IDS), version: z.number().int().positive() }),
     model: z.object({ provider: z.enum(AI_PROVIDERS), id: z.string().min(1) }),

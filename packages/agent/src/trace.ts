@@ -10,7 +10,10 @@
  *   never a key: the core never has one (the ModelClient keeps it).
  *
  * The format is versioned and validated when read back, since a trace file is
- * as untrusted as any other input.
+ * as untrusted as any other input. Version 2 times each model attempt on its
+ * own and keeps the provider's raw finish reason; a version 1 trace, which
+ * counted retries and waits in a step's model time, is still read (upgraded,
+ * with those fields null), so recorded sessions stay usable as fixtures.
  */
 import {
   AI_FINISH_REASONS,
@@ -25,7 +28,7 @@ import type { RetryWait } from './model-retry.js';
 import type { AgentInputs, ModelStep } from './types.js';
 
 export const TRACE_FORMAT = 'collabcode-agent-trace';
-export const TRACE_VERSION = 1;
+export const TRACE_VERSION = 2;
 
 export const agentOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('finished'), summary: z.string() }),
@@ -56,23 +59,31 @@ const traceToolCallSchema = z.object({
 });
 export type TraceToolCall = z.infer<typeof traceToolCallSchema>;
 
+const traceWaitSchema = z.object({
+  reason: z.enum(['busy', 'rate-limited']),
+  waitMs: z.number().nonnegative(),
+  /** How long the attempt that failed had taken; null in a version 1 trace. */
+  attemptMs: z.number().nonnegative().nullable(),
+});
+
+const traceModelSchema = z.object({
+  provider: z.enum(AI_PROVIDERS),
+  id: z.string(),
+  /** The attempt that answered, without waits or failed attempts before it. */
+  durationMs: z.number().nonnegative(),
+  finishReason: z.enum(AI_FINISH_REASONS),
+  /** The provider's own reason; null when it sent none, or in a version 1 trace. */
+  rawFinishReason: z.string().max(64).nullable(),
+  usage: z.object({ inputTokens: tokenCount, outputTokens: tokenCount }),
+  message: assistantMessageSchema,
+});
+
 const traceStepSchema = z.object({
   index: z.number().int().positive(),
   startedAtMs: z.number().nonnegative(),
-  waits: z.array(
-    z.object({ reason: z.enum(['busy', 'rate-limited']), waitMs: z.number().nonnegative() }),
-  ),
+  waits: z.array(traceWaitSchema),
   /** Null when the model call failed. */
-  model: z
-    .object({
-      provider: z.enum(AI_PROVIDERS),
-      id: z.string(),
-      durationMs: z.number().nonnegative(),
-      finishReason: z.enum(AI_FINISH_REASONS),
-      usage: z.object({ inputTokens: tokenCount, outputTokens: tokenCount }),
-      message: assistantMessageSchema,
-    })
-    .nullable(),
+  model: traceModelSchema.nullable(),
   toolCalls: z.array(traceToolCallSchema),
   /** The model answered without a tool call and was reminded to use one. */
   nudged: z.boolean(),
@@ -114,10 +125,32 @@ export const agentTraceSchema = z.object({
 });
 export type AgentTrace = z.infer<typeof agentTraceSchema>;
 
-/** A trace read from a file, or null when it is not one this version understands. */
+/** Version 1: no attempt times or raw finish reasons, and waits counted in model time. */
+const traceV1Schema = agentTraceSchema.extend({
+  version: z.literal(1),
+  steps: z.array(
+    traceStepSchema.extend({
+      waits: z.array(traceWaitSchema.omit({ attemptMs: true })),
+      model: traceModelSchema.omit({ rawFinishReason: true }).nullable(),
+    }),
+  ),
+});
+
+/** A trace read from a file, upgraded to this version, or null when it is not one. */
 export function parseTrace(raw: unknown): AgentTrace | null {
-  const parsed = agentTraceSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
+  const current = agentTraceSchema.safeParse(raw);
+  if (current.success) return current.data;
+  const v1 = traceV1Schema.safeParse(raw);
+  if (!v1.success) return null;
+  return {
+    ...v1.data,
+    version: TRACE_VERSION,
+    steps: v1.data.steps.map((step) => ({
+      ...step,
+      waits: step.waits.map((wait) => ({ ...wait, attemptMs: null })),
+      model: step.model && { ...step.model, rawFinishReason: null },
+    })),
+  };
 }
 
 export type TraceStart = {
@@ -184,6 +217,7 @@ export function createTraceRecorder(start: TraceStart): TraceRecorder {
         id: step.model.id,
         durationMs,
         finishReason: step.finishReason,
+        rawFinishReason: step.rawFinishReason,
         usage: { ...step.usage },
         message: step.message,
       };
