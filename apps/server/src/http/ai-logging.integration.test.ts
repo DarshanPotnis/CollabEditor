@@ -5,13 +5,16 @@
  *
  * It uses the real logger configuration and the real AI SDK gateway, with mock
  * models that echo the canaries back the way a provider might: in an answer,
- * in an error body, in the request body an APICallError carries.
+ * in an error body, in the request body an APICallError carries. The console
+ * is watched too, since the SDK prints errors there unless told not to, and
+ * the host keeps whatever the process prints.
  */
 import { Writable } from 'node:stream';
+import { format } from 'node:util';
 import { AI_KEY_HEADER, AI_STEP_PATH } from '@collabcode/shared';
 import { APICallError } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createAiSdkGateway } from '../ai/ai-sdk-gateway.js';
 import type { ModelTarget } from '../ai/model-gateway.js';
 import { startTestServer, type TestServer } from '../collab/test-server.js';
@@ -70,10 +73,16 @@ function modelFor(target: ModelTarget): MockLanguageModelV4 {
 }
 
 const lines: string[] = [];
+const printed: string[] = [];
 let server: TestServer;
 let projectId: string;
 
 beforeAll(async () => {
+  for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+    vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+      printed.push(format(...args));
+    });
+  }
   const destination = new Writable({
     write(chunk: Buffer, _encoding, done) {
       lines.push(chunk.toString());
@@ -90,6 +99,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server.stop();
+  vi.restoreAllMocks();
 });
 
 const inputs = {
@@ -99,6 +109,35 @@ const inputs = {
   selection: `console.log("${CANARY_TEXT}");`,
 };
 const byok = { provider: 'anthropic', model: 'claude-sonnet-5' };
+
+/** An agent step whose conversation carries project text in a tool result. */
+function agentStep(): unknown {
+  return {
+    projectId,
+    promptId: 'agent',
+    inputs: { goal: `Fix ${CANARY_TEXT}`, files: ['index.js'] },
+    sessionId: 'canary-session',
+    conversation: [
+      {
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-call',
+            toolCallId: 'c1',
+            toolName: 'read_file',
+            input: { path: 'index.js' },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        results: [
+          { toolCallId: 'c1', toolName: 'read_file', isError: false, output: `1| ${CANARY_TEXT}` },
+        ],
+      },
+    ],
+  };
+}
 
 async function send(body: unknown, key?: string): Promise<number> {
   const response = await fetch(`${server.httpUrl}${AI_STEP_PATH}`, {
@@ -140,20 +179,33 @@ describe('the log canary', () => {
     // Malformed JSON that contains both.
     expect(await send(`{"inputs":"${CANARY_TEXT}", ${CANARY_KEY}`, CANARY_KEY)).toBe(400);
     // A body over the limit.
-    expect(await send({ ...step, padding: CANARY_TEXT.repeat(20_000) }, CANARY_KEY)).toBe(413);
+    expect(await send({ ...step, padding: CANARY_TEXT.repeat(30_000) }, CANARY_KEY)).toBe(413);
+    // An agent step with its conversation: answered, then refused by the provider.
+    expect(await send({ ...(agentStep() as object), byok }, CANARY_KEY)).toBe(200);
+    expect(await send({ ...(agentStep() as object), byok }, `${CANARY_KEY}-refused`)).toBe(401);
+    // An agent step whose conversation is refused.
+    expect(
+      await send(
+        { ...(agentStep() as object), byok, conversation: [{ role: 'tool' }] },
+        CANARY_KEY,
+      ),
+    ).toBe(400);
 
     const log = lines.join('');
     expect(log).not.toContain(CANARY_KEY);
     expect(log).not.toContain(CANARY_TEXT);
+    const console = printed.join('\n');
+    expect(console).not.toContain(CANARY_KEY);
+    expect(console).not.toContain(CANARY_TEXT);
 
     // Not vacuous: the requests were logged, with their metadata.
     const stepLines = lines.filter((line) => line.includes('"msg":"ai step'));
-    expect(stepLines).toHaveLength(5);
+    expect(stepLines).toHaveLength(7);
     expect(stepLines[0]).toContain('"promptId":"explain-selection"');
     expect(stepLines[0]).toContain('"provider":"gemini"');
     // pino-http logs each request once, as completed or (for a 5xx) errored.
     expect(lines.filter((line) => /"msg":"request (completed|errored)"/.test(line))).toHaveLength(
-      9,
+      12,
     );
   });
 });

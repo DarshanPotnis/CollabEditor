@@ -21,10 +21,10 @@ import {
 import { SSE_HEADERS, encodeSseEvent } from '../ai/sse.js';
 import { sendApiError } from './errors.js';
 
-/** What the finish event says besides the model's own finish reason and usage. */
+/** What the finish event says besides what the model's own finish carries. */
 export type FinishDetails = Omit<
   Extract<AiStreamEvent, { type: 'finish' }>,
-  'type' | 'finishReason' | 'usage'
+  'type' | 'finishReason' | 'usage' | 'message'
 >;
 
 type Timing = { firstEventMs: number | null; totalMs: number };
@@ -109,6 +109,7 @@ export async function streamAnswer({
           finishReason: event.finishReason,
           usage: event.usage,
           ...finish,
+          ...(event.message && { message: event.message }),
         }),
       );
       return {

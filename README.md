@@ -180,6 +180,7 @@ replace. Node's own `--env-file` would let a machine-wide `DATABASE_URL` win.
 | `AI_PER_IP_DAILY_REQUESTS`      | server | Shared-tier requests a day per visitor; 30 by default                                                                             |
 | `AI_PER_PROJECT_DAILY_REQUESTS` | server | Shared-tier requests a day per project; 60 by default                                                                             |
 | `AI_GLOBAL_REQUESTS_PER_MINUTE` | server | Shared-tier requests in any 60 seconds, everyone together; 12 by default (80% of the free 15)                                     |
+| `AI_AGENT_REQUESTS_PER_MINUTE`  | server | How many of those may be AI agent steps; 6 by default, so the one-shot helpers keep the rest                                      |
 | `VITE_API_URL`                  | web    | Base URL of the REST API                                                                                                          |
 | `VITE_COLLAB_URL`               | web    | WebSocket URL, e.g. `wss://your-server/collab`                                                                                    |
 

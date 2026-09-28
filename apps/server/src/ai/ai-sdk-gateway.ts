@@ -6,10 +6,18 @@
  * - telemetry off, since otherwise the SDK publishes each call to a Node
  *   diagnostics channel that monitoring agents subscribe to;
  * - no retries, since each retry spends a request from the free daily quota;
- * - errors reduced to ModelCallError before anything can log them.
+ * - errors reduced to ModelCallError before anything can log them, and an
+ *   `onError` that prints nothing: the SDK's default prints each stream error
+ *   with console.error, and an APICallError carries the whole prompt and the
+ *   provider's message, which can echo the key.
+ *
+ * A call with tools also sends the conversation so far, declares the tools
+ * without `execute` (so the model's calls come back to the browser), and ends
+ * with the model's whole message for the browser to send back next step.
  */
 import { streamText } from 'ai';
 import type { Logger } from '../lib/logger.js';
+import { fromSdkResponse, toSdkMessages, toSdkTools } from './ai-sdk-messages.js';
 import { createLanguageModel, type ModelInstance } from './language-models.js';
 import {
   ModelCallError,
@@ -44,15 +52,22 @@ export function createAiSdkGateway({
 
   return {
     async *stream(call): AsyncGenerator<ModelEvent> {
+      let finish: Extract<ModelEvent, { type: 'finish' }> | null = null;
       try {
+        const toolUse = call.toolUse;
         const result = streamText({
           model: createModel(call.target),
           instructions: call.system,
-          messages: call.messages,
+          messages: toolUse
+            ? [...call.messages, ...toSdkMessages(toolUse.conversation, toolUse.use.nudge)]
+            : call.messages,
+          ...(toolUse && { tools: toSdkTools(toolUse.use), toolChoice: toolUse.use.toolChoice }),
           maxOutputTokens: call.maxOutputTokens,
           maxRetries: 0,
           abortSignal: call.signal,
           telemetry: { isEnabled: false },
+          // The same error arrives as an 'error' part below and is reduced there.
+          onError: () => undefined,
         });
 
         for await (const part of result.fullStream) {
@@ -61,7 +76,7 @@ export function createAiSdkGateway({
               if (part.text !== '') yield { type: 'text-delta', text: part.text };
               break;
             case 'finish':
-              yield {
+              finish = {
                 type: 'finish',
                 finishReason: part.finishReason,
                 usage: {
@@ -69,7 +84,7 @@ export function createAiSdkGateway({
                   outputTokens: part.totalUsage.outputTokens ?? null,
                 },
               };
-              return;
+              break;
             case 'error':
               throw part.error;
             case 'abort':
@@ -78,8 +93,19 @@ export function createAiSdkGateway({
               break;
           }
         }
+
+        if (finish && toolUse) {
+          // Read once the stream has ended, which is when the SDK settles it.
+          const message = fromSdkResponse((await result.response).messages);
+          if (!message) throw new ModelCallError('oversized');
+          finish.message = message;
+        }
       } catch (error) {
         throw toModelCallError(error, call.signal);
+      }
+      if (finish) {
+        yield finish;
+        return;
       }
       // The stream ended without saying how.
       throw new ModelCallError('unavailable');

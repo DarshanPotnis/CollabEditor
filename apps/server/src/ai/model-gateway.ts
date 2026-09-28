@@ -4,7 +4,14 @@
  * this interface, so an SDK upgrade touches one file and tests can script a
  * model without a network. See docs/decisions/007.
  */
-import type { AiFinishReason, AiProvider, PromptMessage } from '@collabcode/shared';
+import type {
+  AiFinishReason,
+  AiProvider,
+  AssistantMessage,
+  ConversationEntry,
+  PromptMessage,
+  ToolUse,
+} from '@collabcode/shared';
 
 /** Which model to call, and with whose key. */
 export type ModelTarget = { provider: AiProvider; model: string; apiKey: string };
@@ -14,6 +21,8 @@ export type ModelCall = {
   system: string;
   messages: PromptMessage[];
   maxOutputTokens: number;
+  /** For a prompt with tools: its tools, and the conversation after `messages`. */
+  toolUse?: { use: ToolUse; conversation: readonly ConversationEntry[] };
   /** Aborted when the caller goes away or the call takes too long. */
   signal: AbortSignal;
 };
@@ -22,7 +31,13 @@ export type ModelUsage = { inputTokens: number | null; outputTokens: number | nu
 
 export type ModelEvent =
   | { type: 'text-delta'; text: string }
-  | { type: 'finish'; finishReason: AiFinishReason; usage: ModelUsage };
+  | {
+      type: 'finish';
+      finishReason: AiFinishReason;
+      usage: ModelUsage;
+      /** With tools: the model's whole message, tool calls and providerOptions included. */
+      message?: AssistantMessage;
+    };
 
 export type ModelGateway = {
   /**
@@ -39,6 +54,8 @@ export type ModelCallFailure =
   | 'rate-limited'
   /** The provider refused this request (bad model, too long, blocked). */
   | 'rejected'
+  /** The model answered with a message too large to send back in the next step. */
+  | 'oversized'
   /** The provider could not be reached or failed on its side. */
   | 'unavailable'
   /** The call's signal was aborted. */

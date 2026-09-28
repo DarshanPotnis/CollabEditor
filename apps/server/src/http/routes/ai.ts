@@ -4,6 +4,12 @@
  * picks the shared free tier or the caller's own key, applies the limits, and
  * relays the answer as a stream (ai-stream.ts).
  *
+ * The agent's prompt also takes the conversation so far and declares its own
+ * tools. Its steps are counted like any other request, with a step cap per
+ * session, an admission check before a shared-tier session's first step, and
+ * a share of the shared tier's minute so the one-shot helpers keep the rest
+ * (agent-admission.ts).
+ *
  * The caller's own key arrives in the AI_KEY_HEADER header. It is read here,
  * handed to the gateway for this one call, and never logged or stored: the
  * request logger drops headers (request-logging.ts) and the log line below is
@@ -15,10 +21,12 @@ import {
   PROMPTS,
   aiKeySchema,
   aiStepRequestSchema,
+  conversationSteps,
   type ByokChoice,
 } from '@collabcode/shared';
 import express, { Router, type Request, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
+import { admitAgentStep } from '../../ai/agent-admission.js';
 import { createDailyLimiter, type DailyLimits } from '../../ai/daily-limits.js';
 import { describeFailure, sharedTierBusy } from '../../ai/failure-messages.js';
 import { createMinuteLimit } from '../../ai/minute-limit.js';
@@ -28,10 +36,16 @@ import { streamAnswer } from '../ai-stream.js';
 import { clientKey, type ClientIpSource } from '../client-ip.js';
 import { sendApiError } from '../errors.js';
 
-/** Each prompt's input schema is the real cap; this only bounds parsing. */
-const AI_BODY_LIMIT = '256kb';
+/**
+ * Each prompt's input schema and the conversation schema are the real caps;
+ * this only bounds parsing. An agent step carries up to 120,000 characters the
+ * model reads plus opaque provider data such as Gemini's thought signatures.
+ */
+const AI_BODY_LIMIT = '512kb';
 /** AI requests one visitor may make per minute, shared tier or own key. */
 export const DEFAULT_AI_REQUESTS_PER_MINUTE = 20;
+/** Of the shared tier's requests per minute, how many agent steps may take. */
+export const DEFAULT_AGENT_REQUESTS_PER_MINUTE = 6;
 /** Longest a whole model call may take. */
 export const DEFAULT_MODEL_CALL_TIMEOUT_MS = 90_000;
 
@@ -47,6 +61,8 @@ export type AiRouterDeps = {
   limits: DailyLimits;
   /** Shared-tier requests everyone together may start in any 60 seconds. */
   sharedTierPerMinute: number;
+  /** How many of those may be agent steps, so the one-shot helpers keep the rest. */
+  agentPerMinute?: number;
   /** Requests one visitor may make per minute, shared tier or own key. */
   requestsPerMinute?: number;
   callTimeoutMs?: number;
@@ -96,6 +112,7 @@ export function createAiRouter({
   sharedTier,
   limits,
   sharedTierPerMinute,
+  agentPerMinute = DEFAULT_AGENT_REQUESTS_PER_MINUTE,
   requestsPerMinute = DEFAULT_AI_REQUESTS_PER_MINUTE,
   callTimeoutMs = DEFAULT_MODEL_CALL_TIMEOUT_MS,
   now,
@@ -103,6 +120,7 @@ export function createAiRouter({
   const router = Router();
   const daily = createDailyLimiter(limits, now);
   const sharedMinute = createMinuteLimit(sharedTierPerMinute, now);
+  const agentMinute = createMinuteLimit(agentPerMinute, now);
   const perMinute = rateLimit({
     windowMs: 60_000,
     limit: requestsPerMinute,
@@ -125,8 +143,15 @@ export function createAiRouter({
         sendApiError(res, 'bad-request', body.error.issues[0]?.message ?? 'Invalid AI request.');
         return;
       }
-      const { projectId, promptId, inputs, byok } = body.data;
+      const { projectId, promptId, inputs, byok, sessionId } = body.data;
       const prompt = PROMPTS[promptId];
+      const toolUse = prompt.toolUse;
+      if (!toolUse && body.data.conversation !== undefined) {
+        sendApiError(res, 'bad-request', 'This AI prompt does not take a conversation.');
+        return;
+      }
+      const conversation = body.data.conversation ?? [];
+      const stepsTaken = conversationSteps(conversation);
       const prepared = prompt.prepare(inputs);
       if (!prepared.ok) {
         sendApiError(res, 'bad-request', prepared.message);
@@ -140,6 +165,19 @@ export function createAiRouter({
       if (!(await repo.findById(projectId))) {
         sendApiError(res, 'not-found', 'No project with that ID.');
         return;
+      }
+
+      const ipKey = clientKey(req, clientIpSource);
+      if (toolUse) {
+        const admission = admitAgentStep({
+          tier: ownKey.key === null ? 'shared' : 'ownKey',
+          stepsTaken,
+          remaining: () => daily.remaining({ ipKey, projectId }),
+        });
+        if (!admission.ok) {
+          sendApiError(res, admission.code, admission.message);
+          return;
+        }
       }
 
       let target: ModelTarget;
@@ -157,19 +195,20 @@ export function createAiRouter({
           return;
         }
         // Checked before the daily allowances, so a busy minute costs nobody a request.
-        const waitMs = sharedMinute.waitMs();
+        const waitMs = Math.max(sharedMinute.waitMs(), toolUse ? agentMinute.waitMs() : 0);
         if (waitMs > 0) {
           const busy = sharedTierBusy(waitMs);
           res.set('retry-after', String(Math.ceil(waitMs / 1_000)));
           sendApiError(res, busy.code, busy.message);
           return;
         }
-        const verdict = daily.tryConsume({ ipKey: clientKey(req, clientIpSource), projectId });
+        const verdict = daily.tryConsume({ ipKey, projectId });
         if (!verdict.ok) {
           sendApiError(res, 'quota-exhausted', QUOTA_MESSAGES[verdict.exceeded]);
           return;
         }
         sharedMinute.record();
+        if (toolUse) agentMinute.record();
         target = { provider: 'gemini', model: sharedTier.model, apiKey: sharedTier.apiKey };
         remainingToday = verdict.remaining;
         refundDaily = verdict.refund;
@@ -184,6 +223,7 @@ export function createAiRouter({
           system: prepared.prompt.system,
           messages: prepared.prompt.messages,
           maxOutputTokens: prompt.maxOutputTokens,
+          toolUse: toolUse && { use: toolUse, conversation },
         },
         finish: {
           prompt: { id: prompt.id, version: prompt.version },
@@ -210,6 +250,7 @@ export function createAiRouter({
         provider: target.provider,
         model: target.model,
         ownKey: ownKeyProvider !== null,
+        ...(toolUse && { agent: { sessionId: sessionId ?? null, step: stepsTaken + 1 } }),
         dailyRefunded: refusedUpFront && refundDaily !== null,
         ...outcome,
       };

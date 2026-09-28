@@ -65,6 +65,12 @@ export function describeFailure(
           provider === null ? '' : ' Check that your key can use the model you chose.'
         }`,
       };
+    case 'oversized':
+      return {
+        code: 'payload-too-large',
+        message:
+          "The AI's answer was too large to continue from. Try a smaller goal, or another model.",
+      };
     case 'unavailable':
       return {
         code: 'unavailable',

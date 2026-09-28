@@ -3,7 +3,7 @@
  * no network, no key, and the same answer every time. Like e2e-server.ts it
  * lives in test/, so it is never part of the server bundle.
  */
-import type { AiFinishReason } from '@collabcode/shared';
+import type { AiFinishReason, AssistantMessage } from '@collabcode/shared';
 import {
   ModelCallError,
   type ModelCall,
@@ -13,8 +13,39 @@ import {
 } from '../ai/model-gateway.js';
 
 export type FakeReply =
-  | { kind: 'text'; chunks: string[]; finishReason?: AiFinishReason; delayMs?: number }
+  | {
+      kind: 'text';
+      chunks: string[];
+      finishReason?: AiFinishReason;
+      delayMs?: number;
+      /** For a call with tools: the model's whole message. Defaults to the chunks as text. */
+      message?: AssistantMessage;
+    }
   | { kind: 'fail'; failure: ModelCallFailure; statusCode?: number; afterChunks?: string[] };
+
+/** A reply that calls tools, the way the agent's model does. */
+export function toolCallReply(
+  calls: Array<{ toolName: string; input: unknown; toolCallId?: string }>,
+  text = '',
+): FakeReply {
+  return {
+    kind: 'text',
+    chunks: text === '' ? [] : [text],
+    finishReason: 'tool-calls',
+    message: {
+      role: 'assistant',
+      parts: [
+        ...(text === '' ? [] : [{ type: 'text' as const, text }]),
+        ...calls.map((call, index) => ({
+          type: 'tool-call' as const,
+          toolCallId: call.toolCallId ?? `call-${String(index + 1)}`,
+          toolName: call.toolName,
+          input: call.input,
+        })),
+      ],
+    },
+  };
+}
 
 export type FakeModelGateway = ModelGateway & {
   /** Every call made, keys included, so tests can check what reached the provider. */
@@ -60,10 +91,17 @@ export function createFakeModelGateway(
       await wait(delayMs, call.signal);
       if (script.kind === 'fail') throw new ModelCallError(script.failure, script.statusCode);
 
+      const text = chunks.join('');
       yield {
         type: 'finish',
         finishReason: script.finishReason ?? 'stop',
         usage: { inputTokens: 100, outputTokens: chunks.length },
+        ...(call.toolUse && {
+          message: script.message ?? {
+            role: 'assistant',
+            parts: text === '' ? [] : [{ type: 'text', text }],
+          },
+        }),
       };
     },
   };

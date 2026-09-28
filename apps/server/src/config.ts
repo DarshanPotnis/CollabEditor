@@ -80,6 +80,11 @@ const envSchema = z.object({
    * 80% of the free tier's 15 requests a minute.
    */
   AI_GLOBAL_REQUESTS_PER_MINUTE: envCount(12),
+  /**
+   * How many of those may be AI agent steps, so the one-shot helpers keep the
+   * rest. Also keeps a busy agent under the free tier's tokens per minute.
+   */
+  AI_AGENT_REQUESTS_PER_MINUTE: envCount(6),
 });
 
 export type ServerConfig = z.infer<typeof envSchema>;

@@ -148,3 +148,24 @@ describe('createDailyLimiter', () => {
     });
   });
 });
+
+describe('remaining', () => {
+  const limits = { global: 10, perIp: 4, perProject: 6 };
+  const alice = { ipKey: 'alice', projectId: 'p1' };
+
+  it('reports what is left of each allowance without counting anything', () => {
+    const limiter = createDailyLimiter(limits, clock(NOON).now);
+    limiter.tryConsume(alice);
+    limiter.tryConsume({ ipKey: 'bob', projectId: 'p1' });
+    expect(limiter.remaining(alice)).toEqual({ global: 8, ip: 3, project: 4 });
+    expect(limiter.remaining(alice)).toEqual({ global: 8, ip: 3, project: 4 });
+  });
+
+  it('starts from the full allowances on a new day', () => {
+    const time = clock(NOON);
+    const limiter = createDailyLimiter(limits, time.now);
+    limiter.tryConsume(alice);
+    time.set('2026-09-28T19:00:00Z');
+    expect(limiter.remaining(alice)).toEqual({ global: 10, ip: 4, project: 6 });
+  });
+});

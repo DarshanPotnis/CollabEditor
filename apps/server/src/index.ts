@@ -65,6 +65,7 @@ async function main(): Promise<void> {
         perProject: config.AI_PER_PROJECT_DAILY_REQUESTS,
       },
       sharedTierPerMinute: config.AI_GLOBAL_REQUESTS_PER_MINUTE,
+      agentPerMinute: config.AI_AGENT_REQUESTS_PER_MINUTE,
     },
   });
   const server = createCollabServer({

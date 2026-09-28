@@ -27,12 +27,19 @@ export type LimitVerdict =
     }
   | { ok: false; exceeded: 'global' | 'ip' | 'project' };
 
+export type Caller = { ipKey: string; projectId: string };
+
+/** What is left today of each allowance that applies to a caller. */
+export type Remaining = { global: number; ip: number; project: number };
+
 export type DailyLimiter = {
   /**
    * Count one request against every allowance, or against none if any is used
    * up. `remaining` is how many more this caller can make today.
    */
-  tryConsume: (caller: { ipKey: string; projectId: string }) => LimitVerdict;
+  tryConsume: (caller: Caller) => LimitVerdict;
+  /** What is left, without counting anything. */
+  remaining: (caller: Caller) => Remaining;
 };
 
 const QUOTA_DAY = new Intl.DateTimeFormat('en-CA', {
@@ -71,6 +78,15 @@ export function createDailyLimiter(
   }
 
   return {
+    remaining({ ipKey, projectId }) {
+      rollOver();
+      return {
+        global: Math.max(0, limits.global - global),
+        ip: Math.max(0, limits.perIp - (byIp.get(ipKey) ?? 0)),
+        project: Math.max(0, limits.perProject - (byProject.get(projectId) ?? 0)),
+      };
+    },
+
     tryConsume({ ipKey, projectId }) {
       rollOver();
 
