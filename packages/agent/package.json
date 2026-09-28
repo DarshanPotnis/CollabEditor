@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@collabcode/shared": "*",
+    "yjs": "^13.6.33",
     "zod": "^4.6.5"
   }
 }
