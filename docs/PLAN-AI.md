@@ -355,7 +355,11 @@ using your own key avoids the shared free tier. Repeat this in the README.
   messages, and the definition declares the tools the agent may call, so a client cannot supply
   its own tools any more than its own system prompt.
 - In AI-2, the browser must send assistant messages' `providerOptions` back unchanged, or
-  Gemini 3 function calling degrades (thought signatures).
+  Gemini 3 function calling degrades (thought signatures). **Resolved (2026-09-28):** the
+  finish event carries the model's whole message and the browser returns it verbatim. In a real
+  demo session on `gemini-3.5-flash-lite`, steps 2–5 each sent the previous step's signature back
+  and Gemini accepted it. A test runs the real Google provider behind a fake `fetch` and fails if
+  a signature is dropped, since the provider would otherwise substitute a placeholder silently.
 
 ---
 
