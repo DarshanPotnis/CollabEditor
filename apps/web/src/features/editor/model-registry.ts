@@ -66,7 +66,8 @@ export type ModelRegistry = {
   /** The Y.Text shown in the editor, for the file size guard. */
   activeText: () => Y.Text | null;
   /** Scroll a shown file so that a character offset is in view. */
-  reveal: (fileId: string, index: number) => void;
+  /** Scrolls to a position; `gentle` only when it is out of view, for following someone. */
+  reveal: (fileId: string, index: number, gentle?: boolean) => void;
   /** The shown file's selection, or null when nothing is selected. */
   activeSelection: () => ActiveSelection | null;
   /** Replace an anchored range as this person's own edit, unless its text has changed. */
@@ -216,10 +217,12 @@ export function createModelRegistry(
 
     activeText: () => shown()?.spec.ytext ?? null,
 
-    reveal(fileId, index) {
+    reveal(fileId, index, gentle = false) {
       const entry = entries.get(fileId);
       if (!entry || editor.getModel() !== entry.model) return;
-      editor.revealPositionInCenter(entry.model.getPositionAt(index));
+      const position = entry.model.getPositionAt(index);
+      if (gentle) editor.revealPositionInCenterIfOutsideViewport(position);
+      else editor.revealPositionInCenter(position);
     },
 
     activeSelection() {

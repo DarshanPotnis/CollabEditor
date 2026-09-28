@@ -21,7 +21,13 @@ import type { SelectionAnchor } from './selection-anchor.js';
 setupMonaco();
 
 /** Scroll to a character offset in a file once it is shown. */
-export type RevealRequest = { fileId: string; index: number; requestId: number };
+export type RevealRequest = {
+  fileId: string;
+  index: number;
+  requestId: number;
+  /** Scroll only when the position is out of view: following the AI teammate. */
+  gentle?: boolean;
+};
 
 /** Someone chose Explain with AI or Edit with AI on a selection. */
 export type EditorAiAction = { kind: 'explain' | 'edit'; selection: ActiveSelection };
@@ -118,7 +124,7 @@ export function CodeEditor({
   // Declared after the sync effect so that, when a follow opens a new tab
   // and asks to reveal in the same render, the model exists and is shown.
   useEffect(() => {
-    if (reveal) mounted?.registry.reveal(reveal.fileId, reveal.index);
+    if (reveal) mounted?.registry.reveal(reveal.fileId, reveal.index, reveal.gentle);
   }, [mounted, reveal]);
 
   // The AI actions, in the context menu (and the command palette) when there

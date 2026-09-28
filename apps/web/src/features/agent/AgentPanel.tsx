@@ -5,11 +5,12 @@
  * as HTML.
  */
 import { AGENT_STEP_LIMITS } from '@collabcode/shared';
-import { Bot, Check, LoaderCircle, X } from 'lucide-react';
+import { Bot, Check, Eye, LoaderCircle, X } from 'lucide-react';
 import { useState } from 'react';
 import { useNow } from '../../lib/useNow.js';
 import { AiText } from '../ai/AiText.js';
 import { PrivacyNotice } from '../ai/PrivacyNotice.js';
+import { loadLiveTyping, saveLiveTyping } from './agent-preferences.js';
 import {
   outcomeText,
   runningStatus,
@@ -17,6 +18,7 @@ import {
   type LogEntry,
 } from './agent-session-state.js';
 import type { AgentSessionControls } from './useAgentSession.js';
+import type { FollowAgent } from './useFollowAgent.js';
 
 const GOAL_MAX = 2_000;
 
@@ -55,6 +57,7 @@ function GoalForm({
   onStart: (goal: string) => void;
 }): React.ReactElement {
   const [goal, setGoal] = useState('');
+  const [liveTyping, setLiveTyping] = useState(loadLiveTyping);
   const steps = usingOwnKey ? AGENT_STEP_LIMITS.ownKey : AGENT_STEP_LIMITS.shared;
   const submit = (): void => {
     if (goal.trim() !== '') onStart(goal.trim());
@@ -98,6 +101,18 @@ function GoalForm({
             : `Uses ${String(AGENT_STEP_LIMITS.shared)} of your free AI requests at most.`}
         </p>
       </div>
+      <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+        <input
+          type="checkbox"
+          checked={liveTyping}
+          onChange={(event) => {
+            setLiveTyping(event.target.checked);
+            saveLiveTyping(event.target.checked);
+          }}
+          className="accent-sky-600"
+        />
+        Type edits live, so everyone can watch
+      </label>
       <p className="text-xs text-zinc-500">
         It edits files everyone can see, runs the project in your browser and calls its API. Files
         someone else is typing in are left alone, and you can undo everything it did.
@@ -265,11 +280,24 @@ function EndedView({
   );
 }
 
+function FollowControl({ follow }: { follow: FollowAgent }): React.ReactElement {
+  return follow.following ? (
+    <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+      <Eye className="size-3.5" aria-hidden />
+      Following the AI. Type or open another file to stop.
+    </p>
+  ) : (
+    <Button onClick={follow.resume}>Follow AI</Button>
+  );
+}
+
 export function AgentPanel({
   controls,
+  follow,
   usingOwnKey,
 }: {
   controls: AgentSessionControls;
+  follow: FollowAgent;
   usingOwnKey: boolean;
 }): React.ReactElement {
   const { state } = controls;
@@ -315,6 +343,7 @@ export function AgentPanel({
             <Button onClick={controls.stop}>Stop</Button>
           </div>
           <p className="line-clamp-2 text-xs text-zinc-500">{state.goal}</p>
+          <FollowControl follow={follow} />
           <Notice text={state.notice} />
           <LogView log={state.log} />
         </div>

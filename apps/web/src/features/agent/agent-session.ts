@@ -65,6 +65,8 @@ export type UndoSummary = { summary: string; skipped: string[] };
 
 export type AgentSession = {
   sessionId: string;
+  /** The agent's awareness client in the room, which follow mode watches. */
+  clientId: number;
   maxSteps: number;
   /** Starts the loop; call once, after showing that the session has started. */
   run: () => Promise<AgentRunResult>;
@@ -184,6 +186,7 @@ export async function startAgentSession(
 
   return {
     sessionId,
+    clientId: peer.awareness.clientID,
     maxSteps: AGENT_LIMITS[tier].maxSteps,
     run,
     stop: () => stop.stop(),

@@ -70,6 +70,41 @@ test("the AI teammate works as a peer, and undo keeps a collaborator's edit", as
   await expect(a.getByLabel('What should the AI teammate do?')).toBeVisible();
 });
 
+test('the agent types its edit in live, and the host follows it into the file', async ({
+  browser,
+}) => {
+  const { a, b } = await openPair(browser, 'Express API');
+  // The host stays in index.js; the collaborator watches routes/users.js.
+  await openUsersRoute(b);
+  expect(await readEditorText(a)).toContain('express.json()');
+
+  const partlyTyped = b.waitForFunction(
+    () => {
+      const text = document.querySelector('.monaco-editor .view-lines')?.textContent ?? '';
+      return text.includes('usersRouter.del') && !text.includes('res.status(204).end();});');
+    },
+    undefined,
+    { polling: 'raf', timeout: 15_000 },
+  );
+  await startAgent(a, 'Add a DELETE /users/:id endpoint');
+  await partlyTyped;
+  await expect.poll(() => readEditorText(b)).toContain(ROUTE);
+
+  // Follow mode opened the agent's file for the host.
+  await expect(a.getByRole('tab', { name: /users\.js/, selected: true })).toBeVisible();
+  await expect.poll(() => readEditorText(a)).toContain(ROUTE);
+});
+
+test('typing stops following the AI, and Follow AI resumes it', async ({ browser }) => {
+  const { a } = await openPair(browser, 'Express API');
+  await startAgent(a, `Take your time ${SLOW_AGENT}`);
+  await expect(a.getByText('Following the AI. Type or open another file to stop.')).toBeVisible();
+  await typeAtEnd(a, '// mine');
+  await a.getByRole('button', { name: 'Follow AI' }).click();
+  await expect(a.getByText('Following the AI. Type or open another file to stop.')).toBeVisible();
+  await a.getByRole('button', { name: 'Stop' }).click();
+});
+
 test('a busy model shows a countdown to the retry, then the session goes on', async ({
   browser,
 }) => {

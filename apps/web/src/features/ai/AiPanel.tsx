@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { AgentPanel } from '../agent/AgentPanel.js';
 import type { AgentSessionControls } from '../agent/useAgentSession.js';
+import type { FollowAgent } from '../agent/useFollowAgent.js';
 import type { AiRequestState } from './ai-request-state.js';
 import { describeStep, finishNote, keyStatus, settingsAction, usageLine } from './ai-messages.js';
 import { AiSettingsDialog } from './AiSettingsDialog.js';
@@ -20,6 +21,7 @@ import { useOwnKeyChoice } from './useOwnKeyChoice.js';
 
 export type AiPanelProps = {
   agent: AgentSessionControls;
+  follow: FollowAgent;
   request: AiRequestControls;
   /** The Edit with AI answer on screen, if it is one. */
   edit: EditProposal;
@@ -130,7 +132,13 @@ function RequestView({
   );
 }
 
-export function AiPanel({ agent, request, edit, onShowEdit }: AiPanelProps): React.ReactElement {
+export function AiPanel({
+  agent,
+  follow,
+  request,
+  edit,
+  onShowEdit,
+}: AiPanelProps): React.ReactElement {
   const ownKey = useOwnKeyChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { state } = request;
@@ -151,7 +159,7 @@ export function AiPanel({ agent, request, edit, onShowEdit }: AiPanelProps): Rea
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
-        <AgentPanel controls={agent} usingOwnKey={ownKey.choice !== null} />
+        <AgentPanel controls={agent} follow={follow} usingOwnKey={ownKey.choice !== null} />
         <hr className="border-zinc-800" />
         {state.phase === 'idle' && <EmptyState />}
         {state.phase === 'needs-consent' && (

@@ -4,7 +4,7 @@
  * when the panel goes away or the project changes, so no session outlives the
  * workspace it works in.
  */
-import { instantTypist, type AgentEvent } from '@collabcode/agent';
+import { createLiveTypist, instantTypist, type AgentEvent } from '@collabcode/agent';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { ProjectSession } from '../../collab/useProject.js';
 import { config } from '../../lib/app-config.js';
@@ -13,12 +13,14 @@ import { browserStorage } from '../../lib/identity.js';
 import { browserSessionStorage, loadOwnKey, type OwnKey } from '../ai/byok-store.js';
 import { hasAcceptedPrivacyNotice, recordPrivacyNoticeAccepted } from '../ai/privacy-consent.js';
 import type { RuntimeControls } from '../runtime/useRuntime.js';
+import { loadLiveTyping } from './agent-preferences.js';
 import { startAgentSession, type AgentSession } from './agent-session.js';
 import {
   IDLE_AGENT_SESSION,
   agentSessionReducer,
   type AgentSessionState,
 } from './agent-session-state.js';
+import { systemClock } from './system-clock.js';
 import { downloadTrace } from './trace-download.js';
 
 export type AgentSessionControls = {
@@ -104,7 +106,10 @@ export function useAgentSession({
           host: hostRef.current,
           runtime: { ...runner, output: runtime.output },
           ownKey,
-          typist: instantTypist,
+          // A hidden tab's timers are throttled, so it types at once.
+          typist: loadLiveTyping()
+            ? createLiveTypist(systemClock, () => document.visibilityState === 'hidden')
+            : instantTypist,
           onEvent,
           onNotice: (message) => dispatch({ type: 'notice', message }),
         },
@@ -121,6 +126,7 @@ export function useAgentSession({
             type: 'started',
             maxSteps: agent.maxSteps,
             modelName: ownKey ? MODEL_NAMES[ownKey.choice.provider] : 'Gemini',
+            agentClientId: agent.clientId,
           });
           agent.run().then(
             () => {

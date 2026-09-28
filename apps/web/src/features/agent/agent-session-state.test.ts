@@ -23,7 +23,7 @@ const agent = (event: AgentEvent, at = 100_000): AgentSessionEvent => ({
 });
 const begin: AgentSessionEvent[] = [
   { type: 'request', goal: 'Add a route', consented: true },
-  { type: 'started', maxSteps: 15, modelName: 'Gemini' },
+  { type: 'started', maxSteps: 15, modelName: 'Gemini', agentClientId: 42 },
 ];
 
 function running(state: AgentSessionState) {

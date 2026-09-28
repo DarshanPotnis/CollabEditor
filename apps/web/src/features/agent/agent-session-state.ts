@@ -50,13 +50,15 @@ export type AgentSessionState =
       waiting: Waiting | null;
       /** Who is answering, for "Gemini is busy": Gemini, Claude or OpenAI. */
       modelName: string;
+      /** The agent's awareness client, which follow mode watches. */
+      agentClientId: number;
     })
   | (Common & { phase: 'ended'; outcome: AgentOutcome; totals: AgentTotals; undo: UndoView });
 
 export type AgentSessionEvent =
   | { type: 'request'; goal: string; consented: boolean }
   | { type: 'consented' }
-  | { type: 'started'; maxSteps: number; modelName: string }
+  | { type: 'started'; maxSteps: number; modelName: string; agentClientId: number }
   | { type: 'start-failed'; message: string }
   /** `at` is when it arrived, which a wait's countdown starts from. */
   | { type: 'agent'; event: AgentEvent; at: number }
@@ -162,6 +164,7 @@ export function agentSessionReducer(
             maxSteps: event.maxSteps,
             waiting: null,
             modelName: event.modelName,
+            agentClientId: event.agentClientId,
           }
         : state;
     case 'start-failed':

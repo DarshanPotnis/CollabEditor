@@ -37,6 +37,7 @@ import { ConnectionBanner } from '../status/ConnectionBanner.js';
 import { RunPanel } from '../runtime/RunPanel.js';
 import { useRuntime } from '../runtime/useRuntime.js';
 import { useAgentSession } from '../agent/useAgentSession.js';
+import { useFollowAgent } from '../agent/useFollowAgent.js';
 import { EditorPane } from '../tabs/EditorPane.js';
 import { useTabs } from '../tabs/useTabs.js';
 import { NotFoundPage } from './NotFoundPage.js';
@@ -96,6 +97,18 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   });
 
   const [reveal, setReveal] = useState<RevealRequest | null>(null);
+  const revealGently = useCallback(
+    (fileId: string, index: number) =>
+      setReveal({ fileId, index, requestId: Date.now(), gentle: true }),
+    [],
+  );
+  const followAgent = useFollowAgent({
+    session,
+    agentClientId: agent.state.phase === 'running' ? agent.state.agentClientId : null,
+    shownFileId: activeId,
+    openFile: tabs.open,
+    reveal: revealGently,
+  });
   const describeCollaborator = useCallback(
     (collaborator: Collaborator) => followLabel(collaborator, tree, collaborators),
     [tree, collaborators],
@@ -213,6 +226,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
               ai={
                 <AiPanel
                   agent={agent}
+                  follow={followAgent}
                   request={aiRequest}
                   edit={proposal}
                   onShowEdit={ai.showEdit}
