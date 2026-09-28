@@ -508,10 +508,19 @@ Goal: measure the agent before improving it.
   seeded bug, handle 404s, rename a route file and update imports, add a test, refactor
   without behavior change, and at least two **multiplayer tasks** where a simulated human is
   active in a file and the grader requires a proposal there and no direct edit.
-- **Regression traces.** Recorded AI-2 sessions are committed fixtures, read with `parseTrace`
-  (which also reads version 1 traces), and replayed with `scriptFromTrace` against the Node
-  ToolHost. The first is a real demo session that failed at step 6 on Gemini 503s after both
-  retries: the "model busy mid-session" case.
+- **A task with no sandbox.** The run tools report that the sandbox isn't available. The agent
+  must make the change, stop trying to run anything, and finish with a clear summary that tells
+  the person to click Run. The grader checks the change, that no run tool was called again after
+  the first refusal, and that `finish` was called.
+- **Regression traces.** Recorded AI-2 sessions are committed fixtures in
+  `packages/agent/fixtures/traces`, read with `parseTrace` (which also reads version 1 traces),
+  and replayed with `scriptFromTrace` against the Node ToolHost:
+  - "model busy mid-session": a real demo session that failed at step 6 on Gemini 503s after
+    both retries;
+  - "runtime unavailable; agent loops": a real demo session whose page could not boot a
+    WebContainer. The model made the change, then went past the goal, called `run_command` six
+    times against the missing sandbox, and used all 15 steps without calling `finish`. It is the
+    recorded counterpart of the no-sandbox task above.
 - **Metrics per run:** pass rate, steps, tokens, wall time, and failures grouped by cause.
 - **Output:** JSON results plus a markdown summary; the README shows the latest summary table.
 - **CI:** agent-core unit tests with the fake model run on every push. Real-model evals run

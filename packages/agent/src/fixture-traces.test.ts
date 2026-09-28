@@ -6,6 +6,13 @@
  * gemini-3.5-flash-lite, prompt agent@1, trace format 1). Gemini was busy throughout: steps 3
  * and 4 were answered only after retries, step 4 ended with finish reason "other", and step 6
  * was refused three times, which ended the session.
+ *
+ * runtime-unavailable-agent-loops.json is the second demo session (2026-09-28,
+ * gemini-3.5-flash-lite, agent@2, trace format 2). The page could not boot a WebContainer, and
+ * run_project said so at step 1; the model then made the change, wandered well past the goal
+ * (rewrote index.js, added and deleted test files, edited package.json, tried to install
+ * supertest), called run_command six times against a sandbox that did not exist, and used all
+ * 15 steps without calling finish.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -116,5 +123,61 @@ describe('the "model busy mid-session" trace', () => {
     expect(tools.calls).toHaveLength(recorded.length);
     expect(result.trace.steps.flatMap((step) => step.waits)).toEqual([]);
     expect(elapsedMs).toBe(0);
+  });
+});
+
+describe('the "runtime unavailable; agent loops" trace', () => {
+  const trace = fixture('runtime-unavailable-agent-loops.json');
+  const calls = trace.steps.flatMap((step) => step.toolCalls);
+
+  it('records the case: no sandbox, the same refusal six times, and no finish', () => {
+    expect(trace).toMatchObject({
+      version: 2,
+      tier: 'shared',
+      project: { template: 'express-api' },
+      prompt: { id: 'agent', version: 2 },
+      outcome: { kind: 'limit', limit: 'steps' },
+    });
+    expect(trace.steps).toHaveLength(15);
+    expect(calls[0]).toMatchObject({ toolName: 'run_project', isError: true });
+    expect(calls[0]?.output).toContain('crossOriginIsolated');
+
+    const commands = calls.filter((call) => call.toolName === 'run_command');
+    expect(commands).toHaveLength(6);
+    expect(new Set(commands.map((call) => `${String(call.isError)} ${call.output}`)).size).toBe(1);
+    expect(commands[0]?.output).toContain('run_project first');
+
+    expect(calls.map((call) => call.toolName)).not.toContain('finish');
+    expect(calls.map((call) => call.toolName)).not.toContain('http_request');
+    expect(trace.steps.map((step) => step.waits.length)).toEqual([
+      0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 2, 1, 0,
+    ]);
+  });
+
+  it('records the scope creep: files the goal never asked for', () => {
+    const touched = calls
+      .filter((call) => !call.isError && call.toolName !== 'run_project')
+      .map((call) => `${call.toolName} ${String((call.input as { path?: unknown }).path)}`);
+    expect(touched).toEqual([
+      'edit_file index.js',
+      'edit_file routes/users.js',
+      'create_file routes/users.test.js',
+      'delete_file routes/users.test.js',
+      'create_file test/users.test.js',
+      'edit_file package.json',
+      'delete_file test/users.test.js',
+      'create_file test/users.test.js',
+    ]);
+  });
+
+  it('replays with its rate-limit waits: the same calls and the same end', async () => {
+    const { result, tools, recorded } = await replay(trace, true);
+    expect(tools.calls).toEqual(
+      recorded.map((call) => ({ name: call.toolName, input: call.input })),
+    );
+    expect(result.outcome).toEqual(trace.outcome);
+    expect(result.trace.steps.map((step) => step.waits.map((wait) => wait.reason))).toEqual(
+      trace.steps.map((step) => step.waits.map((wait) => wait.reason)),
+    );
   });
 });
