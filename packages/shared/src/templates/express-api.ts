@@ -18,7 +18,7 @@ const packageJson = `{
 `;
 
 const indexJs = `// A small Express API.
-// Phase 3 runs this inside your browser and lets you call it from the console.
+// Click Run to start it in your browser, then try it from the API tab.
 import express from 'express';
 import { usersRouter } from './routes/users.js';
 

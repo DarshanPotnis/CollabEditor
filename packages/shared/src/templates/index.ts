@@ -17,7 +17,7 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   'express-api': {
     id: 'express-api',
     label: 'Express API',
-    description: 'A small REST API you can run in your browser later.',
+    description: 'A small REST API you can run and call right in your browser.',
     files: expressApiFiles,
     entryPath: 'index.js',
   },
