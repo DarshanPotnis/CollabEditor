@@ -152,3 +152,14 @@ test('the container runs Node 22 or later, as the templates declare', async ({ p
   await page.keyboard.type('node -v\n');
   await expect(shell).toContainText(/v(2[2-9]|[3-9]\d)\.\d+\.\d+/, { timeout: 30_000 });
 });
+
+test('the AI teammate edits the route, runs the project and calls it', async ({ page }) => {
+  await createProject(page, 'Express API');
+  await page.getByLabel('What should the AI teammate do?').fill('Add DELETE e2e-run-agent');
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // The scripted model reports what the real server in the container answered.
+  await expect(page.getByText('DELETE /users/1 answered 204.')).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByRole('status', { name: 'Run status' })).toContainText('Server running');
+});

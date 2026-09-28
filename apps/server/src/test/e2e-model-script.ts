@@ -30,6 +30,52 @@ const E2E_SLOW_AGENT = 'e2e-slow-agent';
 const E2E_AGENT_ROUTE = "usersRouter.delete('/:id', (req, res) => {";
 const USERS_ROUTER = 'export const usersRouter = Router();\n';
 
+/** An AI teammate goal containing this edits, runs the project and calls it. */
+const E2E_RUN_AGENT = 'e2e-run-agent';
+const DELETE_ROUTE = [
+  "usersRouter.delete('/:id', (req, res) => {",
+  '  const index = users.findIndex((user) => user.id === Number(req.params.id));',
+  '  if (index === -1) {',
+  "    res.status(404).json({ error: 'user not found' });",
+  '    return;',
+  '  }',
+  '  users.splice(index, 1);',
+  '  res.status(204).end();',
+  '});',
+].join('\n');
+
+/** The demo, scripted: add the route, run the project, call it, report what it answered. */
+function runningAgentReply(call: ModelCall): FakeReply {
+  const conversation = call.toolUse?.conversation ?? [];
+  switch (conversationSteps(conversation)) {
+    case 0:
+      return toolCallReply([
+        {
+          toolName: 'edit_file',
+          input: {
+            path: 'routes/users.js',
+            oldText: USERS_ROUTER,
+            newText: `${USERS_ROUTER}\n${DELETE_ROUTE}\n`,
+          },
+        },
+      ]);
+    case 1:
+      return toolCallReply([{ toolName: 'run_project', input: {} }]);
+    case 2:
+      return toolCallReply([
+        { toolName: 'http_request', input: { method: 'DELETE', path: '/users/1' } },
+      ]);
+    default: {
+      const last = conversation.at(-1);
+      const answer = last?.role === 'tool' ? (last.results[0]?.output ?? '') : '';
+      const status = /^HTTP (\d+)/.exec(answer)?.[1] ?? 'nothing';
+      return toolCallReply([
+        { toolName: 'finish', input: { summary: `DELETE /users/1 answered ${status}.` } },
+      ]);
+    }
+  }
+}
+
 /**
  * The AI teammate, on the Express template: read the users route, add a
  * DELETE route to it, finish. The same three steps every time.
@@ -40,6 +86,7 @@ function agentReply(call: ModelCall): FakeReply {
     const chunks = Array.from({ length: 60 }, (_, index) => `Thinking ${String(index + 1)}. `);
     return { kind: 'text', chunks, delayMs: 250 };
   }
+  if (goal.includes(E2E_RUN_AGENT)) return runningAgentReply(call);
   switch (conversationSteps(call.toolUse?.conversation ?? [])) {
     case 0:
       return toolCallReply(
