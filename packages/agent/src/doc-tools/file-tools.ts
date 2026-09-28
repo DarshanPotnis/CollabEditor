@@ -230,7 +230,15 @@ export function createDocTools(context: DocToolsContext): DocTools {
     undo.trackEdit(node.id);
     try {
       const change = await context.typist.replace(
-        { doc, fileId: node.id, oldText, newText, origin },
+        {
+          doc,
+          fileId: node.id,
+          oldText,
+          newText,
+          origin,
+          onProgress: (cursor) =>
+            report({ tool: 'edit_file', path: node.path, fileId: node.id, cursor }),
+        },
         signal,
       );
       const content = readFileContent(doc, node.id) ?? '';

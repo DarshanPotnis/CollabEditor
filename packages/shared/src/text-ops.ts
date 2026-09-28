@@ -114,8 +114,7 @@ export function replaceText(
   newText: string,
   origin: unknown,
 ): TextChange {
-  const text = readFileText(doc, fileId);
-  if (!text) throw new OpError('not-found', 'That file no longer exists.');
+  const text = fileText(doc, fileId);
   const change = planReplacement(text.toJSON(), oldText, newText);
   if (change.deleteCount === 0 && change.insert === '') return change;
 
@@ -124,4 +123,45 @@ export function replaceText(
     if (change.insert !== '') text.insert(change.index, change.insert);
   }, origin);
   return change;
+}
+
+function fileText(doc: Y.Doc, fileId: string): Y.Text {
+  const text = readFileText(doc, fileId);
+  if (!text) throw new OpError('not-found', 'That file no longer exists.');
+  return text;
+}
+
+/**
+ * Insert `insert` at `index`, one piece of an edit being typed in live. Checks
+ * the per-file limit again, since others may have added text since the edit
+ * was planned.
+ */
+export function insertText(
+  doc: Y.Doc,
+  fileId: string,
+  index: number,
+  insert: string,
+  origin: unknown,
+): void {
+  const text = fileText(doc, fileId);
+  if (text.length + insert.length > MAX_FILE_SIZE) {
+    throw new OpError(
+      'file-too-large',
+      `The file reached the ${String(Math.round(MAX_FILE_SIZE / 1024))} KB limit for one file part way through the edit.`,
+    );
+  }
+  doc.transact(() => text.insert(Math.min(index, text.length), insert), origin);
+}
+
+/** Delete `deleteCount` characters at `index`, the first part of an edit typed in live. */
+export function deleteText(
+  doc: Y.Doc,
+  fileId: string,
+  index: number,
+  deleteCount: number,
+  origin: unknown,
+): void {
+  const text = fileText(doc, fileId);
+  if (deleteCount === 0) return;
+  doc.transact(() => text.delete(index, deleteCount), origin);
 }

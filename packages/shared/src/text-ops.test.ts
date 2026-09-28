@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { MAX_FILE_SIZE } from './limits.js';
 import { OpError, type OpErrorCode } from './op-error.js';
 import { readFileContent } from './schema.js';
-import { planReplacement, replaceText } from './text-ops.js';
+import { deleteText, insertText, planReplacement, replaceText } from './text-ops.js';
 import { createFile } from './tree-ops.js';
 
 const alice = { userId: 'alice', userName: 'Alice', now: 1_000 };
@@ -133,5 +133,31 @@ describe('replaceText', () => {
     const expected = 'function greet(name) {\n  return "hello";\n}\n';
     expect(readFileContent(agent, fileId)).toBe(expected);
     expect(readFileContent(human, fileId)).toBe(expected);
+  });
+});
+
+describe('insertText and deleteText', () => {
+  it('write in one transaction each, with the origin', () => {
+    const { doc, fileId } = fileWith('hello world');
+    const origins: unknown[] = [];
+    doc.on('afterTransaction', (transaction: Y.Transaction) => origins.push(transaction.origin));
+    deleteText(doc, fileId, 5, 6, AGENT);
+    insertText(doc, fileId, 5, ', there', AGENT);
+    expect(readFileContent(doc, fileId)).toBe('hello, there');
+    expect(origins).toEqual([AGENT, AGENT]);
+  });
+
+  it('refuses an insert past the per-file limit, checked again for each piece', () => {
+    const { doc, fileId } = fileWith('x'.repeat(MAX_FILE_SIZE - 2));
+    insertText(doc, fileId, 0, 'ab', AGENT);
+    expectOpError(
+      () => insertText(doc, fileId, 0, 'c', AGENT),
+      'file-too-large',
+      /part way through/,
+    );
+  });
+
+  it('refuses a file that does not exist', () => {
+    expectOpError(() => insertText(new Y.Doc(), 'missing', 0, 'a', AGENT), 'not-found');
   });
 });
