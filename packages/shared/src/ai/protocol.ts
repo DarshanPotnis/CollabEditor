@@ -4,15 +4,20 @@
  * which builds requests and validates every event it reads.
  *
  * A request names a server-owned prompt and carries its inputs; there is no
- * field for a system prompt. A caller's own provider key travels only in the
- * AI_KEY_HEADER header, never in the body.
+ * field for a system prompt or for tools. The agent's requests also carry the
+ * conversation so far (conversation.ts), which only a prompt with tools
+ * accepts. A caller's own provider key travels only in the AI_KEY_HEADER
+ * header, never in the body, which is what an agent's trace records.
  *
  * The response is a stream of `data: <json>` lines (server-sent events format),
  * one AiStreamEvent each, ending with exactly one `finish` or `error` event.
- * Failures before the model's first event are plain HTTP errors instead.
+ * Failures before the model's first event are plain HTTP errors instead. For a
+ * prompt with tools, `finish` carries the model's whole message, tool calls
+ * included, to be sent back unchanged in the next step's conversation.
  */
 import { z } from 'zod';
 import { apiErrorSchema, projectIdSchema } from '../protocol.js';
+import { assistantMessageSchema, conversationSchema } from './conversation.js';
 import { PROMPT_IDS } from './prompts/index.js';
 
 export const AI_STEP_PATH = '/api/ai/step';
@@ -62,6 +67,13 @@ export const aiStepRequestSchema = z.object({
   promptId: z.enum(PROMPT_IDS, { error: 'Unknown AI prompt.' }),
   /** Validated by the named prompt's own schema. */
   inputs: z.unknown(),
+  /** The agent's conversation so far; refused for a prompt without tools. */
+  conversation: conversationSchema.optional(),
+  /** Groups an agent session's steps in the server log. Chosen by the client, so only a label. */
+  sessionId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .optional(),
   /** Present exactly when the AI_KEY_HEADER carries the caller's own key. */
   byok: byokChoiceSchema.optional(),
 });
@@ -89,6 +101,8 @@ export const aiStreamEventSchema = z.discriminatedUnion('type', [
     model: z.object({ provider: z.enum(AI_PROVIDERS), id: z.string().min(1) }),
     /** Shared-tier requests this caller has left today; null with their own key. */
     remainingToday: z.number().int().nonnegative().nullable(),
+    /** For a prompt with tools: the model's whole message, to send back unchanged. */
+    message: assistantMessageSchema.optional(),
   }),
   z.object({ type: z.literal('error'), error: apiErrorSchema.shape.error }),
 ]);

@@ -35,6 +35,29 @@ describe('aiStepRequestSchema', () => {
     expect(aiStepRequestSchema.safeParse({ ...request, projectId: '../x' }).success).toBe(false);
   });
 
+  it("accepts an agent step's conversation and session id", () => {
+    const conversation = [
+      {
+        role: 'assistant',
+        parts: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'list_files', input: {} }],
+      },
+      {
+        role: 'tool',
+        results: [{ toolCallId: 'c1', toolName: 'list_files', isError: false, output: 'a.js' }],
+      },
+    ];
+    const agentStep = { ...request, promptId: 'agent', conversation, sessionId: 'Ses_1-a' };
+    expect(aiStepRequestSchema.parse(agentStep)).toEqual(agentStep);
+  });
+
+  it('refuses a malformed conversation or session id', () => {
+    const agentStep = { ...request, promptId: 'agent' };
+    expect(
+      aiStepRequestSchema.safeParse({ ...agentStep, conversation: [{ role: 'system' }] }).success,
+    ).toBe(false);
+    expect(aiStepRequestSchema.safeParse({ ...agentStep, sessionId: 'a b' }).success).toBe(false);
+  });
+
   it('accepts a matching provider and model choice for a caller’s own key', () => {
     const byok = { provider: 'anthropic', model: 'claude-sonnet-5' };
     expect(aiStepRequestSchema.parse({ ...request, byok }).byok).toEqual(byok);
@@ -86,6 +109,31 @@ describe('aiStreamEventSchema', () => {
       { type: 'error', error: { code: 'unavailable', message: 'The AI provider is down.' } },
     ];
     for (const event of events) expect(aiStreamEventSchema.parse(event)).toEqual(event);
+  });
+
+  it("carries the model's whole message for a prompt with tools", () => {
+    const message = {
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-call',
+          toolCallId: 'c1',
+          toolName: 'read_file',
+          input: { path: 'a.js' },
+          providerOptions: { google: { thoughtSignature: 'abc' } },
+        },
+      ],
+    };
+    const finish = {
+      type: 'finish',
+      finishReason: 'tool-calls',
+      usage: { inputTokens: 900, outputTokens: 30 },
+      prompt: { id: 'agent', version: 1 },
+      model: { provider: 'gemini', id: 'gemini-3.5-flash-lite' },
+      remainingToday: 12,
+      message,
+    };
+    expect(aiStreamEventSchema.parse(finish)).toEqual(finish);
   });
 
   it('accepts unknown token counts and an unmetered own-key request', () => {

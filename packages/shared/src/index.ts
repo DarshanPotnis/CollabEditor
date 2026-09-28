@@ -1,3 +1,5 @@
+export * from './ai/agent-tools.js';
+export * from './ai/conversation.js';
 export * from './ai/prompt.js';
 export * from './ai/prompt-inputs.js';
 export * from './ai/prompt-text.js';

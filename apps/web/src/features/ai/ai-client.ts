@@ -27,10 +27,13 @@ import { ApiError, readApiError } from '../../lib/api-error.js';
 import type { OwnKey } from './byok-store.js';
 import { createSseParser } from './sse-parser.js';
 
+/** The one-shot helpers' prompts. The agent's steps also carry a conversation. */
+type HelperPromptId = Exclude<PromptId, 'agent'>;
+
 /** One step, typed so its inputs always match the prompt they are for. */
 export type AiStep = {
-  [Id in PromptId]: { projectId: string; promptId: Id; inputs: PromptInputsFor<Id> };
-}[PromptId];
+  [Id in HelperPromptId]: { projectId: string; promptId: Id; inputs: PromptInputsFor<Id> };
+}[HelperPromptId];
 
 export type AiAnswerEvent = Exclude<AiStreamEvent, { type: 'error' }>;
 export type AiFinish = Extract<AiStreamEvent, { type: 'finish' }>;
