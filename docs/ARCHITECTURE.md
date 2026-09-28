@@ -2,10 +2,12 @@
 
 A living description of how the system works **today**. Each phase updates this file.
 
-Current state: **v3 (Phase 3)** — a multi-file workspace on a Yjs CRDT synced by Hocuspocus and
-persisted as Postgres snapshots (file tree with presence, tabs, per-person undo, deterministic
-resolution of concurrent tree edits), and each person can run the project's Node backend in their
-own browser tab with WebContainers, call it from an API console, open a shell and see a preview.
+Current state: **v3 (Phase 3) plus AI-1** — a multi-file workspace on a Yjs CRDT synced by
+Hocuspocus and persisted as Postgres snapshots (file tree with presence, tabs, per-person undo,
+deterministic resolution of concurrent tree edits), and each person can run the project's Node
+backend in their own browser tab with WebContainers, call it from an API console, open a shell
+and see a preview. AI-1 adds one-shot AI helpers: explain or edit a selection, and explain a
+crashed run, through a stateless model proxy on the free Gemini tier or the person's own key.
 
 | Tag                   | What it is                                                                |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -39,11 +41,11 @@ the point of Phase 1 is what changed between them and now.
 └───────────────────────────────────────────────────────────────────┬─────────┘
                                                                     │
                      REST (fetch)                                   │ WebSocket
-                     /health, /api/projects                         │ /collab
+                     /health, /api/projects, /api/ai/step (stream)  │ /collab
                                                                     ▼
 ┌─────────────────────── Render (apps/server) ────────────────────────┐
 │  @hocuspocus/server owns the Node HTTP server                       │
-│    ├─ onRequest  ──► Express app (health, projects, CORS)           │
+│    ├─ onRequest  ──► Express app (health, projects, AI, CORS)       │
 │    ├─ onUpgrade  ──► only /collab reaches the WebSocket layer        │
 │    └─ extensions ──► project guard → Database → logging             │
 └────────────────────────────────────────┬────────────────────────────┘
@@ -104,7 +106,9 @@ been taken meanwhile it takes the next free `name (n)`, for real, and says so.
 bypassing `ops.ts` entirely. That is why the per-file size limit is enforced at the editor
 (`apps/web/src/features/editor/file-size-guard.ts`) rather than in `ops.ts`: insertions and
 oversized pastes are refused at the limit with a message, and deletions always work so a file can
-be brought back under. This exception is recorded in `CLAUDE.md`.
+be brought back under. This exception is recorded in `CLAUDE.md`. An AI edit applied with Apply
+goes through the file's Monaco model too, so it falls under the same exception rather than adding
+one (see "The AI helpers").
 
 ### Concurrent tree edits: read-time resolution
 
@@ -212,7 +216,10 @@ their cost, licence, browser support and sandbox; ADR 005 covers the file sync.
 - **The run** (`process-runner.ts`, lifecycle in `run-state.ts`). Read `package.json` from the
   document, parsed defensively; run `npm install` only when its dependency sections changed; start
   `dev`, else `start`; follow the server through the container's port events. A port that closes
-  is a restart; one that stays closed for 3 s, or a dev process that exits, is a crash. **A crashed
+  is a restart; one that stays closed for 3 s, a dev process that exits, or the watcher printing
+  that the program crashed (`watch-signals.ts`) is a crash. That last one is the only sign of a
+  program that crashes before it ever listens: under `node --watch` the dev process keeps running
+  and no port ever closes. **A crashed
   run restarts itself when the bridge next writes a file**, which covers what `node --watch` cannot:
   after a crash it watches only the files it had loaded, so a restored file would otherwise go
   unnoticed. Every run has a generation; output and exits from a replaced process are dropped, so
@@ -259,6 +266,76 @@ with, and Safari does not implement `credentialless` at all.
   and forms work, top navigation throws, `window.open` is blocked, and without `allow-same-origin`
   nothing loads. The pane says plainly that it is running project code.
 
+### The AI helpers
+
+```
+┌──────────────────────────── one person's browser tab ────────────────────────────┐
+│  editor context menu                   Run view, when a run crashed or failed    │
+│  Explain with AI · Edit with AI…       Explain with AI                           │
+│     │ selection + context lines           │ plain-text output tail + the file    │
+│     ▼ (anchored with relative positions)  ▼                                      │
+│  useAiRequest: privacy notice first; own key read from sessionStorage at send    │
+│     │ ai-client: fetch POST, reads data: lines, zod-validates every event        │
+└─────┼────────────────────────────────────────────────────────────────────────────┘
+      │ body { projectId, promptId, inputs, byok? }   header x-ai-key (own key only)
+      ▼
+  POST /api/ai/step  (apps/server)
+    Origin required → per-visitor minute limit → zod → project exists
+    → shared tier: minute limit for everyone, then daily limits │ or the caller's own key
+    → server-owned prompt → ModelGateway (Vercel AI SDK) → Gemini, Anthropic or OpenAI
+    → text-delta … finish | error          one metadata-only log line per call
+```
+
+**The model is the brain, the browser is the hands** (ADR 007). The server places each model
+call and keeps nothing between calls; everything the helpers act on, the document, the editor and
+the running project, is in the browser.
+
+- **The request** names a server-owned prompt (`packages/shared/src/ai/prompts/`:
+  `explain-selection`, `edit-selection`, `explain-error`) and carries its inputs. There is no
+  field for a system prompt, so the shared key is not a general-purpose relay. Every prompt has an
+  id, a version and a zod schema that caps each field; the browser trims context to the same caps
+  and validates with the same schema, so it refuses with the server's wording. A fingerprint test
+  fails CI when a prompt changes without a version bump.
+- **The stream** is our own protocol: one `data: <json>` line per event, `text-delta`s then one
+  `finish` (reason, token usage, `id@version`, model, what is left of today's free requests) or
+  one `error`. The status is committed on the model's first event, so a refused key or an
+  exhausted allowance is a plain HTTP error. A disconnect aborts the model call, and a call gives
+  up after 90 s, logged as a warning with whether the provider had started answering. The browser
+  reads it with `fetch`, not `EventSource`, and handles an answer that arrives in one piece, which
+  is what a buffering proxy delivers.
+- **Paying for it.** The shared tier uses the server's Gemini key: 400 requests a day for everyone,
+  30 per visitor, 60 per project, and 12 in any rolling minute for everyone together, counted in
+  memory. Days follow Pacific time, when Google resets. The minute limit is checked before the
+  daily ones and recorded only once they accept, so neither a busy minute nor a visitor who is out
+  of requests costs anyone else. A request Google refuses for rate or quota reasons before
+  answering is refunded. With their own key (Gemini, Anthropic or OpenAI, from a short model
+  allowlist) a person skips the shared limits but not the per-visitor minute limit.
+- **The panel.** The right-hand pane switches between **Run** and **AI**; both stay mounted, so a
+  run keeps going while the AI view shows. The first request waits behind a one-time, versioned
+  privacy notice. A request is a pure reducer (`ai-request-state.ts`), where each request has an
+  id, so a late event from one that was stopped or replaced is dropped. Answers are rendered as
+  paragraphs, inline code and code blocks built as React elements, never as HTML.
+- **Explain and Edit** start from the editor's context menu or command palette. Explain sends the
+  selection with up to 30 whole lines on each side. Edit anchors the selection with Yjs relative
+  positions when it is chosen, asks for an instruction, and shows the answer as a read-only Monaco
+  diff over the editor once it is complete. **Apply** goes through the file's Monaco model
+  (`model-registry.ts` `applyEdit`), so y-monaco writes it with the person's binding as origin and
+  their undo manager records it as one step of its own. Apply refuses if the anchored text changed
+  since it was chosen (a collaborator's edit is never overwritten) or if the file would pass its
+  size limit.
+- **Explain this error** appears in the Run view when a run crashed or failed. It sends the end of
+  the output as the plain text a person saw (`lib/terminal-text.ts`) and the file the latest stack
+  trace points at, found by the longest ending of the container path that is a project file.
+  CommonJS line numbers are exact, so the lines around the crash are sent. WebContainer shifts
+  ES-module line numbers by an amount that depends on the module, so an ES module (a `file://`
+  frame) is sent whole, without a crash line, and the prompt says to trust the code's own
+  numbering.
+- **A Monaco diff editor in the standalone build.** Every standalone editor points a global hover
+  factory at its own services when created, and a diff editor's inner editors' services die with
+  it. After one closes, every context menu would throw and never open, so the diff view points the
+  factory back at Monaco's global services by creating and dropping a top-level editor. An
+  end-to-end test pins it.
+
 ### Sync and persistence lifecycle
 
 1. A provider connects to `/collab` and sends the project ID **in the sync message**, not in the
@@ -292,12 +369,13 @@ See `docs/decisions/003-hocuspocus-owns-the-http-server.md`.
 
 Routes:
 
-| Route                   | Behaviour                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /health`           | `{ ok, uptimeSeconds }`. Never touches the database, so it answers the moment the process is up. The landing page pings it on load to start a cold start early. |
-| `POST /api/projects`    | Validates `{ name?, template }`, builds the initial `Y.Doc` from the template, stores it, returns the summary. Rate limited per IP.                             |
-| `GET /api/projects/:id` | Summary or 404. The workspace calls it before opening a socket, so an unknown ID shows a 404 page instead of a refused connection.                              |
-| anything else           | 404 in our error shape, never Hocuspocus's default response.                                                                                                    |
+| Route                   | Behaviour                                                                                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`           | `{ ok, uptimeSeconds }`. Never touches the database, so it answers the moment the process is up. The landing page pings it on load to start a cold start early.                    |
+| `POST /api/projects`    | Validates `{ name?, template }`, builds the initial `Y.Doc` from the template, stores it, returns the summary. Rate limited per IP.                                                |
+| `GET /api/projects/:id` | Summary or 404. The workspace calls it before opening a socket, so an unknown ID shows a 404 page instead of a refused connection.                                                 |
+| `POST /api/ai/step`     | One model call for a server-owned prompt, streamed back (see "The AI helpers"). Requires an `Origin`; limited per visitor per minute, and on the shared tier by the shared limits. |
+| anything else           | 404 in our error shape, never Hocuspocus's default response.                                                                                                                       |
 
 ### Trust boundaries
 
@@ -336,6 +414,17 @@ Every boundary is validated, and the awkward one is presence.
   `xdg-open` and `code` events are ignored.
 - **API console responses cannot be faked** by the server's logs or bodies (see above), and a
   collaborator-written `package.json` is parsed defensively before its scripts are chosen.
+- **AI keys.** The server's Gemini key never reaches a browser. A person's own key lives in
+  their tab's `sessionStorage`, travels only in the `x-ai-key` header (never a body), is used for
+  one provider instance and is never stored or logged: request logs keep an allowlist of fields
+  and no headers, pino redacts key-like headers as a second layer, provider errors are reduced to
+  a failure kind and status before logging, and a canary test fails if a known key or prompt
+  appears in any log line. People only see messages we write, never a provider's own text, which
+  can echo part of a key.
+- **AI requests.** `/api/ai/step` refuses requests with no `Origin`. That stops casual scripts,
+  not determined ones, so the limits are what protect the free quota. Prompt inputs are capped
+  by schema, and the prompts tell the model that code, output and file paths are data, never
+  instructions. Model output is rendered only as text.
 - **Transport:** `websocketOptions.maxPayload` caps a single WebSocket frame as a safety net
   against a runaway client. It is far above the per-file limit because one frame can carry a
   whole document's initial sync. Hitting it closes the socket with code 1009, which the client
@@ -380,6 +469,12 @@ refusal is final.
   history, as in most editors. Pane sizes and expanded folders are remembered per browser.
 - **A stored cycle stays in the data** until someone moves one of its folders again. Everyone
   reads through `resolveTree`, so nobody sees it.
+- **AI limits are counted in memory**, like documents per process: a restart resets them, and a
+  second instance would need a shared store.
+- **AI answers are per person and not kept.** One request at a time, no follow-up questions, and
+  nothing is shared with collaborators except edits someone applies.
+- **Streaming through Render's proxy is unverified** until deployment (README launch checklist).
+  If a proxy buffers the stream, the answer appears all at once rather than breaking.
 - **y-monaco 0.1.6 leaks one cursor listener per binding it creates**, because `destroy()` does
   not remove it. The leftover listeners do nothing (they check the model first) and the count grows
   only with tabs opened and files renamed, not tab switches. Vendoring the binding would fix it;
@@ -394,7 +489,9 @@ refusal is final.
 | Postgres (`apps/server`)             | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Runtime (`apps/web`, Node)           | The FS bridge against a real Y.Doc and a fake file system (renames, folder renames, deletes, restores, purges, npm-written files left alone, coalescing, retries); the run lifecycle and auto-restart against a fake container (install skipping, Restart, Stop mid-install, crashes, stale output, waiting for the server); the API console codec against forged and binary output; the request helper under real Node against a real HTTP server, on Node 24 and, in CI, Node 22                                                                                                                                                                                                                                          |
 | End-to-end (`e2e`)                   | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors, persistence, 404, redirect; and Phase 2's definition of done: presence in the tree, rename while typing, delete and restore, delete forever while open, duplicate refusal, concurrent duplicate create and cross-move (one window offline), per-person undo from keys and the command palette, undo across a rename, cursor behaviour on tab switch and close, following a collaborator; and Phase 3's: the whole suite runs cross-origin isolated, the headers are on the page and the worker scripts, Monaco's workers really run, and a browser without isolation gets a disabled Run and can still edit |
-| WebContainer end-to-end (opt-in)     | `RUN_WEBCONTAINER_E2E=1`: Run, then the API console against the real server; my edit and a collaborator's reach it; the preview shows it; a crash recovers once fixed; the container's Node version. Needs the network, so not in CI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| AI (unit and integration)            | Prompt inputs, caps and version fingerprints; the stream protocol and the browser's parser against chunked and buffered streams; request state, key storage and consent; selection prompts, anchors against two real Y.Docs (edits elsewhere, inside, at the edges), edit proposals, terminal text, stack locations and error prompts; the route through the real server with a scripted model: statuses, limits and refunds, the shared minute limit, timeouts, disconnects, and a log canary across the success and failure paths                                                                                                                                                                                         |
+| AI end-to-end (`e2e/ai.spec.ts`)     | Against a scripted model in the e2e server: the privacy notice, Explain streaming, Edit applied for both people and undone in one step, a stale edit refused, Stop, a refused own key, and the context menu still opening after a diff closes                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| WebContainer end-to-end (opt-in)     | `RUN_WEBCONTAINER_E2E=1`: Run, then the API console against the real server; my edit and a collaborator's reach it; the preview shows it; a crash recovers once fixed; a crash before the server listens shows as crashed; Explain with AI on a crash sends the whole ES module; the container's Node version. Needs the network, so not in CI                                                                                                                                                                                                                                                                                                                                                                              |
 
 ---
 
