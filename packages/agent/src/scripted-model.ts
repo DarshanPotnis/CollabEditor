@@ -90,22 +90,44 @@ export function createScriptedModel(
   };
 }
 
+export type ReplayOptions = {
+  /**
+   * Also refuse where the session was refused: each recorded wait replays as
+   * the busy or rate-limited answer that caused it, and a step the model never
+   * answered ends the replay the way the session ended. Right for a regression
+   * example; a demo leaves it off, so it never waits.
+   */
+  failures?: boolean;
+};
+
+function refusal(reason: 'busy' | 'rate-limited', message: string): ScriptedReply {
+  return { error: new ModelStepError(reason, message, { upFront: true }) };
+}
+
 /** Plays back a recorded session's answers, in order. */
-export function scriptFromTrace(trace: AgentTrace): ScriptedModel {
-  const answers = trace.steps.flatMap((step): ScriptedAnswer[] =>
-    step.model === null
-      ? []
-      : [
-          {
-            message: step.model.message,
-            finishReason: step.model.finishReason,
-            usage: step.model.usage,
-          },
-        ],
-  );
+export function scriptFromTrace(trace: AgentTrace, options: ReplayOptions = {}): ScriptedModel {
+  const failure =
+    trace.outcome?.kind === 'failed' ? trace.outcome.message : 'The recorded model did not answer.';
+  const replies = trace.steps.flatMap((step): ScriptedReply[] => {
+    const refused = options.failures
+      ? step.waits.map((wait) => refusal(wait.reason, 'The recorded model was busy.'))
+      : [];
+    if (step.model !== null) {
+      return [
+        ...refused,
+        {
+          message: step.model.message,
+          finishReason: step.model.finishReason,
+          usage: step.model.usage,
+        },
+      ];
+    }
+    const last = step.waits.at(-1)?.reason ?? 'busy';
+    return options.failures ? [...refused, refusal(last, failure)] : [];
+  });
   const first = trace.steps.find((step) => step.model !== null)?.model;
   return createScriptedModel(
-    answers,
+    replies,
     first ? { provider: first.provider, id: first.id } : SCRIPTED_MODEL,
   );
 }

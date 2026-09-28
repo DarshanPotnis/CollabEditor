@@ -11,3 +11,6 @@ playwright-report/
 test-results/
 .vite/
 .vscode/
+
+# Downloaded agent traces waiting to be reviewed; fixtures live in packages/agent/fixtures/traces.
+traces-inbox/

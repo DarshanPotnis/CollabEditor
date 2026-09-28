@@ -6,3 +6,5 @@ frontend
 backend
 playwright-report
 test-results
+# Recorded agent traces are kept exactly as they were downloaded.
+packages/agent/fixtures/traces
