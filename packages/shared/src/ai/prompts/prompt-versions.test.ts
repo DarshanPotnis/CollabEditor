@@ -46,6 +46,10 @@ const SAMPLE_INPUTS: Record<PromptId, unknown> = {
     goal: 'Add a DELETE /users/:id endpoint with validation.',
     files: ['index.js', 'package.json', 'routes/users.js'],
     moreFiles: 2,
+    contents: [
+      { path: 'index.js', content: "app.use('/users', usersRouter);\n" },
+      { path: 'routes/users.js', content: 'export const usersRouter = Router();\n' },
+    ],
   },
 };
 
@@ -53,7 +57,7 @@ const EXPECTED: Record<PromptId, { version: number; fingerprint: string }> = {
   'explain-selection': { version: 1, fingerprint: '3dda3dea2c866373' },
   'edit-selection': { version: 1, fingerprint: '12d771944879e728' },
   'explain-error': { version: 2, fingerprint: '4ed6c3d63748c820' },
-  agent: { version: 1, fingerprint: '07e30b491814a5e9' },
+  agent: { version: 2, fingerprint: '972da11f183a93a2' },
 };
 
 function fingerprint(id: PromptId): string {

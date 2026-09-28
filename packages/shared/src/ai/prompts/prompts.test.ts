@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { AI_INPUT_LIMITS } from '../prompt-inputs.js';
 import { fencedBlocks } from '../prompt-text.js';
-import { PROMPT_IDS, PROMPTS, extractReplacement, matchTrailingNewline } from './index.js';
+import {
+  AGENT_INPUT_LIMITS,
+  PROMPT_IDS,
+  PROMPTS,
+  extractReplacement,
+  matchTrailingNewline,
+} from './index.js';
+
+const AI_AGENT_CONTENTS_CAP = AGENT_INPUT_LIMITS.contentsChars;
 
 const selection = {
   path: 'routes/users.js',
@@ -162,6 +170,43 @@ describe('the agent prompt', () => {
     expect(content).toContain(goal);
     expect(content).toContain('index.js\nroutes/users.js');
     expect(content).not.toContain('more');
+  });
+
+  it('gives a small project’s files with real line numbers, and says not to read them again', () => {
+    const prepared = PROMPTS.agent.prepare({
+      goal,
+      files: ['index.js', 'routes/users.js'],
+      contents: [
+        { path: 'index.js', content: 'const a = 1;\nconst b = 2;\n' },
+        { path: 'routes/users.js', content: '' },
+      ],
+    });
+    const content = userMessage(prepared);
+    expect(content).toContain('Their contents when you started, with real line numbers');
+    expect(content).toContain('index.js:\n```text\n1| const a = 1;\n2| const b = 2;\n```');
+    expect(content).toContain('routes/users.js:\n```text\n(empty)\n```');
+    if (!prepared.ok) throw new Error(prepared.message);
+    expect(prepared.prompt.system).toMatch(
+      /do not call list_files or read_file for a file you already have/,
+    );
+    expect(prepared.prompt.system).toMatch(/several tool calls in one answer/);
+  });
+
+  it('says to read files, several at once, when their contents are not included', () => {
+    const content = userMessage(PROMPTS.agent.prepare({ goal, files: ['index.js'] }));
+    expect(content).toContain(
+      'Their contents are not included: read the files you need, several in one answer.',
+    );
+  });
+
+  it('refuses contents over their budget', () => {
+    const big = 'x'.repeat(AI_AGENT_CONTENTS_CAP + 1);
+    expect(
+      PROMPTS.agent.prepare({ goal, files: ['a.js'], contents: [{ path: 'a.js', content: big }] }),
+    ).toEqual({
+      ok: false,
+      message: 'The file contents are too long for the AI.',
+    });
   });
 
   it('says how many files were left out, and where to find them', () => {

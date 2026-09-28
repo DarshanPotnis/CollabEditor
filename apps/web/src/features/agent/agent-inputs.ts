@@ -1,7 +1,9 @@
 /**
  * What an agent session starts from: the goal with the project's file list
- * for the prompt (capped as the prompt requires, the rest left to list_files),
- * and, for the trace, the template and a fingerprint of the starting files.
+ * for the prompt (capped as the prompt requires, the rest left to list_files)
+ * and, when the whole project is small enough, every file's content, so the
+ * agent can act in its first step; and, for the trace, the template and a
+ * fingerprint of the starting files.
  */
 import { projectFingerprint, type AgentInputs, type AgentTrace } from '@collabcode/agent';
 import { AGENT_INPUT_LIMITS, readFileContent, readMeta, resolveDocTree } from '@collabcode/shared';
@@ -15,16 +17,18 @@ function projectFiles(doc: Y.Doc): Array<{ path: string; content: string }> {
 }
 
 export function agentInputs(doc: Y.Doc, goal: string): AgentInputs {
+  const all = projectFiles(doc);
   const files: string[] = [];
   let chars = 0;
-  const paths = projectFiles(doc).map((file) => file.path);
-  for (const path of paths) {
+  for (const { path } of all) {
     const added = path.length + (files.length === 0 ? 0 : 1);
     if (chars + added > AGENT_INPUT_LIMITS.fileListChars) break;
     files.push(path);
     chars += added;
   }
-  return { goal, files, moreFiles: paths.length - files.length };
+  const size = all.reduce((total, file) => total + file.content.length, 0);
+  const fits = files.length === all.length && size <= AGENT_INPUT_LIMITS.contentsChars;
+  return { goal, files, moreFiles: all.length - files.length, contents: fits ? all : [] };
 }
 
 export function startingProject(doc: Y.Doc): AgentTrace['project'] {

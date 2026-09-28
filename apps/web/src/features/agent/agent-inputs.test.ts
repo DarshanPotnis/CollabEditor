@@ -10,13 +10,28 @@ function project(): Y.Doc {
 }
 
 describe('agentInputs', () => {
-  it('lists the files, sorted, in the form the agent prompt accepts', () => {
+  it('lists the files, sorted, with their contents for a small project', () => {
     const inputs = agentInputs(project(), 'Add a route');
-    expect(inputs).toEqual({
+    expect(inputs).toMatchObject({
       goal: 'Add a route',
       files: ['index.js', 'package.json', 'routes/users.js'],
       moreFiles: 0,
     });
+    expect(inputs.contents?.map((file) => file.path)).toEqual(inputs.files);
+    expect(inputs.contents?.[2]?.content).toContain('export const usersRouter = Router();');
+    expect(PROMPTS.agent.prepare(inputs).ok).toBe(true);
+  });
+
+  it('sends only the list when the contents are over their budget', () => {
+    const doc = project();
+    createFile(
+      doc,
+      { parentId: null, name: 'data.json', content: 'x'.repeat(AGENT_INPUT_LIMITS.contentsChars) },
+      { userId: 'a', userName: 'A' },
+    );
+    const inputs = agentInputs(doc, 'Tidy up');
+    expect(inputs.files).toHaveLength(4);
+    expect(inputs.contents).toEqual([]);
     expect(PROMPTS.agent.prepare(inputs).ok).toBe(true);
   });
 

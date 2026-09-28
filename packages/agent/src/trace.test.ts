@@ -1,3 +1,4 @@
+import { PROMPTS } from '@collabcode/shared';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from './fake-clock.js';
 import { runAgent } from './loop.js';
@@ -53,7 +54,7 @@ describe('the trace', () => {
       startedAt: 1_700_000_000_000,
       project: { template: 'express-api', filesFingerprint: 'fp-123' },
       inputs: { goal: 'Fix the crash', files: ['index.js'], moreFiles: 2 },
-      prompt: { id: 'agent', version: 1 },
+      prompt: { id: 'agent', version: PROMPTS.agent.version },
       tier: 'ownKey',
       outcome: { kind: 'finished', summary: 'Nothing to fix.' },
       totals: { steps: 3 },
