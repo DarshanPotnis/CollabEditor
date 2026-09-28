@@ -81,6 +81,48 @@ function runningAgentReply(call: ModelCall): FakeReply {
   }
 }
 
+/** An AI teammate goal containing this makes a scratch file, deletes it, then edits the route. */
+const E2E_SCRATCH_AGENT = 'e2e-scratch-agent';
+/** Long enough for a test to see where follow mode left the person between steps. */
+const SCRATCH_PAUSE_MS = 1_500;
+
+/** Scripted for follow mode: into a file the agent creates, out when it deletes it, on to the next. */
+function scratchAgentReply(call: ModelCall): FakeReply {
+  switch (conversationSteps(call.toolUse?.conversation ?? [])) {
+    case 0:
+      return toolCallReply([
+        {
+          toolName: 'create_file',
+          input: { path: 'scratch.js', content: '// trying something\n' },
+        },
+      ]);
+    case 1:
+      return {
+        ...toolCallReply([{ toolName: 'delete_file', input: { path: 'scratch.js' } }]),
+        delayMs: SCRATCH_PAUSE_MS,
+      };
+    case 2:
+      return {
+        ...toolCallReply([
+          {
+            toolName: 'edit_file',
+            input: {
+              path: 'routes/users.js',
+              oldText: USERS_ROUTER,
+              newText: `${USERS_ROUTER}\n${E2E_AGENT_ROUTE}\n  res.status(204).end();\n});\n`,
+            },
+          },
+        ]),
+        delayMs: SCRATCH_PAUSE_MS,
+      };
+    default: {
+      // Slow enough for the test to press Stop.
+      const chunks = Array.from({ length: 60 }, (_, index) => `Checking ${String(index + 1)}. `);
+      return { kind: 'text', chunks, delayMs: 250 };
+    }
+  }
+}
+
 /**
  * The AI teammate, on the Express template: read the users route, add a
  * DELETE route to it, finish. The same three steps every time.
@@ -92,6 +134,7 @@ function agentReply(call: ModelCall): FakeReply {
     return { kind: 'text', chunks, delayMs: 250 };
   }
   if (goal.includes(E2E_RUN_AGENT)) return runningAgentReply(call);
+  if (goal.includes(E2E_SCRATCH_AGENT)) return scratchAgentReply(call);
   if (goal.includes(E2E_BUSY_AGENT) && !busyOnce.has(goal)) {
     busyOnce.add(goal);
     return { kind: 'fail', failure: 'unavailable', statusCode: 503 };

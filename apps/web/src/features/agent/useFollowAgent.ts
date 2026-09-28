@@ -3,15 +3,17 @@
  * opens the file the agent is in and keeps its caret in view, from the agent's
  * own awareness state, read and parsed like any peer's. The caret is a
  * relative position, so it is found only once the agent's edit has reached
- * this document; every document update checks again.
+ * this document; every document update checks again. A file that is not in
+ * the tree (deleted, or not arrived yet) is never followed into, and when the
+ * agent deletes the file being followed, follow mode steps back out of it.
  */
-import { parseAwarenessState, readFileText } from '@collabcode/shared';
+import { parseAwarenessState, readFileText, type ResolvedTree } from '@collabcode/shared';
 import { useCallback, useEffect, useReducer } from 'react';
 import type * as Y from 'yjs';
 import { isLocalTextEdit } from '../../collab/last-edit-publisher.js';
 import { remoteCursorIndex } from '../../collab/remote-selection.js';
 import type { ProjectSession } from '../../collab/useProject.js';
-import { NOT_FOLLOWING, followReducer } from './follow-state.js';
+import { NOT_FOLLOWING, afterFollowedFileGone, followReducer } from './follow-state.js';
 
 /** Scrolling at most this often keeps typing smooth without re-rendering on every piece. */
 const REVEAL_EVERY_MS = 250;
@@ -22,7 +24,11 @@ export type FollowAgentOptions = {
   agentClientId: number | null;
   /** The file the person has shown. */
   shownFileId: string | null;
+  tree: ResolvedTree;
+  /** Whether the person has a tab open for the file. */
+  isOpen: (fileId: string) => boolean;
   openFile: (fileId: string) => void;
+  closeFile: (fileId: string) => void;
   reveal: (fileId: string, index: number) => void;
 };
 
@@ -32,7 +38,10 @@ export function useFollowAgent({
   session,
   agentClientId,
   shownFileId,
+  tree,
+  isOpen,
   openFile,
+  closeFile,
   reveal,
 }: FollowAgentOptions): FollowAgent {
   const [state, dispatch] = useReducer(followReducer, NOT_FOLLOWING);
@@ -65,10 +74,10 @@ export function useFollowAgent({
     const check = (): void => {
       const raw = awareness.getStates().get(agentClientId);
       const fileId = parseAwarenessState(raw)?.activeFileId ?? null;
-      if (fileId === null) return;
+      if (fileId === null || !tree.byId.has(fileId)) return;
       if (fileId !== followedFile) {
         followedFile = fileId;
-        dispatch({ type: 'followed-into', fileId });
+        dispatch({ type: 'followed-into', fileId, tabWasOpen: isOpen(fileId) });
         openFile(fileId);
       }
       const text = readFileText(session.doc, fileId);
@@ -95,7 +104,15 @@ export function useFollowAgent({
       awareness.off('change', check);
       session.doc.off('update', check);
     };
-  }, [session, agentClientId, state.following, openFile, reveal]);
+  }, [session, agentClientId, state.following, tree, isOpen, openFile, reveal]);
+
+  useEffect(() => {
+    const next = afterFollowedFileGone(state, (fileId) => tree.byId.has(fileId));
+    if (next === null) return;
+    dispatch({ type: 'followed-file-gone', showing: next.show });
+    if (next.close !== null) closeFile(next.close);
+    if (next.show !== null) openFile(next.show);
+  }, [state, tree, openFile, closeFile]);
 
   const resume = useCallback(() => dispatch({ type: 'resumed' }), []);
   return { following: state.following, resume };

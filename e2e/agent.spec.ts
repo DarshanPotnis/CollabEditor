@@ -13,6 +13,8 @@ import { openPair, readEditorText, treeItem, treeRow, typeAtEnd } from './suppor
 const ROUTE = "usersRouter.delete('/:id', (req, res) => {";
 /** A goal with this makes the scripted model answer slowly enough to stop. */
 const SLOW_AGENT = 'e2e-slow-agent';
+/** A goal with this makes a scratch file, deletes it, then edits routes/users.js. */
+const SCRATCH_AGENT = 'e2e-scratch-agent';
 const SUMMARY = 'Added DELETE /users/:id to routes/users.js.';
 
 async function openUsersRoute(page: Page): Promise<void> {
@@ -96,6 +98,30 @@ test('typing stops following the AI, and Follow AI resumes it', async ({ browser
   await a.getByRole('button', { name: 'Follow AI' }).click();
   await expect(a.getByText('Following the AI. Type or open another file to stop.')).toBeVisible();
   await a.getByRole('button', { name: 'Stop' }).click();
+});
+
+test('follow mode steps out of a file the agent deletes, and Stop lists what it changed', async ({
+  browser,
+}) => {
+  const { a } = await openPair(browser, 'Express API');
+  const selected = (name: RegExp) => a.getByRole('tab', { name, selected: true });
+  await expect(selected(/index\.js/)).toBeVisible();
+
+  await startAgent(a, `Tidy up ${SCRATCH_AGENT}`);
+  // Into the file the agent creates...
+  await expect(selected(/scratch\.js/)).toBeVisible();
+  // ...and out again when it deletes it: that tab closes, and the host is back in index.js.
+  await expect(a.getByRole('tab', { name: /scratch\.js/ })).toHaveCount(0);
+  await expect(selected(/index\.js/)).toBeVisible();
+  await expect(a.getByText('Following the AI. Type or open another file to stop.')).toBeVisible();
+  // Still following: on into its next file.
+  await expect(selected(/users\.js/)).toBeVisible();
+  await expect.poll(() => readEditorText(a)).toContain(ROUTE);
+
+  await a.getByRole('button', { name: 'Stop' }).click();
+  await expect(a.getByText('What it changed so far is still there.')).toBeVisible();
+  // The scratch file it created and deleted comes to nothing.
+  await expect(a.getByText('Edited routes/users.js.', { exact: true })).toBeVisible();
 });
 
 test('a busy model shows a countdown to the retry, then the session goes on', async ({

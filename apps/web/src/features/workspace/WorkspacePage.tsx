@@ -102,11 +102,16 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
       setReveal({ fileId, index, requestId: Date.now(), gentle: true }),
     [],
   );
+  const openTabs = tabs.state.tabs;
+  const isOpen = useCallback((id: string) => openTabs.some((tab) => tab.id === id), [openTabs]);
   const followAgent = useFollowAgent({
     session,
     agentClientId: agent.state.phase === 'running' ? agent.state.agentClientId : null,
     shownFileId: activeId,
+    tree,
+    isOpen,
     openFile: tabs.open,
+    closeFile: tabs.close,
     reveal: revealGently,
   });
   const describeCollaborator = useCallback(

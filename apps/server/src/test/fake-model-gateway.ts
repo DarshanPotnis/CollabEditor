@@ -23,11 +23,13 @@ export type FakeReply =
     }
   | { kind: 'fail'; failure: ModelCallFailure; statusCode?: number; afterChunks?: string[] };
 
+export type TextReply = Extract<FakeReply, { kind: 'text' }>;
+
 /** A reply that calls tools, the way the agent's model does. */
 export function toolCallReply(
   calls: Array<{ toolName: string; input: unknown; toolCallId?: string }>,
   text = '',
-): FakeReply {
+): TextReply {
   return {
     kind: 'text',
     chunks: text === '' ? [] : [text],
