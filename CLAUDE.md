@@ -49,6 +49,11 @@ source of truth for architecture, data model, phase scope and definitions of don
   (`apps/web/src/features/editor/model-registry.ts`), which routes `model.undo()`/`redo()` to the
   file's `Y.UndoManager`. That manager writes to `Y.Text` outside `packages/shared`, but it only
   reverts the binding's own edits, so it falls under the y-monaco exception above, not a new one.
+- The AI agent has no editor, so it is not under the y-monaco exception: its content edits go
+  through `packages/shared/src/text-ops.ts` and its tree changes through the tree ops, all tagged
+  `agentOrigin(sessionId)`, and "Undo AI changes" is `agent-undo.ts`. Keep it that way.
+- `packages/agent` must stay runnable in both the browser and Node: its build config has no DOM or
+  Node types. Time and stopping come in through its `Clock` and `StopSignal`.
 - React: effects must be StrictMode-safe (create and destroy resources in the same effect).
 - Pure logic (tree resolution, path mapping, diffing) gets unit tests in the same change.
 

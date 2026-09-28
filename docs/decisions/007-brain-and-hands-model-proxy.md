@@ -102,3 +102,13 @@ the whole stream at once. Nothing was gained by waiting.
 - **A Monaco diff editor needs care in the standalone build.** Disposing one leaves Monaco's
   global hover factory pointing at its disposed services, and every context menu then fails to
   open. The diff view restores the factory when it closes, and an end-to-end test pins it.
+
+## Addendum (AI-2, 2026-09-28)
+
+- **A fifth guardrail.** `streamText` also gets an `onError` that prints nothing: the SDK's default
+  prints every stream error with `console.error`, and an `APICallError` carries the whole prompt and
+  a provider message that can echo a key. The log canary now watches the console too.
+- **The request grew as planned**: a prompt may own tools (the agent's), and its requests carry the
+  conversation; `finish` carries the model's whole message. A 503 before the model answers is the
+  `busy` error and is refunded, and an optional fallback model answers for the default when it is
+  busy. See ADR 008.

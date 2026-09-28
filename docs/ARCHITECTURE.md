@@ -2,12 +2,14 @@
 
 A living description of how the system works **today**. Each phase updates this file.
 
-Current state: **v3 (Phase 3) plus AI-1** — a multi-file workspace on a Yjs CRDT synced by
-Hocuspocus and persisted as Postgres snapshots (file tree with presence, tabs, per-person undo,
+Current state: **v3 (Phase 3) plus AI-1 and AI-2** — a multi-file workspace on a Yjs CRDT synced
+by Hocuspocus and persisted as Postgres snapshots (file tree with presence, tabs, per-person undo,
 deterministic resolution of concurrent tree edits), and each person can run the project's Node
 backend in their own browser tab with WebContainers, call it from an API console, open a shell
 and see a preview. AI-1 adds one-shot AI helpers: explain or edit a selection, and explain a
 crashed run, through a stateless model proxy on the free Gemini tier or the person's own key.
+AI-2 adds an AI teammate: an agent that joins the room as its own CRDT peer, edits files live,
+runs the project in the person's browser and calls its API, and can be undone in one click.
 
 | Tag                   | What it is                                                                |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -108,7 +110,8 @@ bypassing `ops.ts` entirely. That is why the per-file size limit is enforced at 
 oversized pastes are refused at the limit with a message, and deletions always work so a file can
 be brought back under. This exception is recorded in `CLAUDE.md`. An AI edit applied with Apply
 goes through the file's Monaco model too, so it falls under the same exception rather than adding
-one (see "The AI helpers").
+one (see "The AI helpers"). The AI teammate has no editor, so its edits go through
+`text-ops.ts` instead, which enforces the same limit (see "The AI teammate").
 
 ### Concurrent tree edits: read-time resolution
 
@@ -310,8 +313,9 @@ the running project, is in the browser.
   of requests costs anyone else. A request Google refuses for rate or quota reasons before
   answering is refunded. With their own key (Gemini, Anthropic or OpenAI, from a short model
   allowlist) a person skips the shared limits but not the per-visitor minute limit.
-- **The panel.** The right-hand pane switches between **Run** and **AI**; both stay mounted, so a
-  run keeps going while the AI view shows. The first request waits behind a one-time, versioned
+- **The panel.** The right-hand pane stacks the AI panel above the Run views, both visible and
+  resizable, since the agent's work is mostly running the project and reading its output. The AI
+  panel holds the AI teammate, then the helpers' answer. The first request waits behind a one-time, versioned
   privacy notice. A request is a pure reducer (`ai-request-state.ts`), where each request has an
   id, so a late event from one that was stopped or replaced is dropped. Answers are rendered as
   paragraphs, inline code and code blocks built as React elements, never as HTML.
@@ -335,6 +339,76 @@ the running project, is in the browser.
   it. After one closes, every context menu would throw and never open, so the diff view points the
   factory back at Monaco's global services by creating and dropping a top-level editor. An
   end-to-end test pins it.
+
+### The AI teammate
+
+```
+┌──────────────────────────────── the person's browser tab ──────────────────────────────────┐
+│ AgentPanel ── useAgentSession ── agent-session.ts                                          │
+│                                     │                                                      │
+│      packages/agent: runAgent (loop, limits, retries, trace) ─────── fetch ─► /api/ai/step │
+│                                     │ tool calls                     agent@2, 13 tools     │
+│                 ┌───────────────────┴──────────────────┐                                   │
+│   doc tools (packages/agent)              runtime tools (settle barrier first)             │
+│   over the agent's own Y.Doc              the person's runner, output, API console helper  │
+│                 │                                      │                                   │
+│   agent Y.Doc + its own provider ──WebSocket──┐        │ reads the person's Y.Doc          │
+│   (own client id, awareness: avatar,          │        ▼                                   │
+│    status, caret)                             │   WebContainer                             │
+└───────────────────────────────────────────────┼────────────────────────────────────────────┘
+                                                ▼
+                     Hocuspocus: one more connection; everyone, the person included,
+                     receives the agent's edits as remote edits
+```
+
+ADR 008 has the reasoning. The pieces:
+
+- **A peer of its own** (`features/agent/agent-peer.ts`). A second `Y.Doc` in the person's tab with
+  its own `HocuspocusProvider` and WebSocket, so it has its own client id and awareness state. The
+  server has no special case for it. Its awareness (`agent-presence.ts`) says it is an agent, whom
+  it works for and what it is doing, from fixed phrases such as "Editing routes/users.js", and
+  carries a caret in y-monaco's own `selection` format, so every editor draws it. Presence shows a
+  robot avatar, "working for" the host by the name the host shows, and a dashed caret.
+- **The core** (`packages/agent`), environment-agnostic: its build config has no DOM or Node types.
+  `runAgent` asks the model for a step, carries out its tool calls, and repeats until `finish`, a
+  limit, a failure or Stop; every ending is an outcome, never an exception. Limits: 15 steps on the
+  shared tier and 25 with an own key, 5 minutes, input tokens, 8 calls per step, and a conversation
+  of at most 120,000 characters, kept there by removing the oldest tool outputs (never the model's
+  own messages). A model busy before answering is retried twice (about 5 s, then 15 s, jittered);
+  a per-minute limit is waited out; the panel counts the wait down. Unknown tools and invalid input
+  go back to the model as errors; three answers in a row with nothing runnable, or two without a
+  tool call, end the session. Tool output is capped with a marker, and output with an ES-module
+  stack frame carries the note that its line numbers are wrong.
+- **File tools** (`packages/agent/src/doc-tools/`), over the agent's own replica: list, read (real
+  line numbers, long files in parts), search, edit (one exact match), create (with missing
+  folders), rename or move, and delete (soft only). Paths are display paths looked up among the
+  tree's own nodes. Every write goes through the shared ops with `agentOrigin(sessionId)` and is
+  recorded for undo. Edits are typed in live over about a second (`typist.ts`), each piece
+  anchored just after the last with a relative position; a hidden tab, or a very long insertion,
+  types at once, and Stop finishes an edit at once.
+- **The presence rule** (`presence-rule.ts`): a file that anyone but the host and the agent itself
+  has open and edited in the last 30 seconds is refused, and the refusal names no one. People
+  publish a throttled `lastEditAt` when they type; the agent reads it on its own clock
+  (`awareness-presence.ts`), so a peer whose clock is off cannot make a file look busy or quiet.
+- **Runtime tools** (`features/agent/runtime-tools.ts`): run, stop, read the terminal, call the API
+  and run `node` or `npm`, with the Run view's own runner, output and API console helper, so the
+  person watches them happen. The model reads the output as plain text without npm's spinner.
+- **The settle barrier.** The container is fed from the person's document, which receives the
+  agent's edits through the server. Before anything runs, the person's document must have them
+  (compared by state vector, `doc-sync.ts`), then the runner writes them to the container and
+  waits out the watcher's restart (`process-runner.ts` `settle`). Edits that do not arrive within
+  10 s, or writes that do not finish, give the model "sync is delayed" and the person a notice.
+- **The model** (`http-model-client.ts`): one step per request. The session's key choice is fixed
+  at the start; the key travels only in its header. On the shared tier, steps after the first name
+  the model the first used (`sharedModel`), since its thought signatures are in the conversation.
+- **Undo AI changes** (`packages/shared/src/agent-undo.ts`): the agent's text edits through an
+  UndoManager tracking only its origin, and its tree actions reversed with soft ops. The panel
+  first says which files someone else has changed since. It lasts until **Done** or a reload.
+- **Follow mode** (`useFollowAgent.ts`): the host's editor opens the agent's file and keeps its
+  caret in view, until the host types or opens another file; **Follow AI** resumes.
+- **The trace** (`packages/agent/src/trace.ts`, format version 2): each model answer verbatim, every
+  call and result, waits and attempt times, the raw finish reason, the template and a fingerprint of
+  the starting files. **Download trace** saves it; `scriptFromTrace` replays it with no model.
 
 ### Sync and persistence lifecycle
 
@@ -369,13 +443,13 @@ See `docs/decisions/003-hocuspocus-owns-the-http-server.md`.
 
 Routes:
 
-| Route                   | Behaviour                                                                                                                                                                          |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /health`           | `{ ok, uptimeSeconds }`. Never touches the database, so it answers the moment the process is up. The landing page pings it on load to start a cold start early.                    |
-| `POST /api/projects`    | Validates `{ name?, template }`, builds the initial `Y.Doc` from the template, stores it, returns the summary. Rate limited per IP.                                                |
-| `GET /api/projects/:id` | Summary or 404. The workspace calls it before opening a socket, so an unknown ID shows a 404 page instead of a refused connection.                                                 |
-| `POST /api/ai/step`     | One model call for a server-owned prompt, streamed back (see "The AI helpers"). Requires an `Origin`; limited per visitor per minute, and on the shared tier by the shared limits. |
-| anything else           | 404 in our error shape, never Hocuspocus's default response.                                                                                                                       |
+| Route                   | Behaviour                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`           | `{ ok, uptimeSeconds }`. Never touches the database, so it answers the moment the process is up. The landing page pings it on load to start a cold start early.                                                                 |
+| `POST /api/projects`    | Validates `{ name?, template }`, builds the initial `Y.Doc` from the template, stores it, returns the summary. Rate limited per IP.                                                                                             |
+| `GET /api/projects/:id` | Summary or 404. The workspace calls it before opening a socket, so an unknown ID shows a 404 page instead of a refused connection.                                                                                              |
+| `POST /api/ai/step`     | One model call for a server-owned prompt, streamed back (see "The AI helpers"); an agent step also carries the conversation. Requires an `Origin`; limited per visitor per minute, and on the shared tier by the shared limits. |
+| anything else           | 404 in our error shape, never Hocuspocus's default response.                                                                                                                                                                    |
 
 ### Trust boundaries
 
@@ -421,6 +495,14 @@ Every boundary is validated, and the awkward one is presence.
   a failure kind and status before logging, and a canary test fails if a known key or prompt
   appears in any log line. People only see messages we write, never a provider's own text, which
   can echo part of a key.
+- **The AI teammate.** Everything it reads (files, names, terminal output, HTTP responses) may
+  have been written by anyone in the project, so the prompt treats it as data, and what matters is
+  enforced in the ToolHost whatever the model says: the presence rule, soft deletes only, paths
+  looked up in the tree, the file-size limit, `node` and `npm` only, localhost only, timeouts and
+  caps. Its worst case is an edit everyone can see and undo, or code run in the person's own
+  sandbox, which already runs collaborators' code. Its awareness claims (being an agent, working for
+  someone) only decide how it is drawn; the host is named by what the host shows. The conversation
+  a client sends is validated like any input, and the tools come from the prompt, never the request.
 - **AI requests.** `/api/ai/step` refuses requests with no `Origin`. That stops casual scripts,
   not determined ones, so the limits are what protect the free quota. Prompt inputs are capped
   by schema, and the prompts tell the model that code, output and file paths are data, never
@@ -473,6 +555,9 @@ refusal is final.
   second instance would need a shared store.
 - **AI answers are per person and not kept.** One request at a time, no follow-up questions, and
   nothing is shared with collaborators except edits someone applies.
+- **The AI teammate leaves busy files alone** rather than proposing a change there; proposals are
+  AI-3. One session per tab, and its undo lasts only while it is in the room (until Done or a
+  reload). Traces are kept only by downloading one.
 - **Streaming through Render's proxy is unverified** until deployment (README launch checklist).
   If a proxy buffers the stream, the answer appears all at once rather than breaking.
 - **y-monaco 0.1.6 leaks one cursor listener per binding it creates**, because `destroy()` does
@@ -482,16 +567,18 @@ refusal is final.
 
 ### How it is verified
 
-| Layer                                | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit (`packages/shared`, `apps/web`) | Document schema and ops; every `resolveTree` rule, combinations, input-order independence and a seeded two-replica convergence run; tree ops, limits, restore and purge including their races; tree rows and keyboard, tabs, model URIs and plans, remote cursor parsing; awareness hardening, CSS escaping, the connection state machine, the file-size guard, identity storage, language mapping, config parsing                                                                                                                                                                                                                                                                                                          |
-| Integration (`apps/server`)          | The real Hocuspocus + Express composition against an in-memory repo: convergence, late joiners, offline merge, refusal of unknown and malformed IDs, the store beating document unload, restart survival, the Express mount, CORS preflight and rejection, rate limiting                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Postgres (`apps/server`)             | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Runtime (`apps/web`, Node)           | The FS bridge against a real Y.Doc and a fake file system (renames, folder renames, deletes, restores, purges, npm-written files left alone, coalescing, retries); the run lifecycle and auto-restart against a fake container (install skipping, Restart, Stop mid-install, crashes, stale output, waiting for the server); the API console codec against forged and binary output; the request helper under real Node against a real HTTP server, on Node 24 and, in CI, Node 22                                                                                                                                                                                                                                          |
-| End-to-end (`e2e`)                   | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors, persistence, 404, redirect; and Phase 2's definition of done: presence in the tree, rename while typing, delete and restore, delete forever while open, duplicate refusal, concurrent duplicate create and cross-move (one window offline), per-person undo from keys and the command palette, undo across a rename, cursor behaviour on tab switch and close, following a collaborator; and Phase 3's: the whole suite runs cross-origin isolated, the headers are on the page and the worker scripts, Monaco's workers really run, and a browser without isolation gets a disabled Run and can still edit |
-| AI (unit and integration)            | Prompt inputs, caps and version fingerprints; the stream protocol and the browser's parser against chunked and buffered streams; request state, key storage and consent; selection prompts, anchors against two real Y.Docs (edits elsewhere, inside, at the edges), edit proposals, terminal text, stack locations and error prompts; the route through the real server with a scripted model: statuses, limits and refunds, the shared minute limit, timeouts, disconnects, and a log canary across the success and failure paths                                                                                                                                                                                         |
-| AI end-to-end (`e2e/ai.spec.ts`)     | Against a scripted model in the e2e server: the privacy notice, Explain streaming, Edit applied for both people and undone in one step, a stale edit refused, Stop, a refused own key, and the context menu still opening after a diff closes                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| WebContainer end-to-end (opt-in)     | `RUN_WEBCONTAINER_E2E=1`: Run, then the API console against the real server; my edit and a collaborator's reach it; the preview shows it; a crash recovers once fixed; a crash before the server listens shows as crashed; Explain with AI on a crash sends the whole ES module; the container's Node version. Needs the network, so not in CI                                                                                                                                                                                                                                                                                                                                                                              |
+| Layer                                        | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit (`packages/shared`, `apps/web`)         | Document schema and ops; every `resolveTree` rule, combinations, input-order independence and a seeded two-replica convergence run; tree ops, limits, restore and purge including their races; tree rows and keyboard, tabs, model URIs and plans, remote cursor parsing; awareness hardening, CSS escaping, the connection state machine, the file-size guard, identity storage, language mapping, config parsing                                                                                                                                                                                                                                                                                                                               |
+| Integration (`apps/server`)                  | The real Hocuspocus + Express composition against an in-memory repo: convergence, late joiners, offline merge, refusal of unknown and malformed IDs, the store beating document unload, restart survival, the Express mount, CORS preflight and rejection, rate limiting                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Postgres (`apps/server`)                     | The SQL, the `bytea` round trip and the migration runner against a real Postgres. Skipped unless `TEST_DATABASE_URL` is set; CI provides one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Runtime (`apps/web`, Node)                   | The FS bridge against a real Y.Doc and a fake file system (renames, folder renames, deletes, restores, purges, npm-written files left alone, coalescing, retries); the run lifecycle and auto-restart against a fake container (install skipping, Restart, Stop mid-install, crashes, stale output, waiting for the server); the API console codec against forged and binary output; the request helper under real Node against a real HTTP server, on Node 24 and, in CI, Node 22                                                                                                                                                                                                                                                               |
+| End-to-end (`e2e`)                           | Two browser contexts against the production bundle: concurrent typing, late join, offline merge, named cursors, persistence, 404, redirect; and Phase 2's definition of done: presence in the tree, rename while typing, delete and restore, delete forever while open, duplicate refusal, concurrent duplicate create and cross-move (one window offline), per-person undo from keys and the command palette, undo across a rename, cursor behaviour on tab switch and close, following a collaborator; and Phase 3's: the whole suite runs cross-origin isolated, the headers are on the page and the worker scripts, Monaco's workers really run, and a browser without isolation gets a disabled Run and can still edit                      |
+| AI (unit and integration)                    | Prompt inputs, caps and version fingerprints; the stream protocol and the browser's parser against chunked and buffered streams; request state, key storage and consent; selection prompts, anchors against two real Y.Docs (edits elsewhere, inside, at the edges), edit proposals, terminal text, stack locations and error prompts; the route through the real server with a scripted model: statuses, limits and refunds, the shared minute limit, timeouts, disconnects, and a log canary across the success and failure paths                                                                                                                                                                                                              |
+| AI end-to-end (`e2e/ai.spec.ts`)             | Against a scripted model in the e2e server: the privacy notice, Explain streaming, Edit applied for both people and undone in one step, a stale edit refused, Stop, a refused own key, and the context menu still opening after a diff closes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| AI teammate (unit and integration)           | The core with a scripted model and a fake clock: the loop, every limit, Stop mid-answer and mid-tool, tool errors and crashes, unknown tools, invalid input, cut-off answers, nudges, busy and rate-limit retries, conversation fitting, the trace and its replay; the file tools over a real template project, paths, the presence rule and live typing against a collaborator typing alongside; undo against two replicas (a person's edits inside and after the agent's); the settle barrier and runtime tools against the real runner and a fake container; the server route with its caps, admission, minute share, fallback and pinning; a Gemini thought signature through the real Google provider; the log canary, the console included |
+| AI teammate end-to-end (`e2e/agent.spec.ts`) | Against a scripted agent: two windows see its avatar and its live-typed edit, the host follows it, undo keeps a collaborator's later edit after asking, Stop works part way, a busy model counts down and recovers, typing pauses following, and a downloaded trace never holds the own key                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| WebContainer end-to-end (opt-in)             | `RUN_WEBCONTAINER_E2E=1`: Run, then the API console against the real server; my edit and a collaborator's reach it; the preview shows it; a crash recovers once fixed; a crash before the server listens shows as crashed; Explain with AI on a crash sends the whole ES module; the container's Node version; a scripted AI teammate adds a route, runs the project and gets 204 from DELETE /users/1. Needs the network, so not in CI                                                                                                                                                                                                                                                                                                          |
 
 ---
 

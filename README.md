@@ -9,11 +9,13 @@ offline, or closes the tab mid-keystroke.
 It runs entirely on free infrastructure: Vercel for the web app, Render for the sync server, Neon
 for Postgres.
 
-**Status: Phase 3 and AI-1 complete.** Projects are multi-file workspaces (a file tree with
+**Status: Phase 3, AI-1 and AI-2 complete.** Projects are multi-file workspaces (a file tree with
 presence, drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, following a
 collaborator to their cursor), and each person can run the backend in their browser with
 WebContainers: run output, a shell, an API console and a preview. AI helpers explain or edit a
-selection and explain a crashed run, on a free shared tier or your own key. The plans are
+selection and explain a crashed run, and an **AI teammate** joins the room as its own peer: it
+types its edits in live, runs the project and calls its API, and one click undoes its work. It
+runs on a free shared tier or your own key. The plans are
 [`docs/PLAN.md`](docs/PLAN.md) and [`docs/PLAN-AI.md`](docs/PLAN-AI.md).
 
 ---
@@ -71,7 +73,7 @@ The server syncs and stores. It never runs or interprets user code: running happ
 browser of the person who clicks Run, in a WebContainer that the project's files are copied into,
 one way.
 
-Seven decisions are written up in full:
+Eight decisions are written up in full:
 
 - [001 — a CRDT instead of last-write-wins, and why not operational transformation](docs/decisions/001-crdt-over-last-write-wins.md)
 - [002 — Hocuspocus with whole-document Postgres snapshots](docs/decisions/002-persistence.md)
@@ -80,6 +82,7 @@ Seven decisions are written up in full:
 - [005 — one-way sync from the document into the WebContainer](docs/decisions/005-one-way-yjs-to-webcontainer-sync.md)
 - [006 — running projects in the browser with WebContainers](docs/decisions/006-in-browser-execution-with-webcontainers.md)
 - [007 — the model as the brain, the browser as the hands, and a stateless model proxy](docs/decisions/007-brain-and-hands-model-proxy.md)
+- [008 — the AI agent as a separate CRDT peer](docs/decisions/008-agent-as-a-crdt-peer.md)
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the system as it stands today,
 including the trust boundaries and what is deliberately missing.
@@ -116,7 +119,7 @@ would need a licence first.
 ## AI helpers
 
 - **Explain with AI** and **Edit with AI…**: select code, right-click, and choose one. An
-  explanation streams into the **AI** view of the right-hand pane. An edit asks what to change,
+  explanation streams into the **AI** panel, above the Run views. An edit asks what to change,
   then shows the suggestion as a diff over the editor with **Apply** and **Discard**. An applied
   edit reaches everyone like your own typing, and one undo takes it back. If a collaborator
   changes the selected code before you apply, Apply refuses instead of overwriting their work.
@@ -133,6 +136,30 @@ would need a licence first.
   what you send.
 
 How it works, and why, is in [ADR 007](docs/decisions/007-brain-and-hands-model-proxy.md).
+
+## The AI teammate
+
+Tell it what to do in the AI panel ("Add a DELETE /users/:id endpoint with validation") and press
+**Start**. An **AI teammate** appears in everyone's presence bar, working for you. It reads the
+code, types its edits in live with its own caret, runs the project in your browser, calls the
+endpoints it changed, reads the errors and fixes them, then says what it did. Your editor follows
+it into its files until you type or open another file (**Follow AI** resumes).
+
+- **It works around people.** A file someone else is typing in is left alone: it says what it
+  would have changed there instead. Your own open files are fair game.
+- **Everything is reversible.** **Undo AI changes** removes its edits and nothing anyone else
+  wrote, even inside its text; files it created go to Recently deleted. If someone has edited
+  those files since, it asks first. Undo is there until you click **Done**.
+- **It is bounded.** Up to 15 steps on the shared free tier (25 with your own key) and 5 minutes;
+  **Stop** ends it at once. A shared-tier session needs 15 of your 30 free requests a day, so
+  your own key is the way to use it often. When Gemini is busy it waits and tries twice more.
+- **It is recorded.** **Download trace** saves the session as JSON: every model answer and tool
+  call, for replaying or for evals. It never contains your key.
+- **Prompt injection.** Files, output and responses may have been written by anyone in the
+  project. The agent treats them as data, and its tools cannot do more than a collaborator could:
+  edit or soft-delete this project's files, and run code in your own sandbox.
+
+[ADR 008](docs/decisions/008-agent-as-a-crdt-peer.md) explains the design.
 
 ## Running it locally
 
@@ -208,8 +235,8 @@ runner are covered by a spec that skips unless `TEST_DATABASE_URL` is set; CI pr
 `npm run e2e` builds the web app and serves it with `vite preview`, because the fragile part of
 the frontend is what bundling produces — Monaco and its web workers. It is served cross-origin
 isolated, exactly like production, so every spec also checks the app still works under those
-headers. The AI specs run against a scripted model built into the e2e server, so they need no key
-and spend no quota. CI also runs the API console's request helper on Node 22, the version inside the
+headers. The AI specs, the AI teammate's included, run against a scripted model built into the
+e2e server, so they need no key and spend no quota. CI also runs the API console's request helper on Node 22, the version inside the
 WebContainer.
 
 ## Deploying
@@ -283,7 +310,8 @@ hosting:
 
 3. The same request without the `origin` header is refused with 403.
 4. Render's logs show one `ai step` line per request, with ids, model, tokens and timings, and no
-   code, prompt or key.
+   code, prompt or key. An AI teammate session's lines also carry its session id and step.
+5. An AI teammate session on the shared tier finishes the demo task on a new Express project.
 
 A free Render instance sleeps when idle, so the first connection after a quiet period can take up
 to a minute. The app expects this: the landing page pings `/health` on load to start the wake
@@ -296,8 +324,11 @@ apps/web/          React + Vite + Monaco. File tree, tabs, editor models and und
                    the runtime (WebContainer, file sync, terminal, API console, preview) and
                    the AI panel, helpers and client
 apps/server/       Hocuspocus + Express + Postgres, and the model proxy
-packages/shared/   Document schema, tree resolution, write-path ops, awareness validation,
-                   templates, limits, AI prompts and the model-proxy contract
+packages/shared/   Document schema, tree resolution, write-path ops (tree, text, agent undo),
+                   awareness validation, templates, limits, AI prompts, tools and the
+                   model-proxy contract
+packages/agent/    The AI teammate's core, with no browser or Node dependency: the loop,
+                   limits, retries, file tools, presence rule, typing and traces
 e2e/               Playwright specs
 docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
 ```
@@ -310,8 +341,10 @@ docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
   run output, a shell, an API console and a sandboxed preview.
 - **AI-1** (done) — a stateless model proxy, and helpers that explain or edit a selection and
   explain a crashed run.
-- **AI-2 to AI-5** (planned, [`docs/PLAN-AI.md`](docs/PLAN-AI.md)) — an AI agent that joins the
-  project as its own CRDT peer, with presence-aware proposals, evals and a context engine.
+- **AI-2** (done) — an AI teammate that joins the project as its own CRDT peer, types live, runs
+  and calls the project, and is undone in one click.
+- **AI-3 to AI-5** (planned, [`docs/PLAN-AI.md`](docs/PLAN-AI.md)) — presence-aware proposals,
+  evals, and a context engine with a trace viewer and a replayed demo.
 
 Later, deliberately out of scope for now: accounts, checkpoints, and pushing to GitHub.
 
