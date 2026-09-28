@@ -57,7 +57,11 @@ async function main(): Promise<void> {
     ai: {
       gateway: createAiSdkGateway({ logger }),
       sharedTier: config.GEMINI_API_KEY
-        ? { model: config.AI_DEFAULT_MODEL, apiKey: config.GEMINI_API_KEY }
+        ? {
+            model: config.AI_DEFAULT_MODEL,
+            fallbackModel: config.AI_FALLBACK_MODEL ?? null,
+            apiKey: config.GEMINI_API_KEY,
+          }
         : null,
       limits: {
         global: config.AI_GLOBAL_DAILY_REQUESTS,
@@ -84,6 +88,7 @@ async function main(): Promise<void> {
       allowedOrigins: config.ALLOWED_ORIGINS,
       clientIpSource: config.CLIENT_IP_SOURCE,
       sharedAi: config.GEMINI_API_KEY ? config.AI_DEFAULT_MODEL : 'off',
+      sharedAiFallback: config.GEMINI_API_KEY ? (config.AI_FALLBACK_MODEL ?? 'none') : 'off',
     },
     'collabcode server listening',
   );

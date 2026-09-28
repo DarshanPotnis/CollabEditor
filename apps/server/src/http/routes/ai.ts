@@ -31,8 +31,9 @@ import { createDailyLimiter, type DailyLimits } from '../../ai/daily-limits.js';
 import { describeFailure, sharedTierBusy } from '../../ai/failure-messages.js';
 import { createMinuteLimit } from '../../ai/minute-limit.js';
 import type { ModelGateway, ModelTarget } from '../../ai/model-gateway.js';
+import { sharedModelsFor, type SharedModels } from '../../ai/shared-models.js';
 import type { ProjectsRepo } from '../../db/projects-repo.js';
-import { streamAnswer } from '../ai-stream.js';
+import { streamAnswer, type ModelTargets } from '../ai-stream.js';
 import { clientKey, type ClientIpSource } from '../client-ip.js';
 import { sendApiError } from '../errors.js';
 
@@ -49,8 +50,11 @@ export const DEFAULT_AGENT_REQUESTS_PER_MINUTE = 6;
 /** Longest a whole model call may take. */
 export const DEFAULT_MODEL_CALL_TIMEOUT_MS = 90_000;
 
-/** The shared free tier: the model it calls and the server's key for it. */
-export type SharedTier = { model: string; apiKey: string };
+/**
+ * The shared free tier: the model it calls, a fallback for when that one is
+ * busy (shared-models.ts), and the server's key for them.
+ */
+export type SharedTier = SharedModels & { apiKey: string };
 
 export type AiRouterDeps = {
   gateway: ModelGateway;
@@ -143,7 +147,7 @@ export function createAiRouter({
         sendApiError(res, 'bad-request', body.error.issues[0]?.message ?? 'Invalid AI request.');
         return;
       }
-      const { projectId, promptId, inputs, byok, sessionId } = body.data;
+      const { projectId, promptId, inputs, byok, sessionId, sharedModel } = body.data;
       const prompt = PROMPTS[promptId];
       const toolUse = prompt.toolUse;
       if (!toolUse && body.data.conversation !== undefined) {
@@ -167,6 +171,15 @@ export function createAiRouter({
         return;
       }
 
+      if (sharedModel !== undefined && (!toolUse || ownKey.key !== null)) {
+        sendApiError(
+          res,
+          'bad-request',
+          'Only an AI teammate session on the shared free tier names its model.',
+        );
+        return;
+      }
+
       const ipKey = clientKey(req, clientIpSource);
       if (toolUse) {
         const admission = admitAgentStep({
@@ -180,11 +193,11 @@ export function createAiRouter({
         }
       }
 
-      let target: ModelTarget;
+      let targets: ModelTargets;
       let remainingToday: number | null = null;
       let refundDaily: (() => void) | null = null;
       if (ownKey.key !== null && byok !== undefined) {
-        target = { provider: byok.provider, model: byok.model, apiKey: ownKey.key };
+        targets = [{ provider: byok.provider, model: byok.model, apiKey: ownKey.key }];
       } else {
         if (sharedTier === null) {
           sendApiError(
@@ -192,6 +205,14 @@ export function createAiRouter({
             'unavailable',
             'The shared free AI is not set up on this server. Add your own key in AI settings to use AI features.',
           );
+          return;
+        }
+        const models = sharedModelsFor(sharedTier, {
+          pinned: sharedModel,
+          midSession: toolUse !== undefined && stepsTaken > 0,
+        });
+        if (!models.ok) {
+          sendApiError(res, 'bad-request', models.message);
           return;
         }
         // Checked before the daily allowances, so a busy minute costs nobody a request.
@@ -209,7 +230,13 @@ export function createAiRouter({
         }
         sharedMinute.record();
         if (toolUse) agentMinute.record();
-        target = { provider: 'gemini', model: sharedTier.model, apiKey: sharedTier.apiKey };
+        const target = (model: string): ModelTarget => ({
+          provider: 'gemini',
+          model,
+          apiKey: sharedTier.apiKey,
+        });
+        const [firstModel, ...otherModels] = models.models;
+        targets = [target(firstModel), ...otherModels.map(target)];
         remainingToday = verdict.remaining;
         refundDaily = verdict.refund;
       }
@@ -219,36 +246,35 @@ export function createAiRouter({
         res,
         gateway,
         call: {
-          target,
           system: prepared.prompt.system,
           messages: prepared.prompt.messages,
           maxOutputTokens: prompt.maxOutputTokens,
           toolUse: toolUse && { use: toolUse, conversation },
         },
-        finish: {
-          prompt: { id: prompt.id, version: prompt.version },
-          model: { provider: target.provider, id: target.model },
-          remainingToday,
-        },
+        targets,
+        finish: { prompt: { id: prompt.id, version: prompt.version }, remainingToday },
         timeoutMs: callTimeoutMs,
         describe: (failure, providerStatus) =>
           describeFailure(failure, providerStatus, ownKeyProvider),
       });
 
-      // Refused for quota or rate reasons before answering: the request cost
-      // nothing, so it should not count against anyone's day.
+      // Refused for quota or rate reasons, or busy (503), before answering: the
+      // request cost nothing, so it should not count against anyone's day.
       const refusedUpFront =
         outcome.status === 'failed' &&
-        outcome.failure === 'rate-limited' &&
-        outcome.firstEventMs === null;
+        outcome.firstEventMs === null &&
+        (outcome.failure === 'rate-limited' ||
+          (outcome.failure === 'unavailable' && outcome.providerStatus === 503));
       if (refusedUpFront && refundDaily) refundDaily();
 
-      // Metadata only: never the inputs, the answer or the key.
+      // Metadata only: never the inputs, the answer or the key. The model is
+      // the last one tried; `attempts` over 1 means the fallback was.
+      const used = targets[outcome.attempts - 1] ?? targets[0];
       const meta = {
         promptId: prompt.id,
         promptVersion: prompt.version,
-        provider: target.provider,
-        model: target.model,
+        provider: used.provider,
+        model: used.model,
         ownKey: ownKeyProvider !== null,
         ...(toolUse && { agent: { sessionId: sessionId ?? null, step: stepsTaken + 1 } }),
         dailyRefunded: refusedUpFront && refundDaily !== null,
@@ -258,7 +284,10 @@ export function createAiRouter({
         outcome.status === 'failed' && outcome.failure === 'invalid-key' && !meta.ownKey;
       if (sharedKeyRefused || (outcome.status === 'failed' && outcome.unexpected !== null)) {
         req.log.error({ ai: meta }, 'ai step failed');
-      } else if (outcome.status === 'failed' && outcome.failure === 'timeout') {
+      } else if (
+        outcome.status === 'failed' &&
+        (outcome.failure === 'timeout' || outcome.failure === 'no-answer')
+      ) {
         // firstEventMs says whether the provider had started answering.
         req.log.warn({ ai: meta }, 'ai step timed out');
       } else {

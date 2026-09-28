@@ -214,6 +214,83 @@ describe('agent sessions on the shared tier', () => {
     await helper.text();
   });
 
+  describe('with a fallback model', () => {
+    const sharedTier = {
+      model: 'gemini-3.5-flash-lite',
+      fallbackModel: 'gemini-3.1-flash-lite',
+      apiKey: 'shared-test-key',
+    };
+    const busyDefault = () =>
+      createFakeModelGateway((call) =>
+        call.target.model === sharedTier.model
+          ? { kind: 'fail', failure: 'unavailable', statusCode: 503 }
+          : readUsers,
+      );
+
+    it('may start a session on the fallback, and says which model it used', async () => {
+      const gateway = busyDefault();
+      const { server, projectId } = await serve({ ai: { gateway, sharedTier } });
+      const received = await events(await step(server, agentBody(projectId)));
+      expect(received.at(-1)).toMatchObject({
+        type: 'finish',
+        model: { provider: 'gemini', id: 'gemini-3.1-flash-lite' },
+      });
+    });
+
+    it('keeps a session on the model it names, whichever that is', async () => {
+      const gateway = createFakeModelGateway(() => readUsers);
+      const { server, projectId } = await serve({ ai: { gateway, sharedTier } });
+      await events(
+        await step(
+          server,
+          agentBody(projectId, conversationOf(1), { sharedModel: 'gemini-3.1-flash-lite' }),
+        ),
+      );
+      expect(gateway.calls.map((call) => call.target.model)).toEqual(['gemini-3.1-flash-lite']);
+    });
+
+    it('never falls back part way through a session', async () => {
+      const gateway = busyDefault();
+      const { server, projectId } = await serve({ ai: { gateway, sharedTier } });
+      const busy = await step(server, agentBody(projectId, conversationOf(2)));
+      expect((await apiError(busy)).code).toBe('busy');
+      expect(gateway.calls.map((call) => call.target.model)).toEqual(['gemini-3.5-flash-lite']);
+    });
+
+    it.each([
+      [
+        'a model that is not a shared one',
+        { sharedModel: 'gemini-3.1-pro-preview' },
+        /Start a new session/,
+      ],
+      [
+        'a model with an own key',
+        { sharedModel: 'gemini-3.5-flash-lite', byok: ANTHROPIC },
+        /names its model/,
+      ],
+    ])('refuses %s', async (_label, extra, message) => {
+      const gateway = createFakeModelGateway(() => readUsers);
+      const { server, projectId } = await serve({ ai: { gateway, sharedTier } });
+      const response = await step(server, agentBody(projectId, conversationOf(1), extra), {
+        key: 'byok' in extra ? OWN_KEY : undefined,
+      });
+      expect(response.status).toBe(400);
+      expect((await apiError(response)).message).toMatch(message);
+      expect(gateway.calls).toHaveLength(0);
+    });
+
+    it('refuses a model named by a one-shot helper', async () => {
+      const { server, projectId } = await serve({ ai: { sharedTier } });
+      const response = await step(server, {
+        projectId,
+        promptId: 'explain-error',
+        inputs: { outcome: 'failed', terminalOutput: 'boom' },
+        sharedModel: 'gemini-3.1-flash-lite',
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
   it('logs which step of which session each call was, and nothing it said', async () => {
     const lines: string[] = [];
     const logger = createLogger(

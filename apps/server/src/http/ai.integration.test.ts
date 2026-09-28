@@ -307,7 +307,7 @@ describe('POST /api/ai/step', () => {
     });
 
     it.each<[string, FakeReply]>([
-      ['for another reason', { kind: 'fail', failure: 'unavailable', statusCode: 503 }],
+      ['for another reason', { kind: 'fail', failure: 'unavailable', statusCode: 500 }],
       [
         'after it began answering',
         { kind: 'fail', failure: 'rate-limited', statusCode: 429, afterChunks: ['Half'] },
@@ -320,6 +320,91 @@ describe('POST /api/ai/step', () => {
       const next = await step(server, explainBody(projectId));
       expect(next.status).toBe(429);
       expect((await apiError(next)).code).toBe('quota-exhausted');
+    });
+
+    it('gives the day’s request back when the model is busy before answering, and says so', async () => {
+      let reply: FakeReply = { kind: 'fail', failure: 'unavailable', statusCode: 503 };
+      const gateway = createFakeModelGateway(() => reply);
+      const { server, projectId } = await serve({
+        ai: { gateway, limits: { global: 100, perIp: 1, perProject: 100 } },
+      });
+      const busy = await step(server, explainBody(projectId));
+      expect(busy.status).toBe(503);
+      expect(await apiError(busy)).toEqual({
+        code: 'busy',
+        message:
+          'The shared free AI model is busy right now. Try again in a minute, or add your own key in AI settings.',
+      });
+
+      reply = { kind: 'text', chunks: ['Fine now.'] };
+      const retried = await step(server, explainBody(projectId));
+      expect((await events(retried)).at(-1)).toMatchObject({ type: 'finish', remainingToday: 0 });
+    });
+
+    describe('with a fallback model', () => {
+      const sharedTier = {
+        model: 'gemini-3.5-flash-lite',
+        fallbackModel: 'gemini-3.1-flash-lite',
+        apiKey: 'shared-test-key',
+      };
+
+      function busyDefault(fallback: FakeReply = { kind: 'text', chunks: ['From the fallback.'] }) {
+        return createFakeModelGateway((call) =>
+          call.target.model === sharedTier.model
+            ? { kind: 'fail', failure: 'unavailable', statusCode: 503 }
+            : fallback,
+        );
+      }
+
+      it('answers from the fallback when the default is busy, counting one request', async () => {
+        const gateway = busyDefault();
+        const { server, projectId } = await serve({
+          ai: { gateway, sharedTier, limits: { global: 100, perIp: 5, perProject: 100 } },
+        });
+        const received = await events(await step(server, explainBody(projectId)));
+        expect(gateway.calls.map((call) => call.target.model)).toEqual([
+          'gemini-3.5-flash-lite',
+          'gemini-3.1-flash-lite',
+        ]);
+        expect(received.at(-1)).toMatchObject({
+          type: 'finish',
+          model: { provider: 'gemini', id: 'gemini-3.1-flash-lite' },
+          remainingToday: 4,
+        });
+      });
+
+      it('does not try it for any other failure', async () => {
+        const gateway = createFakeModelGateway(() => ({
+          kind: 'fail',
+          failure: 'rate-limited',
+          statusCode: 429,
+        }));
+        const { server, projectId } = await serve({ ai: { gateway, sharedTier } });
+        expect((await step(server, explainBody(projectId))).status).toBe(429);
+        expect(gateway.calls).toHaveLength(1);
+      });
+
+      it('says busy and gives the request back when both are busy', async () => {
+        const gateway = busyDefault({ kind: 'fail', failure: 'unavailable', statusCode: 503 });
+        const { server, projectId } = await serve({
+          ai: { gateway, sharedTier, limits: { global: 100, perIp: 1, perProject: 100 } },
+        });
+        expect((await apiError(await step(server, explainBody(projectId)))).code).toBe('busy');
+        expect(gateway.calls).toHaveLength(2);
+        const next = await step(server, explainBody(projectId));
+        expect(next.status).toBe(503);
+        expect(gateway.calls).toHaveLength(4);
+      });
+
+      it('is never used with an own key', async () => {
+        const gateway = busyDefault();
+        const { server, projectId } = await serve({ ai: { gateway, sharedTier } });
+        const response = await step(server, explainBody(projectId, { byok: ANTHROPIC }), {
+          key: OWN_KEY,
+        });
+        await response.text();
+        expect(gateway.calls.map((call) => call.target.model)).toEqual(['claude-sonnet-5']);
+      });
     });
 
     it('does not blame the caller when the provider refuses the server’s own key', async () => {
@@ -360,7 +445,7 @@ describe('POST /api/ai/step', () => {
     ]);
   });
 
-  it('gives up on a model that takes too long, and logs it as a warning', async () => {
+  function capturingLogger(): { logger: ReturnType<typeof createLogger>; timedOut: () => unknown } {
     const lines: string[] = [];
     const logger = createLogger(
       'info',
@@ -372,20 +457,45 @@ describe('POST /api/ai/step', () => {
         },
       }),
     );
+    const timedOut = (): unknown =>
+      lines
+        .map((line) => JSON.parse(line) as { level: number; msg: string; ai?: unknown })
+        .find((entry) => entry.msg === 'ai step timed out');
+    return { logger, timedOut };
+  }
+
+  it('says a model that never starts answering is busy, and logs it as a warning', async () => {
+    const { logger, timedOut } = capturingLogger();
     const gateway = scripted({ kind: 'text', chunks: ['late'], delayMs: 2_000 });
     const { server, projectId } = await serve({ logger, ai: { gateway, callTimeoutMs: 100 } });
     const response = await step(server, explainBody(projectId));
     expect(response.status).toBe(503);
-    expect((await apiError(response)).message).toContain('took too long');
+    const error = await apiError(response);
+    expect(error.code).toBe('busy');
+    expect(error.message).toContain('did not start answering in time, so it is probably busy');
+    expect(timedOut()).toMatchObject({
+      level: 40,
+      ai: { failure: 'no-answer', firstEventMs: null },
+    });
+  });
 
-    const logged = lines
-      .map((line) => JSON.parse(line) as { level: number; msg: string; ai?: unknown })
-      .find((entry) => entry.msg === 'ai step timed out');
-    expect(logged).toMatchObject({ level: 40, ai: { failure: 'timeout', firstEventMs: null } });
+  it('gives up on a model that stops part way, and says it took too long', async () => {
+    const { logger, timedOut } = capturingLogger();
+    const gateway = scripted({ kind: 'text', chunks: ['Half', ' done'], delayMs: 300 });
+    const { server, projectId } = await serve({ logger, ai: { gateway, callTimeoutMs: 450 } });
+    const response = await step(server, explainBody(projectId));
+    expect(response.status).toBe(200);
+    const received = await events(response);
+    expect(received[0]).toEqual({ type: 'text-delta', text: 'Half' });
+    expect(received.at(-1)).toMatchObject({
+      type: 'error',
+      error: { code: 'unavailable', message: expect.stringContaining('took too long') as string },
+    });
+    expect(timedOut()).toMatchObject({ ai: { failure: 'timeout' } });
   });
 
   it('never calls a failure that came before the time limit a timeout', async () => {
-    const gateway = scripted({ kind: 'fail', failure: 'unavailable', statusCode: 503 });
+    const gateway = scripted({ kind: 'fail', failure: 'unavailable', statusCode: 500 });
     const { server, projectId } = await serve({ ai: { gateway, callTimeoutMs: 5_000 } });
     const response = await step(server, explainBody(projectId));
     expect(response.status).toBe(503);

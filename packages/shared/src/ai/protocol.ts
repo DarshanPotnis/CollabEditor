@@ -69,6 +69,15 @@ export const aiStepRequestSchema = z.object({
   inputs: z.unknown(),
   /** The agent's conversation so far; refused for a prompt without tools. */
   conversation: conversationSchema.optional(),
+  /**
+   * An agent session on the shared tier: the model its first step's `finish`
+   * named. Later steps must stay on it, since the conversation carries that
+   * model's thought signatures. The server accepts only its own shared models.
+   */
+  sharedModel: z
+    .string()
+    .regex(/^gemini-[a-z0-9.-]{1,60}$/)
+    .optional(),
   /** Groups an agent session's steps in the server log. Chosen by the client, so only a label. */
   sessionId: z
     .string()

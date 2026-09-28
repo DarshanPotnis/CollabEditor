@@ -50,6 +50,16 @@ describe('aiStepRequestSchema', () => {
     expect(aiStepRequestSchema.parse(agentStep)).toEqual(agentStep);
   });
 
+  it('lets an agent step name a Gemini model for its session, and nothing else', () => {
+    const agentStep = { ...request, promptId: 'agent' };
+    expect(
+      aiStepRequestSchema.parse({ ...agentStep, sharedModel: 'gemini-3.1-flash-lite' }).sharedModel,
+    ).toBe('gemini-3.1-flash-lite');
+    expect(aiStepRequestSchema.safeParse({ ...agentStep, sharedModel: 'gpt-5.5' }).success).toBe(
+      false,
+    );
+  });
+
   it('refuses a malformed conversation or session id', () => {
     const agentStep = { ...request, promptId: 'agent' };
     expect(

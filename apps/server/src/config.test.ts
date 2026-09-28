@@ -67,6 +67,17 @@ describe('loadConfig', () => {
     }
   });
 
+  it('has no fallback model unless one is set, and takes only a Gemini one', () => {
+    expect(loadConfig(validEnv).AI_FALLBACK_MODEL).toBeUndefined();
+    expect(loadConfig({ ...validEnv, AI_FALLBACK_MODEL: '' }).AI_FALLBACK_MODEL).toBeUndefined();
+    expect(
+      loadConfig({ ...validEnv, AI_FALLBACK_MODEL: ' gemini-3.1-flash-lite ' }).AI_FALLBACK_MODEL,
+    ).toBe('gemini-3.1-flash-lite');
+    expect(() => loadConfig({ ...validEnv, AI_FALLBACK_MODEL: 'claude-haiku-4-5' })).toThrow(
+      /AI_FALLBACK_MODEL/,
+    );
+  });
+
   it('accepts direct as the client IP source for running without a proxy', () => {
     expect(loadConfig({ ...validEnv, CLIENT_IP_SOURCE: 'direct' }).CLIENT_IP_SOURCE).toBe('direct');
   });

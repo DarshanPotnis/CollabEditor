@@ -7,8 +7,11 @@
 import { AI_PROVIDER_LABELS, type AiProvider, type ApiErrorCode } from '@collabcode/shared';
 import type { ModelCallFailure } from './model-gateway.js';
 
-/** Why a stream ended early, as far as the route can tell. */
-export type StepFailure = Exclude<ModelCallFailure, 'aborted'> | 'timeout';
+/**
+ * Why a stream ended early, as far as the route can tell. 'no-answer' is a
+ * timeout before the model said anything, which under load means it was busy.
+ */
+export type StepFailure = Exclude<ModelCallFailure, 'aborted'> | 'timeout' | 'no-answer';
 
 export type FailureMessage = { code: ApiErrorCode; message: string };
 
@@ -30,6 +33,17 @@ export function sharedTierBusy(waitMs: number | null): FailureMessage {
   return {
     code: 'rate-limited',
     message: `The shared free AI is busy right now. Try again in ${wait}, or add your own key in AI settings.`,
+  };
+}
+
+/** The model is overloaded: Google answers 503 at times of high demand. */
+function modelBusy(provider: string | null, whatHappened: string): FailureMessage {
+  return {
+    code: 'busy',
+    message:
+      provider === null
+        ? `The shared free AI model ${whatHappened}. Try again in a minute, or add your own key in AI settings.`
+        : `${provider}'s model ${whatHappened}. Try again in a minute.`,
   };
 }
 
@@ -72,10 +86,13 @@ export function describeFailure(
           "The AI's answer was too large to continue from. Try a smaller goal, or another model.",
       };
     case 'unavailable':
+      if (statusCode === 503) return modelBusy(provider, 'is busy right now');
       return {
         code: 'unavailable',
         message: 'The AI provider is not answering right now. Try again in a minute.',
       };
+    case 'no-answer':
+      return modelBusy(provider, 'did not start answering in time, so it is probably busy');
     case 'timeout':
       return {
         code: 'unavailable',

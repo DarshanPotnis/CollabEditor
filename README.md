@@ -176,6 +176,7 @@ replace. Node's own `--env-file` would let a machine-wide `DATABASE_URL` win.
 | `CLIENT_IP_SOURCE`              | server | Where per-IP limits read the client address: `render` (default) or `direct`                                                       |
 | `GEMINI_API_KEY`                | server | Key for the shared free AI tier (Google AI Studio). Optional: unset turns the shared tier off; people can still use their own key |
 | `AI_DEFAULT_MODEL`              | server | The shared tier's Gemini model; `gemini-3.5-flash-lite` by default                                                                |
+| `AI_FALLBACK_MODEL`             | server | Optional second Gemini model, tried when the default is busy; one-shot helpers and an agent session's first step only             |
 | `AI_GLOBAL_DAILY_REQUESTS`      | server | Shared-tier requests a day for everyone together; 400 by default (80% of the free 500)                                            |
 | `AI_PER_IP_DAILY_REQUESTS`      | server | Shared-tier requests a day per visitor; 30 by default                                                                             |
 | `AI_PER_PROJECT_DAILY_REQUESTS` | server | Shared-tier requests a day per project; 60 by default                                                                             |

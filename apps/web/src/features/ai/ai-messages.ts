@@ -84,6 +84,7 @@ export function settingsAction(failure: AiFailure, usingOwnKey: boolean): string
   const sharedTierProblem =
     failure.code === 'quota-exhausted' ||
     failure.code === 'rate-limited' ||
-    failure.code === 'unavailable';
+    failure.code === 'unavailable' ||
+    failure.code === 'busy';
   return sharedTierProblem ? 'Add your own key' : null;
 }

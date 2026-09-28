@@ -13,6 +13,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   'quota-exhausted': 429,
   'invalid-key': 401,
   unavailable: 503,
+  busy: 503,
   internal: 500,
 };
 

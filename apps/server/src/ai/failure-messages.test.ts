@@ -32,8 +32,24 @@ describe('describeFailure', () => {
   });
 
   it('separates a provider that is down from one that is slow', () => {
-    expect(describeFailure('unavailable', 503, null).message).toContain('not answering');
+    expect(describeFailure('unavailable', 500, null).message).toContain('not answering');
     expect(describeFailure('timeout', null, 'gemini').message).toContain('took too long');
+  });
+
+  it('says the model is busy when it is overloaded, not that it was slow', () => {
+    expect(describeFailure('unavailable', 503, null)).toEqual({
+      code: 'busy',
+      message:
+        'The shared free AI model is busy right now. Try again in a minute, or add your own key in AI settings.',
+    });
+    expect(describeFailure('unavailable', 503, 'anthropic')).toEqual({
+      code: 'busy',
+      message: "Anthropic's model is busy right now. Try again in a minute.",
+    });
+    const noAnswer = describeFailure('no-answer', null, null);
+    expect(noAnswer.code).toBe('busy');
+    expect(noAnswer.message).toContain('did not start answering in time, so it is probably busy');
+    expect(noAnswer.message).not.toContain('took too long');
   });
 });
 

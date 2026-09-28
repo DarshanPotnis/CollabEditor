@@ -69,6 +69,22 @@ const envSchema = z.object({
     .string()
     .regex(/^gemini-[a-z0-9.-]{1,60}$/, { message: 'must be a Gemini model id' })
     .default('gemini-3.5-flash-lite'),
+  /**
+   * Optional: a second Gemini model the shared tier tries when the default one
+   * is busy (HTTP 503) before answering. Only for one-shot helpers and an agent
+   * session's first step; a session then stays on whichever model it started
+   * on. Free-tier quotas are per model, so this also spreads the load.
+   */
+  AI_FALLBACK_MODEL: z
+    .string()
+    .optional()
+    .transform((value) => (value?.trim() === '' ? undefined : value?.trim()))
+    .pipe(
+      z
+        .string()
+        .regex(/^gemini-[a-z0-9.-]{1,60}$/, { message: 'must be a Gemini model id' })
+        .optional(),
+    ),
   /** Shared-tier requests per day for everyone together: 80% of the free quota. */
   AI_GLOBAL_DAILY_REQUESTS: envCount(400),
   /** Shared-tier requests per day from one visitor (client IP, IPv6 by /56). */

@@ -50,6 +50,8 @@ export const API_ERROR_CODES = [
   'invalid-key',
   /** Something we depend on is missing or down (for example, no shared AI key). */
   'unavailable',
+  /** The AI model is overloaded right now: worth trying again shortly, unlike 'unavailable'. */
+  'busy',
   'internal',
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
