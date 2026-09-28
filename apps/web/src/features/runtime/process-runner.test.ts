@@ -12,8 +12,12 @@ import { FakeContainer } from '../../test/fake-container.js';
 import { createOutputBuffer } from './output-buffer.js';
 import {
   AUTO_RESTART_DELAY_MS,
+  RESTART_NOTICE_MS,
   SERVER_WAIT_MS,
+  SETTLE_RESTART_MS,
+  SETTLE_WRITE_MS,
   ServerUnavailableError,
+  SettleError,
   createRunner,
   type Runner,
 } from './process-runner.js';
@@ -363,5 +367,100 @@ describe('process runner', () => {
       container.last('npm run dev').finish(1);
       await expect(waiting).rejects.toThrow(/crashed/);
     });
+  });
+});
+
+describe('settle', () => {
+  function edit(doc: Y.Doc, path = 'routes/users.js'): void {
+    readFileText(doc, idOf(doc, path))?.insert(0, '// agent edit\n');
+  }
+
+  it('has nothing to do before the first run', async () => {
+    const { runner } = setup();
+    expect(await runner.settle()).toEqual({ phase: 'idle' });
+  });
+
+  it('writes a change at once, without waiting for the quiet period', async () => {
+    const { doc, container, runner } = setup();
+    await runner.run();
+    edit(doc);
+    await runner.settle();
+    expect(container.fs.files.get('routes/users.js')).toMatch(/^\/\/ agent edit/);
+  });
+
+  it("waits for node --watch's restart after a write, so the next request meets new code", async () => {
+    const { doc, container, runner } = setup();
+    await runner.run();
+    container.emitPort(3000, 'open');
+    edit(doc);
+    const settled = runner.settle();
+    await settle(200);
+    container.emitPort(3000, 'close');
+    await settle(300);
+    let done = false;
+    void settled.then(() => (done = true));
+    await settle(0);
+    expect(done).toBe(false);
+    container.emitPort(3000, 'open');
+    expect((await settled).phase).toBe('serving');
+  });
+
+  it('does not wait long for a restart that a write did not cause', async () => {
+    const { doc, container, runner } = setup();
+    await runner.run();
+    container.emitPort(3000, 'open');
+    edit(doc, 'package.json');
+    const settled = runner.settle();
+    await settle(RESTART_NOTICE_MS);
+    expect((await settled).phase).toBe('serving');
+  });
+
+  it('waits for the restart that follows a crash and a fix', async () => {
+    const { doc, container, runner } = setup();
+    await runner.run();
+    container.last('npm run dev').finish(1);
+    await settle(0);
+    edit(doc, 'index.js');
+    const settled = runner.settle();
+    await settle(AUTO_RESTART_DELAY_MS + 100);
+    expect(runner.state().phase).toBe('starting');
+    container.emitPort(3000, 'open');
+    expect((await settled).phase).toBe('serving');
+  });
+
+  it('gives up on writes that do not finish, saying the change has not arrived', async () => {
+    const { doc, container, runner } = setup();
+    await runner.run();
+    container.fs.stallWrites = true;
+    edit(doc);
+    const settled = runner.settle();
+    const failure = expect(settled).rejects.toEqual(
+      new SettleError(
+        'write',
+        'The latest changes took more than 10 seconds to reach the running project.',
+      ),
+    );
+    await settle(SETTLE_WRITE_MS);
+    await failure;
+  });
+
+  it('gives up on a restart that never finishes, such as a stuck npm install', async () => {
+    const { doc, container, runner } = setup();
+    await runner.run();
+    container.last('npm run dev').finish(1);
+    await settle(0);
+    container.installExitCode = null;
+    const packageJson = readFileText(doc, idOf(doc, 'package.json'));
+    const at = packageJson?.toJSON().indexOf('"dependencies": {') ?? -1;
+    packageJson?.insert(at + '"dependencies": {'.length, '\n    "zod": "^4.0.0",');
+
+    const settled = runner.settle();
+    const failure = expect(settled).rejects.toEqual(
+      new SettleError('restart', 'The project did not finish restarting within 60 seconds.'),
+    );
+    await settle(AUTO_RESTART_DELAY_MS + 100);
+    expect(runner.state().phase).toBe('installing');
+    await settle(SETTLE_RESTART_MS);
+    await failure;
   });
 });

@@ -22,6 +22,8 @@ export class FakeContainerFs implements ContainerFs {
   readonly calls: string[] = [];
   /** Paths whose next write fails, once. */
   readonly failNextWrite = new Set<string>();
+  /** While set, writes never finish, like a container that has stopped answering. */
+  stallWrites = false;
 
   private requireDir(path: string): void {
     if (!this.dirs.has(path)) throw new FsError('ENOENT', path);
@@ -29,6 +31,7 @@ export class FakeContainerFs implements ContainerFs {
 
   writeFile = (path: string, data: string): Promise<void> => {
     this.calls.push(`write ${path}`);
+    if (this.stallWrites) return new Promise(() => undefined);
     if (this.failNextWrite.delete(path)) return Promise.reject(new FsError('EIO', path));
     this.requireDir(parentOf(path));
     if (this.dirs.has(path)) return Promise.reject(new FsError('EISDIR', path));

@@ -50,7 +50,59 @@ export type Runner = {
    * or start-up finishes, or rejected with a ServerUnavailableError.
    */
   waitForServer: (timeoutMs?: number) => Promise<Server>;
+  /** The state once `accept` holds for it, or null after `timeoutMs` or once `signal` stops. */
+  whenState: (
+    accept: (state: RunState) => boolean,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ) => Promise<RunState | null>;
+  /**
+   * Writes to the container, now, whatever the document has that it lacks.
+   * When that changed a file while the server was up, or after a crash (which
+   * restarts on the next write), waits for the restart to finish, so what runs
+   * next talks to the new code. Resolves with the state things settled in;
+   * rejects with a SettleError when writing or restarting takes too long.
+   */
+  settle: (options?: SettleOptions) => Promise<RunState>;
 };
+
+export type SettleOptions = {
+  writeMs?: number;
+  noticeMs?: number;
+  restartMs?: number;
+  signal?: AbortSignal;
+};
+
+/** How long writing to the container may take before sync counts as delayed. */
+export const SETTLE_WRITE_MS = 10_000;
+/** How soon after a write a restart must begin to count as caused by it. */
+export const RESTART_NOTICE_MS = 1_500;
+/** How long a restart may take, npm install included. */
+export const SETTLE_RESTART_MS = 60_000;
+
+export class SettleError extends Error {
+  readonly stage: 'write' | 'restart';
+
+  constructor(stage: 'write' | 'restart', message: string) {
+    super(message);
+    this.name = 'SettleError';
+    this.stage = stage;
+  }
+}
+
+/** A state the run stays in until something happens: nothing is on its way. */
+export function isSettled(state: RunState): boolean {
+  switch (state.phase) {
+    case 'serving':
+    case 'crashed':
+    case 'failed':
+    case 'stopped':
+    case 'idle':
+      return true;
+    default:
+      return false;
+  }
+}
 
 export const AUTO_RESTART_DELAY_MS = 500;
 export const SERVER_WAIT_MS = 10_000;
@@ -107,7 +159,10 @@ export function createRunner(options: RunnerOptions): Runner {
   let graceTimer: ReturnType<typeof setTimeout> | null = null;
   let autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  /** Syncs that changed the container, so settle() can tell whether a write happened. */
+  let writes = 0;
   const waiters = new Set<Waiter>();
+  const stateListeners = new Set<(state: RunState) => void>();
 
   const settleWaiters = (): void => {
     const reason = unavailableReason(state);
@@ -134,7 +189,32 @@ export function createRunner(options: RunnerOptions): Runner {
       graceTimer = null;
     }
     settleWaiters();
+    for (const listener of [...stateListeners]) listener(state);
     options.onState(state);
+  };
+
+  const whenState = (
+    accept: (candidate: RunState) => boolean,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<RunState | null> => {
+    if (accept(state)) return Promise.resolve(state);
+    return new Promise((resolve) => {
+      const done = (result: RunState | null): void => {
+        clearTimeout(timer);
+        stateListeners.delete(listener);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(result);
+      };
+      const listener = (candidate: RunState): void => {
+        if (accept(candidate)) done(candidate);
+      };
+      const onAbort = (): void => done(null);
+      const timer = setTimeout(() => done(null), timeoutMs);
+      stateListeners.add(listener);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+    });
   };
 
   /** Shows a process's output while it is current, and passes it to `read` as well. */
@@ -173,6 +253,7 @@ export function createRunner(options: RunnerOptions): Runner {
   };
 
   const onSynced = (result: SyncResult): void => {
+    writes += 1;
     if (result.written.includes('package.json')) checkDependencies();
     if (!shouldAutoRestart(state, result)) return;
     clearAutoRestart();
@@ -290,6 +371,48 @@ export function createRunner(options: RunnerOptions): Runner {
     },
     state: () => state,
     container: () => container,
+    whenState,
+    async settle({
+      writeMs = SETTLE_WRITE_MS,
+      noticeMs = RESTART_NOTICE_MS,
+      restartMs = SETTLE_RESTART_MS,
+      signal,
+    } = {}) {
+      if (!bridge) return state;
+      const before = state;
+      const writesBefore = writes;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const written = await Promise.race([
+        bridge.flush().then(() => true),
+        new Promise<false>((resolve) => {
+          timer = setTimeout(() => resolve(false), writeMs);
+        }),
+      ]);
+      clearTimeout(timer);
+      if (!written) {
+        throw new SettleError(
+          'write',
+          `The latest changes took more than ${String(writeMs / 1000)} seconds to reach the running project.`,
+        );
+      }
+      const mayRestart =
+        writes !== writesBefore && (before.phase === 'serving' || autoRestartTimer !== null);
+      if (!mayRestart) return state;
+      const restarting = await whenState(
+        (candidate) => candidate.phase !== before.phase,
+        noticeMs,
+        signal,
+      );
+      if (restarting === null) return state;
+      const settled = await whenState(isSettled, restartMs, signal);
+      if (settled === null && !signal?.aborted) {
+        throw new SettleError(
+          'restart',
+          `The project did not finish restarting within ${String(restartMs / 1000)} seconds.`,
+        );
+      }
+      return state;
+    },
     waitForServer(timeoutMs = SERVER_WAIT_MS) {
       if (state.phase === 'serving') return Promise.resolve(state.server);
       const reason = unavailableReason(state);
