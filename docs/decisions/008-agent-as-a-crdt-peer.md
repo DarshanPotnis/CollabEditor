@@ -149,3 +149,31 @@ cutting at, say, 45 s would fail legitimate edits. The 90 s cap per attempt stay
   prompt says to find code by its content.
 - **Awareness claims are cosmetic.** Anyone can claim to be an agent working for anyone; the badge
   names the host by what the host shows, and nothing is granted by a claim.
+
+## Addendum: after the second demo (2026-09-28)
+
+A second demo session (kept as the fixture "runtime unavailable; agent loops") ran on a page
+that was not cross-origin isolated. `run_project` failed to boot, and every later `run_command`
+answered "Start the project with run_project first", sending the model back to the thing that had
+just failed, six times. It also went well past the goal and used all 15 steps without `finish`.
+Four decisions came out of it:
+
+- **An unavailable sandbox stays unavailable for the session.** A run that fails before any
+  container booted, or a page known at the start not to be isolated, makes `run_project`,
+  `run_command` and `http_request` give one fixed answer at once for the rest of the session: why,
+  not to call them again, and to finish and tell the person to click Run. Retrying a boot mid-session
+  was rejected: the causes (headers, cookies, the browser) do not change within a session.
+- **Reminders are the server's words**, like the nudge (`agent-reminders.ts`, `agent@3`): on each
+  of the last 3 steps, to call `finish` with a summary, and after a tool call that failed exactly
+  as an earlier one did, not to repeat it. The server decides them from the conversation and the
+  tier's cap and quotes nothing from the conversation. Rejected: a new conversation entry the client
+  sends (it would let a client choose what the model is told, and change the conversation schema);
+  appending the note to a tool result (the prompt tells the model tool results are data, never
+  instructions). A live request confirmed Gemini accepts a user turn right after function
+  responses.
+- **The prompt can be told the sandbox is missing**, through an input that can only say
+  `unavailable`: the client can take the sandbox away but has no way to claim one.
+- **A session that ends without `finish` still gets a summary**, of the files it changed, worked
+  out from the trace (`session-changes.ts`). Forcing `finish` on the last step (tool choice limited
+  to it) was held back: it removes a last edit, and the AI-4 evals will show whether the reminders
+  are enough without it.

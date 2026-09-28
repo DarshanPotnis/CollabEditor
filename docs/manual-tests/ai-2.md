@@ -6,9 +6,9 @@ agent's work while keeping a human edit made during the session; Stop works mid-
 step also has an automated test (see the end). These are the checks a person should do before
 believing the phase is finished.
 
-It takes about forty minutes. A shared-tier session uses up to 15 of the day's free requests, and
-you get 30, so do sections 2 to 6 on the shared tier and the rest with your own key if you have
-one. When Gemini is busy (HTTP 503, "high demand"), the agent waits and retries twice; if a
+It takes about fifty minutes. A shared-tier session uses up to 15 of the day's free requests, and
+you get 30, so do sections 2 to 6 on the shared tier, then save your own key (the first step of
+section 10) for sections 7 to 10 if you have one, or continue on another day. When Gemini is busy (HTTP 503, "high demand"), the agent waits and retries twice; if a
 session still ends on "busy", wait a few minutes, or use your own key.
 
 Use **Chrome or Edge**. Shortcuts are written for a Mac; elsewhere read **Cmd** as **Ctrl**.
@@ -65,6 +65,10 @@ browser has not used AI before, the privacy notice appears first: click **Contin
       in the agent's log results.
 - [ ] If the server errors on its first try, the log shows the agent reading the output, editing
       again, and calling the endpoint again.
+- [ ] It keeps to the goal: it changes `routes/users.js` (and at most the route list in
+      `index.js`), and does not create test files, edit `package.json`, install packages, or
+      remove comments. It calls the new endpoint with at least one request that should succeed
+      and one that should fail, then finishes without spending more steps.
 - [ ] The session ends with a green summary of what it changed and how it checked it, a line such
       as "7 steps · 41,203 tokens · 1 min 12 s · 16 free requests left today", and the buttons
       **Undo AI changes**, **Download trace** and **Done**.
@@ -110,10 +114,10 @@ Click **Undo anyway**.
 
 Click **Download trace** and open the file.
 
-- [ ] It is JSON with `"format": "collabcode-agent-trace"`, `"version": 2`, the goal, the
-      template `express-api`, and one entry per step with the model's message and each tool call
-      and result.
-- [ ] Searching it for your key (section 8) or for `x-ai-key` finds nothing.
+- [ ] It is JSON with `"format": "collabcode-agent-trace"`, `"version": 3`, the goal, the
+      template `express-api`, and one entry per step with the model's message, each tool call and
+      result, and a `"reminder"` (null on a step with nothing to remind).
+- [ ] Searching it for your key (section 10) or for `x-ai-key` finds nothing.
 
 Click **Done**.
 
@@ -137,14 +141,32 @@ Click **Stop** while it is still working.
 
 - [ ] The session ends at once with "You stopped the AI teammate." A command or request that was
       running stops; an edit being typed is finished, not left half-written.
-- [ ] If it had changed something, "What it changed so far is still there." and **Undo AI
-      changes** are shown; if not, "It did not change any files."
+- [ ] If it had changed something, "What it changed so far is still there.", then the files it
+      changed ("Edited routes/users.js."), and **Undo AI changes** are shown; if not, "It did not
+      change any files."
 
 Undo if needed, then **Done**.
 
 ---
 
-## 7. It leaves a busy file alone
+## 7. Follow mode and a file the agent deletes
+
+**In A:** open `index.js`, then start `Create notes.txt containing hello, then delete notes.txt,
+then add a one-line comment at the top of routes/users.js saying what it handles`.
+
+- [ ] A's editor follows the AI into `notes.txt` (if it creates and deletes it in one answer,
+      this can be too quick to see).
+- [ ] Once `notes.txt` is deleted, its tab is gone and A is back in `index.js`, not looking at a
+      deleted file; **Following the AI** is still shown.
+- [ ] Then A's editor follows it into `routes/users.js`.
+- [ ] If the session ends without the AI's own summary, the panel lists `routes/users.js` as
+      edited and does not list `notes.txt`.
+
+Undo, then **Done**.
+
+---
+
+## 8. It leaves a busy file alone
 
 **In B:** open `index.js` and keep typing a comment slowly (a character every few seconds)
 through this section.
@@ -164,7 +186,36 @@ Undo, then **Done**.
 
 ---
 
-## 8. Your own key, and a stronger model
+## 9. A page that can't run code
+
+This makes window A's page load without cross-origin isolation, the way a misconfigured host would.
+Chrome's DevTools overrides apply only while DevTools is open.
+
+**In A:** open DevTools, then **Network**, and reload. Right-click the first request (the project's
+page) and choose **Override headers**; the first time, Chrome asks for a folder to keep overrides
+in: pick an empty one and click **Allow**. Change `Cross-Origin-Embedder-Policy` to `unsafe-none`,
+then reload with DevTools still open.
+
+- [ ] Typing `crossOriginIsolated` in the console prints `false`.
+- [ ] The Run panel's **Run** is disabled, with "Running code needs cross-origin isolation, and
+      this page was loaded without the headers that turn it on (…). You can still edit." Nothing
+      mentions third-party cookies.
+
+**In A:** start the demo task on a fresh Express project.
+
+- [ ] It makes the change without running anything. If it calls `run_project`, `run_command` or
+      `http_request`, the result says at once "The sandbox isn't available in this session…", and
+      it does not keep calling them.
+- [ ] It finishes with a summary saying the change is untested and that you can click Run to
+      check it.
+- [ ] The downloaded trace has `"sandbox": "unavailable"` in its `inputs`.
+
+Remove the override (DevTools **Sources**, **Overrides**, right-click the folder, **Remove**),
+close DevTools and reload. Then **Done**, and Undo if you like.
+
+---
+
+## 10. Your own key, and a stronger model
 
 **In A:** in AI settings, save your own key (for example Anthropic with `claude-sonnet-5`).
 
@@ -186,7 +237,7 @@ Forget the key afterwards. To try a stronger Gemini model on the shared tier ins
 
 ---
 
-## 9. Limits on the shared tier
+## 11. Limits on the shared tier
 
 These need the server restarted with different settings. Edit `apps/server/.env`, then stop and
 start `npm run dev` each time, and put the lines back at the end.
@@ -211,18 +262,18 @@ Restore the settings and restart.
 
 ---
 
-## 10. Nothing sensitive in the server log
+## 12. Nothing sensitive in the server log
 
 Look at the `npm run dev` output from the steps above.
 
-- [ ] Each agent step logged one `ai step` line with `promptId: "agent"`, `promptVersion: 2`, the
+- [ ] Each agent step logged one `ai step` line with `promptId: "agent"`, `promptVersion: 3`, the
       model, `agent: { sessionId, step }`, tokens, timings, `rawFinishReason` and `attempts`.
 - [ ] Searching the output for your goal's text, a piece of the project's code, or any key finds
       nothing, and there is no printed `APICallError`.
 
 ---
 
-## 11. The automated suites
+## 13. The automated suites
 
 ```bash
 npm test
@@ -231,8 +282,9 @@ RUN_WEBCONTAINER_E2E=1 npm run e2e -- runtime.spec.ts
 ```
 
 - [ ] `npm test` passes without a database or an AI key.
-- [ ] `npm run e2e` passes, including the six AI teammate specs (`e2e/agent.spec.ts`), which run
-      against a scripted model.
+- [ ] `npm run e2e` passes, including the seven AI teammate specs (`e2e/agent.spec.ts`) and the
+      AI teammate on a page without isolation (`e2e/runtime-unsupported.spec.ts`), all against a
+      scripted model.
 - [ ] The opt-in WebContainer suite passes its six tests, including the scripted AI teammate that
       adds a route, runs the project and gets 204 from `DELETE /users/1`.
 
@@ -247,6 +299,10 @@ site.
 
 - Proposals for files someone else is editing (AI-3): here the agent only leaves them alone.
 - Evals and the eval harness (AI-4), and the trace viewer and replayed demo (AI-5).
+- The steps-left reminder, which needs a session that reaches its last three steps. Unit tests
+  cover it, a replay of a recorded 15-step session shows where it fires, and one live request
+  confirmed Gemini accepts it and calls `finish`. If one of your sessions runs long, its trace
+  shows `"reminder"` on its last three steps.
 - Safari and Firefox.
 - The limits across a restart: they are counted in memory and start over.
 - An agent session in a background tab for long: browsers slow a hidden tab's timers, so it types

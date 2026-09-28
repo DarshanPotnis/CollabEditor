@@ -152,7 +152,11 @@ it into its files until you type or open another file (**Follow AI** resumes).
   those files since, it asks first. Undo is there until you click **Done**.
 - **It is bounded.** Up to 15 steps on the shared free tier (25 with your own key) and 5 minutes;
   **Stop** ends it at once. A shared-tier session needs 15 of your 30 free requests a day, so
-  your own key is the way to use it often. When Gemini is busy it waits and tries twice more.
+  your own key is the way to use it often. When Gemini is busy it waits and tries twice more. It
+  is told to make the smallest change the goal needs and to finish once it has checked it; if it
+  ends without finishing, the panel lists the files it changed.
+- **No sandbox, no guessing.** If this page can't run code, the Run panel says why, and the AI
+  teammate makes its change without running it and tells you to click Run yourself.
 - **It is recorded.** **Download trace** saves the session as JSON: every model answer and tool
   call, for replaying or for evals. It never contains your key.
 - **Prompt injection.** Files, output and responses may have been written by anyone in the

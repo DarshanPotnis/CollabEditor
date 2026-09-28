@@ -243,7 +243,11 @@ against `vercel.json` by a test). What that changes:
 - The Hocuspocus WebSocket is unaffected, and the REST calls to Render are `cors`-mode fetches,
   which COEP does not block. The app loads no third-party fonts, scripts or images.
 - Our page cannot talk to windows it opens on other origins. Future sign-in popups must redirect.
-- A browser without isolation gets a disabled Run button and an explanation; editing works.
+- A page without isolation gets a disabled Run button and the reason, which decides the fix: not
+  HTTPS or localhost, inside another site's frame, a browser without the feature, or a page loaded
+  without the headers (`runtime-support.ts`). Every boot checks first (`webcontainer.ts`), so
+  nothing boots into a `SharedArrayBuffer` error, and the third-party cookie hint is kept for a
+  boot that fails on an isolated page. Editing works either way.
 
 `require-corp`, not `credentialless`: we have no cross-origin `no-cors` resources for it to help
 with, and Safari does not implement `credentialless` at all.
@@ -347,7 +351,7 @@ the running project, is in the browser.
 │ AgentPanel ── useAgentSession ── agent-session.ts                                          │
 │                                     │                                                      │
 │      packages/agent: runAgent (loop, limits, retries, trace) ─────── fetch ─► /api/ai/step │
-│                                     │ tool calls                     agent@2, 13 tools     │
+│                                     │ tool calls                     agent@3, 13 tools     │
 │                 ┌───────────────────┴──────────────────┐                                   │
 │   doc tools (packages/agent)              runtime tools (settle barrier first)             │
 │   over the agent's own Y.Doc              the person's runner, output, API console helper  │
@@ -379,6 +383,18 @@ ADR 008 has the reasoning. The pieces:
   go back to the model as errors; three answers in a row with nothing runnable, or two without a
   tool call, end the session. Tool output is capped with a marker, and output with an ES-module
   stack frame carries the note that its line numbers are wrong.
+- **The prompt** (`agent@3`, `packages/shared/src/ai/prompts/agent.ts`) keeps the agent to the
+  smallest change the goal needs (no tests, dependencies, files or refactors unless asked; nothing
+  unrelated touched), edit first, then check with `run_project` and `http_request`, then `finish`.
+  Its inputs are the goal, the file list, every file's content for a project under 24,000
+  characters, and `sandbox: 'unavailable'` when the page cannot run code; that input can only take
+  the sandbox away.
+- **Reminders** (`agent-reminders.ts`): after the conversation, the server adds fixed words on a
+  step that needs them: on each of the last 3 steps, to call `finish` with a summary, and, when a
+  tool call has just failed exactly as an earlier one did, not to repeat it. Nothing from the
+  conversation is quoted. The server counts steps left from the conversation and the tier's cap;
+  after tool results the reminder is a user turn of its own, after a nudge it joins the nudge. The
+  core runs the same function to record each step's reminder in the trace.
 - **File tools** (`packages/agent/src/doc-tools/`), over the agent's own replica: list, read (real
   line numbers, long files in parts), search, edit (one exact match), create (with missing
   folders), rename or move, and delete (soft only). Paths are display paths looked up among the
@@ -393,6 +409,10 @@ ADR 008 has the reasoning. The pieces:
 - **Runtime tools** (`features/agent/runtime-tools.ts`): run, stop, read the terminal, call the API
   and run `node` or `npm`, with the Run view's own runner, output and API console helper, so the
   person watches them happen. The model reads the output as plain text without npm's spinner.
+  A sandbox that cannot start (the page is not isolated, or the boot fails) stays unavailable for
+  the rest of the session: `run_project`, `run_command` and `http_request` then give one fixed
+  answer at once, saying why and to finish and tell the person to click Run. When isolation is
+  missing at the start, the tools begin that way and nothing tries to boot.
 - **The settle barrier.** The container is fed from the person's document, which receives the
   agent's edits through the server. Before anything runs, the person's document must have them
   (compared by state vector, `doc-sync.ts`), then the runner writes them to the container and
@@ -405,10 +425,16 @@ ADR 008 has the reasoning. The pieces:
   UndoManager tracking only its origin, and its tree actions reversed with soft ops. The panel
   first says which files someone else has changed since. It lasts until **Done** or a reload.
 - **Follow mode** (`useFollowAgent.ts`): the host's editor opens the agent's file and keeps its
-  caret in view, until the host types or opens another file; **Follow AI** resumes.
-- **The trace** (`packages/agent/src/trace.ts`, format version 2): each model answer verbatim, every
-  call and result, waits and attempt times, the raw finish reason, the template and a fingerprint of
-  the starting files. **Download trace** saves it; `scriptFromTrace` replays it with no model.
+  caret in view, until the host types or opens another file; **Follow AI** resumes. When the agent
+  deletes the file being followed, follow mode goes back to the file shown before, closes the tab
+  if it had opened it, and keeps following.
+- **The trace** (`packages/agent/src/trace.ts`, format version 3): each model answer verbatim, every
+  call and result, waits and attempt times, the raw finish reason, each step's reminder, the inputs
+  (the sandbox one included), the template and a fingerprint of the starting files. **Download
+  trace** saves it; `scriptFromTrace` replays it with no model; versions 1 and 2 are still read.
+  `sessionChanges` works out from it what the session changed, which the panel lists when a session
+  ends without `finish`. Recorded sessions kept as regressions are in
+  `packages/agent/fixtures/traces`.
 
 ### Sync and persistence lifecycle
 
@@ -577,7 +603,7 @@ refusal is final.
 | AI (unit and integration)                    | Prompt inputs, caps and version fingerprints; the stream protocol and the browser's parser against chunked and buffered streams; request state, key storage and consent; selection prompts, anchors against two real Y.Docs (edits elsewhere, inside, at the edges), edit proposals, terminal text, stack locations and error prompts; the route through the real server with a scripted model: statuses, limits and refunds, the shared minute limit, timeouts, disconnects, and a log canary across the success and failure paths                                                                                                                                                                                                              |
 | AI end-to-end (`e2e/ai.spec.ts`)             | Against a scripted model in the e2e server: the privacy notice, Explain streaming, Edit applied for both people and undone in one step, a stale edit refused, Stop, a refused own key, and the context menu still opening after a diff closes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | AI teammate (unit and integration)           | The core with a scripted model and a fake clock: the loop, every limit, Stop mid-answer and mid-tool, tool errors and crashes, unknown tools, invalid input, cut-off answers, nudges, busy and rate-limit retries, conversation fitting, the trace and its replay; the file tools over a real template project, paths, the presence rule and live typing against a collaborator typing alongside; undo against two replicas (a person's edits inside and after the agent's); the settle barrier and runtime tools against the real runner and a fake container; the server route with its caps, admission, minute share, fallback and pinning; a Gemini thought signature through the real Google provider; the log canary, the console included |
-| AI teammate end-to-end (`e2e/agent.spec.ts`) | Against a scripted agent: two windows see its avatar and its live-typed edit, the host follows it, undo keeps a collaborator's later edit after asking, Stop works part way, a busy model counts down and recovers, typing pauses following, and a downloaded trace never holds the own key                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| AI teammate end-to-end (`e2e/agent.spec.ts`) | Against a scripted agent: two windows see its avatar and its live-typed edit, the host follows it, and out of a file it deletes, undo keeps a collaborator's later edit after asking, Stop works part way and lists what it changed, a busy model counts down and recovers, typing pauses following, a downloaded trace never holds the own key, and (`runtime-unsupported.spec.ts`) on a page without isolation every run tool gives the one "sandbox isn't available" answer                                                                                                                                                                                                                                                                   |
 | WebContainer end-to-end (opt-in)             | `RUN_WEBCONTAINER_E2E=1`: Run, then the API console against the real server; my edit and a collaborator's reach it; the preview shows it; a crash recovers once fixed; a crash before the server listens shows as crashed; Explain with AI on a crash sends the whole ES module; the container's Node version; a scripted AI teammate adds a route, runs the project and gets 204 from DELETE /users/1. Needs the network, so not in CI                                                                                                                                                                                                                                                                                                          |
 
 ---
