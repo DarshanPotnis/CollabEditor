@@ -1,6 +1,7 @@
-import { PROMPTS } from '@collabcode/shared';
+import { PROMPTS, REPEATED_ERROR_REMINDER, stepsLeftReminder } from '@collabcode/shared';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from './fake-clock.js';
+import { AGENT_LIMITS } from './limits.js';
 import { runAgent } from './loop.js';
 import { answerWith, createScriptedModel, scriptFromTrace, toolCall } from './scripted-model.js';
 import { createStopSource } from './stop-source.js';
@@ -49,7 +50,7 @@ describe('the trace', () => {
 
     expect(trace).toMatchObject({
       format: TRACE_FORMAT,
-      version: 2,
+      version: 3,
       sessionId: 'session-7',
       startedAt: 1_700_000_000_000,
       project: { template: 'express-api', filesFingerprint: 'fp-123' },
@@ -85,7 +86,7 @@ describe('the trace', () => {
 
   it('refuses something that is not a trace of this version', async () => {
     const { result } = await recordedSession(createScriptedModel(script));
-    expect(parseTrace({ ...result.trace, version: 3 })).toBeNull();
+    expect(parseTrace({ ...result.trace, version: 4 })).toBeNull();
     expect(parseTrace({ ...result.trace, format: 'other' })).toBeNull();
     expect(parseTrace('not a trace')).toBeNull();
   });
@@ -95,7 +96,7 @@ describe('the trace', () => {
     const v1 = {
       ...result.trace,
       version: 1,
-      steps: result.trace.steps.map((step) => ({
+      steps: result.trace.steps.map(({ reminder: _unrecorded, ...step }) => ({
         ...step,
         waits: step.waits.map(({ reason, waitMs }) => ({ reason, waitMs })),
         model: step.model && {
@@ -109,9 +110,52 @@ describe('the trace', () => {
       })),
     };
     const upgraded = parseTrace(JSON.parse(JSON.stringify(v1)));
-    expect(upgraded?.version).toBe(2);
+    expect(upgraded?.version).toBe(3);
     expect(upgraded?.steps[0]?.waits).toEqual([{ reason: 'busy', waitMs: 5_000, attemptMs: null }]);
     expect(upgraded?.steps[0]?.model).toMatchObject({ durationMs: 137_000, rawFinishReason: null });
+    expect(upgraded?.steps.map((step) => step.reminder)).toEqual([null, null, null]);
+  });
+
+  it('reads a version 2 trace, which recorded no reminders', async () => {
+    const { result } = await recordedSession(createScriptedModel(script));
+    const v2 = {
+      ...result.trace,
+      version: 2,
+      steps: result.trace.steps.map(({ reminder: _unrecorded, ...step }) => step),
+    };
+    const upgraded = parseTrace(JSON.parse(JSON.stringify(v2)));
+    expect(upgraded).toEqual({
+      ...result.trace,
+      steps: result.trace.steps.map((step) => ({ ...step, reminder: null })),
+    });
+  });
+
+  it('records what each step was reminded of, and a page that could not run code', async () => {
+    const clock = createFakeClock();
+    const run = runAgent({
+      sessionId: 'session-8',
+      inputs: { goal: 'Fix it', files: ['index.js'], sandbox: 'unavailable' },
+      tier: 'ownKey',
+      limits: { ...AGENT_LIMITS.ownKey, maxSteps: 3 },
+      model: createScriptedModel([
+        answerWith([toolCall('read_file', { path: 'x.js' }, 'c1')]),
+        answerWith([toolCall('read_file', { path: 'x.js' }, 'c2')]),
+        answerWith([toolCall('finish', { summary: 'Could not find x.js.' }, 'c3')]),
+      ]),
+      tools: recordingHost(() => ({ ok: false, output: 'No file x.js.' })),
+      clock,
+      stop: createStopSource().signal,
+      project: { template: null, filesFingerprint: 'fp' },
+    });
+    const { trace } = await drive(clock, run);
+
+    expect(trace.inputs.sandbox).toBe('unavailable');
+    expect(trace.steps.map((step) => step.reminder)).toEqual([
+      stepsLeftReminder(3),
+      // The first refusal is not a repeat.
+      stepsLeftReminder(2),
+      `${REPEATED_ERROR_REMINDER}\n\n${stepsLeftReminder(1)}`,
+    ]);
   });
 
   it('replays with no model: the same calls, in the same order, to the same end', async () => {

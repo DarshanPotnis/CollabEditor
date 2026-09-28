@@ -10,10 +10,15 @@
  *   never a key: the core never has one (the ModelClient keeps it).
  *
  * The format is versioned and validated when read back, since a trace file is
- * as untrusted as any other input. Version 2 times each model attempt on its
- * own and keeps the provider's raw finish reason; a version 1 trace, which
- * counted retries and waits in a step's model time, is still read (upgraded,
- * with those fields null), so recorded sessions stay usable as fixtures.
+ * as untrusted as any other input. Older versions are still read, upgraded
+ * with what they did not record left null, so recorded sessions stay usable as
+ * fixtures:
+ *
+ * - version 3 records the reminder each step carried (agent-reminders.ts) and
+ *   whether the page could run code;
+ * - version 2 times each model attempt on its own and keeps the provider's raw
+ *   finish reason;
+ * - version 1 counted retries and waits in a step's model time.
  */
 import {
   AI_FINISH_REASONS,
@@ -28,7 +33,7 @@ import type { RetryWait } from './model-retry.js';
 import type { AgentInputs, ModelStep } from './types.js';
 
 export const TRACE_FORMAT = 'collabcode-agent-trace';
-export const TRACE_VERSION = 2;
+export const TRACE_VERSION = 3;
 
 export const agentOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('finished'), summary: z.string() }),
@@ -87,6 +92,8 @@ const traceStepSchema = z.object({
   toolCalls: z.array(traceToolCallSchema),
   /** The model answered without a tool call and was reminded to use one. */
   nudged: z.boolean(),
+  /** What the model was told after the conversation this step; null for nothing, or before version 3. */
+  reminder: z.string().nullable(),
 });
 export type TraceStep = z.infer<typeof traceStepSchema>;
 
@@ -109,6 +116,8 @@ export const agentTraceSchema = z.object({
     goal: z.string(),
     files: z.array(z.string()),
     moreFiles: z.number().int().nonnegative(),
+    /** Present when the page could not run code. */
+    sandbox: z.literal('unavailable').optional(),
   }),
   prompt: z.object({ id: z.enum(PROMPT_IDS), version: z.number().int().positive() }).nullable(),
   tier: z.enum(['shared', 'ownKey']),
@@ -125,32 +134,52 @@ export const agentTraceSchema = z.object({
 });
 export type AgentTrace = z.infer<typeof agentTraceSchema>;
 
+/** Version 2: no reminders. */
+const traceV2Schema = agentTraceSchema.extend({
+  version: z.literal(2),
+  steps: z.array(traceStepSchema.omit({ reminder: true })),
+});
+type TraceV2 = z.infer<typeof traceV2Schema>;
+
 /** Version 1: no attempt times or raw finish reasons, and waits counted in model time. */
-const traceV1Schema = agentTraceSchema.extend({
+const traceV1Schema = traceV2Schema.extend({
   version: z.literal(1),
   steps: z.array(
-    traceStepSchema.extend({
+    traceStepSchema.omit({ reminder: true }).extend({
       waits: z.array(traceWaitSchema.omit({ attemptMs: true })),
       model: traceModelSchema.omit({ rawFinishReason: true }).nullable(),
     }),
   ),
 });
 
-/** A trace read from a file, upgraded to this version, or null when it is not one. */
-export function parseTrace(raw: unknown): AgentTrace | null {
-  const current = agentTraceSchema.safeParse(raw);
-  if (current.success) return current.data;
-  const v1 = traceV1Schema.safeParse(raw);
-  if (!v1.success) return null;
+function fromV1(trace: z.infer<typeof traceV1Schema>): TraceV2 {
   return {
-    ...v1.data,
-    version: TRACE_VERSION,
-    steps: v1.data.steps.map((step) => ({
+    ...trace,
+    version: 2,
+    steps: trace.steps.map((step) => ({
       ...step,
       waits: step.waits.map((wait) => ({ ...wait, attemptMs: null })),
       model: step.model && { ...step.model, rawFinishReason: null },
     })),
   };
+}
+
+function fromV2(trace: TraceV2): AgentTrace {
+  return {
+    ...trace,
+    version: TRACE_VERSION,
+    steps: trace.steps.map((step) => ({ ...step, reminder: null })),
+  };
+}
+
+/** A trace read from a file, upgraded to this version, or null when it is not one. */
+export function parseTrace(raw: unknown): AgentTrace | null {
+  const current = agentTraceSchema.safeParse(raw);
+  if (current.success) return current.data;
+  const v2 = traceV2Schema.safeParse(raw);
+  if (v2.success) return fromV2(v2.data);
+  const v1 = traceV1Schema.safeParse(raw);
+  return v1.success ? fromV2(fromV1(v1.data)) : null;
 }
 
 export type TraceStart = {
@@ -163,7 +192,7 @@ export type TraceStart = {
 };
 
 export type TraceRecorder = {
-  startStep: (index: number, atMs: number) => void;
+  startStep: (index: number, atMs: number, reminder: string | null) => void;
   recordWait: (wait: RetryWait) => void;
   recordModel: (step: ModelStep, durationMs: number) => void;
   recordNudge: () => void;
@@ -184,6 +213,7 @@ export function createTraceRecorder(start: TraceStart): TraceRecorder {
       goal: start.inputs.goal,
       files: [...start.inputs.files],
       moreFiles: start.inputs.moreFiles ?? 0,
+      ...(start.inputs.sandbox && { sandbox: start.inputs.sandbox }),
     },
     prompt: null,
     tier: start.tier,
@@ -195,7 +225,7 @@ export function createTraceRecorder(start: TraceStart): TraceRecorder {
   const current = (): TraceStep | undefined => trace.steps.at(-1);
 
   return {
-    startStep(index, atMs) {
+    startStep(index, atMs, reminder) {
       trace.steps.push({
         index,
         startedAtMs: atMs,
@@ -203,6 +233,7 @@ export function createTraceRecorder(start: TraceStart): TraceRecorder {
         model: null,
         toolCalls: [],
         nudged: false,
+        reminder,
       });
     },
     recordWait(wait) {

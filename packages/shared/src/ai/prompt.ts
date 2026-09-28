@@ -13,6 +13,7 @@
  * every prompt, so a change without a bump fails the build.
  */
 import { z } from 'zod';
+import type { ConversationEntry } from './conversation.js';
 
 export type PromptMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -38,6 +39,15 @@ export type ToolUse = {
   toolChoice: 'auto' | 'required';
   /** Said to the model when it answered without calling a tool. */
   nudge: string;
+  /** Said after the conversation, on a step where the model must hear something. */
+  remind?: (context: ReminderContext) => string | null;
+};
+
+/** What a reminder is decided from: the conversation so far, and the steps left. */
+export type ReminderContext = {
+  conversation: readonly ConversationEntry[];
+  /** Steps the session may still take, the one being asked for included. */
+  stepsLeft: number;
 };
 
 export type PromptDefinition<Id extends string, Schema extends z.ZodType> = {

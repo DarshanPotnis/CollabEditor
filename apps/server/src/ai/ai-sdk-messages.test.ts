@@ -40,7 +40,14 @@ function agentToolUse(): ToolUse {
 }
 const toolUse = agentToolUse();
 
-function agentCall(conversation: ConversationEntry[], target?: ModelTarget): ModelCall {
+/** Plenty, so no reminder is due unless a test asks for one. */
+const MANY_STEPS = 15;
+
+function agentCall(
+  conversation: ConversationEntry[],
+  target?: ModelTarget,
+  stepsLeft = MANY_STEPS,
+): ModelCall {
   const prepared = agent.prepare({ goal: 'Add a DELETE route', files: ['routes/users.js'] });
   if (!prepared.ok) throw new Error(prepared.message);
   return {
@@ -48,7 +55,7 @@ function agentCall(conversation: ConversationEntry[], target?: ModelTarget): Mod
     system: prepared.prompt.system,
     messages: prepared.prompt.messages,
     maxOutputTokens: agent.maxOutputTokens,
-    toolUse: { use: toolUse, conversation },
+    toolUse: { use: toolUse, conversation, stepsLeft },
     signal: new AbortController().signal,
   };
 }
@@ -159,6 +166,56 @@ describe('an agent step', () => {
       }),
     ]);
     expect(prompt[5]?.content).toEqual([{ type: 'text', text: toolUse.nudge }]);
+  });
+
+  it("ends with the step's reminder, after the tool results, as the person's turn", async () => {
+    const refused = (id: string): ConversationEntry[] => [
+      {
+        role: 'assistant',
+        parts: [{ type: 'tool-call', toolCallId: id, toolName: 'run_command', input: {} }],
+      },
+      {
+        role: 'tool',
+        results: [{ toolCallId: id, toolName: 'run_command', isError: true, output: 'No.' }],
+      },
+    ];
+    const conversation = conversationSchema.parse([...refused('c1'), ...refused('c2')]);
+    const model = modelStreaming([toolCallPart('finish', { summary: 'ok' })]);
+    await finishOf(silentGateway(model).stream(agentCall(conversation, undefined, 1)));
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt.map((message) => message.role).slice(-2)).toEqual(['tool', 'user']);
+    expect(prompt.at(-1)?.content).toEqual([
+      { type: 'text', text: toolUse.remind?.({ conversation, stepsLeft: 1 }) },
+    ]);
+    expect(JSON.stringify(prompt.at(-1))).toContain('This is the last step of the session.');
+  });
+
+  it('joins the reminder to a nudge, so the person never has two turns in a row', async () => {
+    const conversation = conversationSchema.parse([
+      { role: 'assistant', parts: [{ type: 'text', text: 'Hmm.' }] },
+      { role: 'nudge' },
+    ]);
+    const model = modelStreaming([toolCallPart('finish', { summary: 'ok' })]);
+    await finishOf(silentGateway(model).stream(agentCall(conversation, undefined, 2)));
+
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'user']);
+    expect(prompt.at(-1)?.content).toEqual([
+      {
+        type: 'text',
+        text: `${toolUse.nudge}\n\n${String(toolUse.remind?.({ conversation, stepsLeft: 2 }))}`,
+      },
+    ]);
+  });
+
+  it('adds nothing on a step with nothing to remind', async () => {
+    const model = modelStreaming([toolCallPart('list_files', {})]);
+    await finishOf(silentGateway(model).stream(agentCall([])));
+    expect(model.doStreamCalls[0]?.prompt.map((message) => message.role)).toEqual([
+      'system',
+      'user',
+    ]);
   });
 
   it("ends with the model's whole message, providerOptions included", async () => {
@@ -291,5 +348,46 @@ describe('a Gemini thought signature', () => {
     const declared = JSON.stringify(gemini.bodies[0]);
     expect(declared).toContain('"functionDeclarations"');
     expect(declared).toContain('"mode":"ANY"');
+  });
+
+  it('carries a reminder to Gemini as a user turn after the function responses', async () => {
+    const gemini = fakeGemini([
+      [candidate([{ functionCall: { name: 'finish', args: { summary: 'Done.' } } }])],
+    ]);
+    const gateway = createAiSdkGateway({
+      logger: pino({ level: 'silent' }),
+      createModel: (target) =>
+        createGoogleGenerativeAI({ apiKey: target.apiKey, fetch: gemini.fetch })(target.model),
+    });
+    const conversation = conversationSchema.parse([
+      {
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-call',
+            toolCallId: 'c1',
+            toolName: 'run_project',
+            input: {},
+            providerOptions: { google: { thoughtSignature: 'U2ln' } },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        results: [{ toolCallId: 'c1', toolName: 'run_project', isError: true, output: 'No.' }],
+      },
+    ]);
+    await finishOf(gateway.stream(agentCall(conversation, undefined, 1)));
+
+    const body = gemini.bodies[0] as { contents: Array<{ role: string; parts: object[] }> };
+    expect(body.contents.map((content) => content.role)).toEqual(['user', 'model', 'user', 'user']);
+    expect(body.contents[2]?.parts).toEqual([
+      expect.objectContaining({
+        functionResponse: expect.objectContaining({ name: 'run_project' }) as unknown,
+      }),
+    ]);
+    expect(body.contents[3]?.parts).toEqual([
+      { text: toolUse.remind?.({ conversation, stepsLeft: 1 }) },
+    ]);
   });
 });

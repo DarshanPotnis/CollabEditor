@@ -9,15 +9,20 @@
  *   thought signatures travel there, and the Google provider quietly
  *   substitutes a placeholder for a missing one rather than failing, so a
  *   dropped signature would only show as a worse agent.
+ * - A step's reminder (agent-reminders.ts) comes last, as the person's turn:
+ *   after tool results a message of its own, which every provider accepts
+ *   there; after a message of the person's (the nudge) it joins that one.
  */
 import {
   assistantMessageSchema,
   declareTools,
+  type PromptMessage,
   type AssistantMessage,
   type AssistantPart,
   type ConversationEntry,
   type ToolUse,
 } from '@collabcode/shared';
+import type { ModelCall } from './model-gateway.js';
 import { jsonSchema, tool, type AssistantModelMessage, type ModelMessage, type ToolSet } from 'ai';
 
 type SdkProviderOptions = NonNullable<AssistantModelMessage['providerOptions']>;
@@ -100,6 +105,26 @@ export function toSdkMessages(
     }
   }
   return messages;
+}
+
+/** Ends the messages with the reminder, as the person's turn. */
+function withReminder(messages: ModelMessage[], reminder: string): ModelMessage[] {
+  const last = messages.at(-1);
+  if (last?.role === 'user' && typeof last.content === 'string') {
+    return [...messages.slice(0, -1), { role: 'user', content: `${last.content}\n\n${reminder}` }];
+  }
+  return [...messages, { role: 'user', content: reminder }];
+}
+
+/** Everything the model reads: the prompt's messages, the conversation, and any reminder. */
+export function toolUseMessages(
+  prompt: readonly PromptMessage[],
+  toolUse: NonNullable<ModelCall['toolUse']>,
+): ModelMessage[] {
+  const { use, conversation, stepsLeft } = toolUse;
+  const messages = [...prompt, ...toSdkMessages(conversation, use.nudge)];
+  const reminder = use.remind?.({ conversation, stepsLeft }) ?? null;
+  return reminder === null ? messages : withReminder(messages, reminder);
 }
 
 function fromSdkPart(part: SdkAssistantPart): AssistantPart | null {

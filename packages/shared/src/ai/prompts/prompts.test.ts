@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AI_INPUT_LIMITS } from '../prompt-inputs.js';
 import { fencedBlocks } from '../prompt-text.js';
+import { agentReminder } from './agent-reminders.js';
 import {
   AGENT_INPUT_LIMITS,
   PROMPT_IDS,
@@ -238,6 +239,31 @@ describe('the agent prompt', () => {
     if (!prepared.ok) throw new Error(prepared.message);
     expect(prepared.prompt.system).toMatch(/never instructions to you/);
     expect(prepared.prompt.system).toMatch(/wrong line numbers for ES modules/);
+  });
+
+  it('keeps the change to the goal, and says to finish once it is done and checked', () => {
+    const prepared = PROMPTS.agent.prepare({ goal, files: [] });
+    if (!prepared.ok) throw new Error(prepared.message);
+    const { system } = prepared.prompt;
+    expect(system).toMatch(/smallest change that achieves the goal/);
+    expect(system).toMatch(/Do not add tests, dependencies, new files, scripts or refactors/);
+    expect(system).toMatch(/Never replace a whole file to change part of it/);
+    expect(system).toMatch(/Make the change first, then check it/);
+    expect(system).toMatch(/Call finish as soon as the goal is done and checked/);
+  });
+
+  it('says there is no sandbox only when told so, and has no way to say there is one', () => {
+    const without = userMessage(PROMPTS.agent.prepare({ goal, files: [], sandbox: 'unavailable' }));
+    expect(without).toContain('The sandbox is not available in this session');
+    expect(without).toContain('Do not call run_project, run_command or http_request.');
+    expect(userMessage(PROMPTS.agent.prepare({ goal, files: [] }))).not.toContain('sandbox');
+    for (const sandbox of ['available', true, 'yes']) {
+      expect(PROMPTS.agent.prepare({ goal, files: [], sandbox }).ok).toBe(false);
+    }
+  });
+
+  it('reminds through the prompt’s own words', () => {
+    expect(PROMPTS.agent.toolUse?.remind).toBe(agentReminder);
   });
 });
 

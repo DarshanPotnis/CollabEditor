@@ -15,6 +15,7 @@
  * 15 steps without calling finish.
  */
 import { readFileSync } from 'node:fs';
+import { REPEATED_ERROR_REMINDER, stepsLeftReminder } from '@collabcode/shared';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from './fake-clock.js';
 import { runAgent } from './loop.js';
@@ -64,7 +65,8 @@ describe('the "model busy mid-session" trace', () => {
   const trace = fixture('model-busy-mid-session.json');
 
   it('is read, upgraded from format 1 with what it did not record left null', () => {
-    expect(trace.version).toBe(2);
+    expect(trace.version).toBe(3);
+    expect(trace.steps.every((step) => step.reminder === null)).toBe(true);
     expect(trace.steps).toHaveLength(6);
     expect(trace.steps.flatMap((step) => step.waits).every((wait) => wait.attemptMs === null)).toBe(
       true,
@@ -132,7 +134,8 @@ describe('the "runtime unavailable; agent loops" trace', () => {
 
   it('records the case: no sandbox, the same refusal six times, and no finish', () => {
     expect(trace).toMatchObject({
-      version: 2,
+      // Recorded in format 2, before steps kept their reminders.
+      version: 3,
       tier: 'shared',
       project: { template: 'express-api' },
       prompt: { id: 'agent', version: 2 },
@@ -179,5 +182,20 @@ describe('the "runtime unavailable; agent loops" trace', () => {
     expect(result.trace.steps.map((step) => step.waits.map((wait) => wait.reason))).toEqual(
       trace.steps.map((step) => step.waits.map((wait) => wait.reason)),
     );
+  });
+
+  it('would now have been reminded: of the repeated refusal from step 9, of its steps from 13', async () => {
+    const { result } = await replay(trace, false);
+    const repeated = REPEATED_ERROR_REMINDER;
+    expect(result.trace.steps.map((step) => step.reminder)).toEqual([
+      ...Array<null>(8).fill(null),
+      repeated,
+      null,
+      repeated,
+      null,
+      stepsLeftReminder(3),
+      `${repeated}\n\n${stepsLeftReminder(2)}`,
+      `${repeated}\n\n${stepsLeftReminder(1)}`,
+    ]);
   });
 });

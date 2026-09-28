@@ -13,6 +13,7 @@
  */
 import {
   AGENT_TOOLS,
+  agentReminder,
   conversationChars,
   toolCallsOf,
   type AgentTier,
@@ -139,7 +140,9 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     }
     conversation = fitted;
 
-    trace.startStep(step, clock.now() - startedAt);
+    // The server adds it to what the model reads; the same function says what it was.
+    const reminder = agentReminder({ conversation, stepsLeft: limits.maxSteps - step + 1 });
+    trace.startStep(step, clock.now() - startedAt, reminder);
     emit({ type: 'step-started', step, maxSteps: limits.maxSteps });
     let answer: ModelStep;
     let attemptMs: number;

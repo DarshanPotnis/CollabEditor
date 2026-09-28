@@ -17,7 +17,7 @@
  */
 import { streamText } from 'ai';
 import type { Logger } from '../lib/logger.js';
-import { fromSdkResponse, toSdkMessages, toSdkTools } from './ai-sdk-messages.js';
+import { fromSdkResponse, toSdkTools, toolUseMessages } from './ai-sdk-messages.js';
 import { createLanguageModel, type ModelInstance } from './language-models.js';
 import {
   ModelCallError,
@@ -58,9 +58,7 @@ export function createAiSdkGateway({
         const result = streamText({
           model: createModel(call.target),
           instructions: call.system,
-          messages: toolUse
-            ? [...call.messages, ...toSdkMessages(toolUse.conversation, toolUse.use.nudge)]
-            : call.messages,
+          messages: toolUse ? toolUseMessages(call.messages, toolUse) : call.messages,
           ...(toolUse && { tools: toSdkTools(toolUse.use), toolChoice: toolUse.use.toolChoice }),
           maxOutputTokens: call.maxOutputTokens,
           maxRetries: 0,

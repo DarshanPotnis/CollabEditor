@@ -85,7 +85,11 @@ describe('an agent step', () => {
     if (!expected.ok) throw new Error(expected.message);
     const [call] = gateway.calls;
     expect(call?.system).toBe(expected.prompt.system);
-    expect(call?.toolUse).toEqual({ use: PROMPTS.agent.toolUse, conversation: [] });
+    expect(call?.toolUse).toEqual({
+      use: PROMPTS.agent.toolUse,
+      conversation: [],
+      stepsLeft: AGENT_STEP_LIMITS.shared,
+    });
     expect(received.at(-1)).toEqual({
       type: 'finish',
       finishReason: 'tool-calls',
@@ -106,6 +110,24 @@ describe('an agent step', () => {
     await events(await step(server, agentBody(projectId, conversation)));
 
     expect(gateway.calls[0]?.toolUse?.conversation).toEqual(conversation);
+  });
+
+  it("counts the steps left from the conversation and the tier's cap, for the reminders", async () => {
+    const gateway = createFakeModelGateway(() => readUsers);
+    const { server, projectId } = await serve({ ai: { gateway } });
+    const taken = AGENT_STEP_LIMITS.shared - 3;
+
+    await events(await step(server, agentBody(projectId, conversationOf(taken))));
+    await events(
+      await step(server, agentBody(projectId, conversationOf(taken), { byok: ANTHROPIC }), {
+        key: OWN_KEY,
+      }),
+    );
+
+    expect(gateway.calls.map((call) => call.toolUse?.stepsLeft)).toEqual([
+      3,
+      AGENT_STEP_LIMITS.ownKey - taken,
+    ]);
   });
 
   it.each([

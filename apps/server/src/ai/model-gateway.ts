@@ -22,7 +22,12 @@ export type ModelCall = {
   messages: PromptMessage[];
   maxOutputTokens: number;
   /** For a prompt with tools: its tools, and the conversation after `messages`. */
-  toolUse?: { use: ToolUse; conversation: readonly ConversationEntry[] };
+  toolUse?: {
+    use: ToolUse;
+    conversation: readonly ConversationEntry[];
+    /** Steps the session may still take, this one included, which reminders go by. */
+    stepsLeft: number;
+  };
   /** Aborted when the caller goes away or the call takes too long. */
   signal: AbortSignal;
 };

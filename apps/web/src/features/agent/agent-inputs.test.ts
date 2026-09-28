@@ -11,7 +11,7 @@ function project(): Y.Doc {
 
 describe('agentInputs', () => {
   it('lists the files, sorted, with their contents for a small project', () => {
-    const inputs = agentInputs(project(), 'Add a route');
+    const inputs = agentInputs(project(), 'Add a route', true);
     expect(inputs).toMatchObject({
       goal: 'Add a route',
       files: ['index.js', 'package.json', 'routes/users.js'],
@@ -20,6 +20,16 @@ describe('agentInputs', () => {
     expect(inputs.contents?.map((file) => file.path)).toEqual(inputs.files);
     expect(inputs.contents?.[2]?.content).toContain('export const usersRouter = Router();');
     expect(PROMPTS.agent.prepare(inputs).ok).toBe(true);
+    expect(inputs).not.toHaveProperty('sandbox');
+  });
+
+  it('says so when the page cannot run code', () => {
+    const inputs = agentInputs(project(), 'Add a route', false);
+    expect(inputs.sandbox).toBe('unavailable');
+    const prepared = PROMPTS.agent.prepare(inputs);
+    expect(prepared.ok && prepared.prompt.messages[0]?.content).toContain(
+      'The sandbox is not available in this session',
+    );
   });
 
   it('sends only the list when the contents are over their budget', () => {
@@ -29,7 +39,7 @@ describe('agentInputs', () => {
       { parentId: null, name: 'data.json', content: 'x'.repeat(AGENT_INPUT_LIMITS.contentsChars) },
       { userId: 'a', userName: 'A' },
     );
-    const inputs = agentInputs(doc, 'Tidy up');
+    const inputs = agentInputs(doc, 'Tidy up', true);
     expect(inputs.files).toHaveLength(4);
     expect(inputs.contents).toEqual([]);
     expect(PROMPTS.agent.prepare(inputs).ok).toBe(true);
@@ -41,7 +51,7 @@ describe('agentInputs', () => {
     for (let index = 0; index < 300; index += 1) {
       createFile(doc, { parentId: null, name: `${'x'.repeat(90)}-${String(index)}.js` }, actor);
     }
-    const inputs = agentInputs(doc, 'Tidy up');
+    const inputs = agentInputs(doc, 'Tidy up', true);
     expect(inputs.files.join('\n').length).toBeLessThanOrEqual(AGENT_INPUT_LIMITS.fileListChars);
     expect((inputs.moreFiles ?? 0) + inputs.files.length).toBe(303);
     expect(PROMPTS.agent.prepare(inputs).ok).toBe(true);

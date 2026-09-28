@@ -3,13 +3,15 @@
  * by it, so a prompt whose text or inputs change must get a new version.
  *
  * Each prompt is built from fixed inputs and hashed together with its input
- * schema and, for the agent, its tools as the model sees them. If this fails after you edited a prompt on purpose, bump its
+ * schema and, for the agent, its tools as the model sees them and the
+ * reminders it can be sent. If this fails after you edited a prompt on purpose, bump its
  * `version` and paste the new fingerprint below.
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { declareTools } from '../prompt.js';
+import type { ConversationEntry } from '../conversation.js';
+import { declareTools, type ReminderContext } from '../prompt.js';
 import { PROMPTS, type PromptId } from './index.js';
 
 const SAMPLE_INPUTS: Record<PromptId, unknown> = {
@@ -50,14 +52,31 @@ const SAMPLE_INPUTS: Record<PromptId, unknown> = {
       { path: 'index.js', content: "app.use('/users', usersRouter);\n" },
       { path: 'routes/users.js', content: 'export const usersRouter = Router();\n' },
     ],
+    sandbox: 'unavailable',
   },
 };
+
+/** One refused call made twice, so every reminder's words are in the fingerprint. */
+const REFUSED: ConversationEntry[] = [
+  {
+    role: 'assistant',
+    parts: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'run_project', input: {} }],
+  },
+  {
+    role: 'tool',
+    results: [{ toolCallId: 'c1', toolName: 'run_project', isError: true, output: 'No.' }],
+  },
+];
+const REMINDER_SAMPLES: ReminderContext[] = [3, 2, 1].map((stepsLeft) => ({
+  conversation: [...REFUSED, ...REFUSED],
+  stepsLeft,
+}));
 
 const EXPECTED: Record<PromptId, { version: number; fingerprint: string }> = {
   'explain-selection': { version: 1, fingerprint: '3dda3dea2c866373' },
   'edit-selection': { version: 1, fingerprint: '12d771944879e728' },
   'explain-error': { version: 2, fingerprint: '4ed6c3d63748c820' },
-  agent: { version: 2, fingerprint: '972da11f183a93a2' },
+  agent: { version: 3, fingerprint: '6b33941995ac0561' },
 };
 
 function fingerprint(id: PromptId): string {
@@ -70,7 +89,11 @@ function fingerprint(id: PromptId): string {
     maxOutputTokens: prompt.maxOutputTokens,
     inputs: z.toJSONSchema(prompt.inputs, { io: 'input' }),
     // Absent for prompts without tools, so their fingerprints are unchanged.
-    toolUse: toolUse && { ...toolUse, tools: declareTools(toolUse.tools) },
+    toolUse: toolUse && {
+      ...toolUse,
+      tools: declareTools(toolUse.tools),
+      reminders: REMINDER_SAMPLES.map((context) => toolUse.remind?.(context) ?? null),
+    },
   });
   return createHash('sha256').update(material).digest('hex').slice(0, 16);
 }

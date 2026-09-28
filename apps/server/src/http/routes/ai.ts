@@ -21,7 +21,9 @@ import {
   PROMPTS,
   aiKeySchema,
   aiStepRequestSchema,
+  AGENT_STEP_LIMITS,
   conversationSteps,
+  type AgentTier,
   type ByokChoice,
 } from '@collabcode/shared';
 import express, { Router, type Request, type RequestHandler } from 'express';
@@ -181,9 +183,10 @@ export function createAiRouter({
       }
 
       const ipKey = clientKey(req, clientIpSource);
+      const tier: AgentTier = ownKey.key === null ? 'shared' : 'ownKey';
       if (toolUse) {
         const admission = admitAgentStep({
-          tier: ownKey.key === null ? 'shared' : 'ownKey',
+          tier,
           stepsTaken,
           remaining: () => daily.remaining({ ipKey, projectId }),
         });
@@ -249,7 +252,11 @@ export function createAiRouter({
           system: prepared.prompt.system,
           messages: prepared.prompt.messages,
           maxOutputTokens: prompt.maxOutputTokens,
-          toolUse: toolUse && { use: toolUse, conversation },
+          toolUse: toolUse && {
+            use: toolUse,
+            conversation,
+            stepsLeft: AGENT_STEP_LIMITS[tier] - stepsTaken,
+          },
         },
         targets,
         finish: { prompt: { id: prompt.id, version: prompt.version }, remainingToday },

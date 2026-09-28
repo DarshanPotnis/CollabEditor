@@ -42,6 +42,7 @@ import { AGENT_STATUS, toolStatus } from './agent-status.js';
 import { createAwarenessPresence } from './awareness-presence.js';
 import { waitForEditsOf } from './doc-sync.js';
 import { createHttpModelClient } from './http-model-client.js';
+import { isolationProblem, pageIsolation } from '../runtime/runtime-support.js';
 import { createRuntimeTools, type AgentRuntime } from './runtime-tools.js';
 import { systemClock } from './system-clock.js';
 
@@ -104,6 +105,8 @@ export async function startAgentSession(
   signal: AbortSignal,
 ): Promise<AgentSession> {
   const sessionId = createNodeId();
+  // Known before the first step, so the model is told at once rather than finding out.
+  const sandboxProblem = isolationProblem(pageIsolation());
   const peer = await connectAgentPeer({ url: deps.collabUrl, projectId: deps.projectId, signal });
   const presence = publishAgentPresence({
     awareness: peer.awareness,
@@ -132,6 +135,7 @@ export async function startAgentSession(
       docSynced: (waitSignal) => waitForEditsOf(peer.doc, deps.hostDoc, waitSignal),
       sendRequest,
       onNotice: deps.onNotice,
+      sandboxProblem,
       now: Date.now,
     }),
   );
@@ -159,7 +163,7 @@ export async function startAgentSession(
   const run = async (): Promise<AgentRunResult> => {
     const result = await runAgent({
       sessionId,
-      inputs: agentInputs(peer.doc, goal),
+      inputs: agentInputs(peer.doc, goal, sandboxProblem === null),
       tier,
       model: createHttpModelClient({
         apiUrl: deps.apiUrl,

@@ -9,6 +9,12 @@ import { explainErrorPrompt } from './explain-error.js';
 import { explainSelectionPrompt } from './explain-selection.js';
 
 export { AGENT_INPUT_LIMITS } from './agent.js';
+export {
+  REMIND_STEPS_LEFT,
+  REPEATED_ERROR_REMINDER,
+  agentReminder,
+  stepsLeftReminder,
+} from './agent-reminders.js';
 export { extractReplacement, matchTrailingNewline, type Replacement } from './edit-selection.js';
 export { RUN_OUTCOMES, type RunOutcome } from './explain-error.js';
 

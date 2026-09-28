@@ -66,6 +66,8 @@ export type RuntimeToolsDeps = {
   sendRequest: (container: Container, port: number, request: ApiRequest) => Promise<ApiResult>;
   /** Something the person should see in the panel, such as sync being delayed. */
   onNotice: (message: string) => void;
+  /** Why this page cannot run code, known before the session starts; null when it can. */
+  sandboxProblem: string | null;
   now: () => number;
 };
 
@@ -97,6 +99,7 @@ export function createRuntimeTools({
   docSynced,
   sendRequest,
   onNotice,
+  sandboxProblem,
   now,
 }: RuntimeToolsDeps): RuntimeTools {
   const tail = (lines: number): string => {
@@ -145,8 +148,8 @@ export function createRuntimeTools({
     }
   };
 
-  /** Why the sandbox could not start, once it has failed to; it is not tried again. */
-  let unavailable: string | null = null;
+  /** Why the sandbox cannot start, once that is known; it is not tried again. */
+  let unavailable = sandboxProblem;
 
   const runProject = async (signal: AbortSignal): Promise<ToolOutcome> => {
     const ready = await barrier(signal);

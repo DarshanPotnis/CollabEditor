@@ -154,7 +154,7 @@ export const AGENT_TOOLS = {
   },
   run_command: {
     description:
-      'Run node or npm in the project folder, inside the sandbox, such as node --test or npm test. It is stopped after 60 seconds. Returns its exit code and output.',
+      "Run node or npm in the project folder, inside the sandbox, when the goal needs it, for example to run the project's existing tests. It is stopped after 60 seconds. Returns its exit code and output.",
     input: z.object({
       command: z.enum(AGENT_COMMANDS),
       args: z

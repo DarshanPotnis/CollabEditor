@@ -31,7 +31,7 @@ test('without cross-origin isolation, Run is off, the banner explains, and editi
   expect(await readEditorText(page)).toContain('// still editable');
 });
 
-test('the AI teammate is told once that there is no sandbox, and every run tool says the same', async ({
+test('the AI teammate is told there is no sandbox, and every run tool says the same', async ({
   page,
 }) => {
   await page.addInitScript(notIsolated);
@@ -39,11 +39,12 @@ test('the AI teammate is told once that there is no sandbox, and every run tool 
   // Scripted: edit, run_project, http_request, then finish with what the request answered.
   await startAgent(page, 'Add DELETE e2e-run-agent');
   await expect(page.getByText('DELETE /users/1 answered nothing.')).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Run status' })).toContainText(
-    'loaded without the headers that turn it on',
-  );
 
-  const calls = traceToolCalls(await downloadTrace(page));
+  // It knew before its first step, so nothing tried to boot.
+  const text = await downloadTrace(page);
+  expect((JSON.parse(text) as { inputs: { sandbox?: string } }).inputs.sandbox).toBe('unavailable');
+  await expect(page.getByRole('status', { name: 'Run status' })).not.toContainText('failed');
+  const calls = traceToolCalls(text);
   const run = calls.find((call) => call.toolName === 'run_project');
   const request = calls.find((call) => call.toolName === 'http_request');
   expect(run).toMatchObject({ isError: true });

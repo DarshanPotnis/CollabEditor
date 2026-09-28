@@ -39,7 +39,8 @@ function response(status: number, body: string): ApiResult {
 function setup({
   docSynced = true,
   bootFails = null,
-}: { docSynced?: boolean; bootFails?: string | null } = {}) {
+  sandboxProblem = null,
+}: { docSynced?: boolean; bootFails?: string | null; sandboxProblem?: string | null } = {}) {
   const doc = new Y.Doc();
   initProjectDoc(doc, { name: 'P', template: 'express-api' });
   const container = new FakeContainer();
@@ -73,6 +74,7 @@ function setup({
       return Promise.resolve(reply);
     },
     onNotice: (message) => notices.push(message),
+    sandboxProblem,
     now: () => Date.now(),
   });
   const stop = createStopSource();
@@ -348,6 +350,16 @@ describe('a sandbox that cannot start', () => {
     expect(requests).toEqual([]);
     // Reading the terminal and stopping still answer as usual.
     expect((await call({ name: 'stop_project', input: {} })).ok).toBe(true);
+  });
+
+  it('is unavailable from the start when the page is known not to run code, never booting', async () => {
+    const { call, boots, runner } = setup({ sandboxProblem: REASON });
+    expect(await call({ name: 'run_project', input: {} })).toEqual({
+      ok: false,
+      output: sandboxUnavailable(REASON),
+    });
+    expect(boots()).toBe(0);
+    expect(runner.state().phase).toBe('idle');
   });
 
   it('is not what a failed install is: the sandbox is there, so commands still run', async () => {
