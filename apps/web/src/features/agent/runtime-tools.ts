@@ -9,6 +9,11 @@
  * have them and have restarted on them (the runner's settle). Both waits are
  * bounded; when one runs out the model is told that sync is delayed, and the
  * person sees a notice, instead of the agent testing old code.
+ *
+ * A sandbox that could not start stays unavailable for the rest of the
+ * session: from then on run_project, run_command and http_request give one
+ * fixed answer at once, so the model is not led into retrying something that
+ * cannot work (a recorded session called run_command six times after it).
  */
 import type { RuntimeToolCall, RuntimeTools, StopSignal, ToolOutcome } from '@collabcode/agent';
 import type { AgentToolInput } from '@collabcode/shared';
@@ -40,6 +45,15 @@ const MAX_HEADER_LINES = 20;
 export const SYNC_DELAYED =
   'Sync is delayed: your latest edits have not reached the running project yet. Wait a few seconds and try again. If it keeps happening, the connection may be down.';
 
+/** What every run tool answers once the sandbox could not start: the same words each time. */
+export function sandboxUnavailable(reason: string): string {
+  return [
+    `The sandbox isn't available in this session, so code can't run here. The reason: ${reason}`,
+    'Do not call run_project, run_command or http_request again in this session: they will give this same answer.',
+    'Finish the change without running it, then call finish, and say in your summary that the change is not tested and that the person can click Run to check it.',
+  ].join('\n');
+}
+
 export type AgentRuntime = Pick<
   Runner,
   'state' | 'run' | 'stop' | 'settle' | 'whenState' | 'waitForServer' | 'container'
@@ -54,6 +68,13 @@ export type RuntimeToolsDeps = {
   onNotice: (message: string) => void;
   now: () => number;
 };
+
+/** The tools that need a sandbox to run in. */
+const SANDBOX_TOOLS: ReadonlySet<RuntimeToolCall['name']> = new Set([
+  'run_project',
+  'run_command',
+  'http_request',
+]);
 
 const ok = (output: string): ToolOutcome => ({ ok: true, output });
 const refuse = (output: string): ToolOutcome => ({ ok: false, output });
@@ -124,12 +145,23 @@ export function createRuntimeTools({
     }
   };
 
+  /** Why the sandbox could not start, once it has failed to; it is not tried again. */
+  let unavailable: string | null = null;
+
   const runProject = async (signal: AbortSignal): Promise<ToolOutcome> => {
     const ready = await barrier(signal);
     if (!ready.ok) return ready.outcome;
     void runtime.run();
     const settled = await runtime.whenState(isSettled, RUN_WAIT_MS, signal);
     if (signal.aborted) return STOPPED;
+    // Failed with no container: it never booted, so nothing will run in this session.
+    if (settled?.phase === 'failed' && runtime.container() === null) {
+      unavailable = settled.message;
+      onNotice(
+        `The project can't run here, so the AI teammate can't test its change. ${unavailable}`,
+      );
+      return refuse(sandboxUnavailable(unavailable));
+    }
     if (settled === null) {
       return refuse(
         withOutput(
@@ -275,6 +307,9 @@ export function createRuntimeTools({
 
   return {
     async execute(call: RuntimeToolCall, stop: StopSignal) {
+      if (unavailable !== null && SANDBOX_TOOLS.has(call.name)) {
+        return refuse(sandboxUnavailable(unavailable));
+      }
       const { signal, dispose } = abortSignalFor(stop);
       try {
         switch (call.name) {

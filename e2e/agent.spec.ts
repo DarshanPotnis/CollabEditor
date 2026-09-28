@@ -5,8 +5,8 @@
  * no WebContainer: the file tools are what these tests exercise; running the
  * project is covered by the opt-in WebContainer suite and the manual test.
  */
-import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
+import { downloadTrace, startAgent } from './agent-support.js';
 import { openPair, readEditorText, treeItem, treeRow, typeAtEnd } from './support.js';
 
 /** What the scripted agent adds. */
@@ -19,13 +19,6 @@ async function openUsersRoute(page: Page): Promise<void> {
   await treeRow(page, 'routes').click();
   await treeItem(page, 'users.js').click();
   await expect.poll(() => readEditorText(page)).toContain('usersRouter');
-}
-
-async function startAgent(page: Page, goal: string): Promise<void> {
-  await page.getByLabel('What should the AI teammate do?').fill(goal);
-  await page.getByRole('button', { name: 'Start' }).click();
-  await expect(page.getByRole('heading', { name: 'Before you use AI' })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue' }).click();
 }
 
 test("the AI teammate works as a peer, and undo keeps a collaborator's edit", async ({
@@ -138,10 +131,7 @@ test('Download trace saves the whole session, and never the own key', async ({ b
 
   await startAgent(a, 'Add a DELETE /users/:id endpoint');
   await expect(a.getByText(SUMMARY)).toBeVisible();
-  const download = a.waitForEvent('download');
-  await a.getByRole('button', { name: 'Download trace' }).click();
-  const file = await (await download).path();
-  const text = await readFile(file, 'utf8');
+  const text = await downloadTrace(a);
 
   expect(text).not.toContain(ownKey);
   const trace = JSON.parse(text) as {

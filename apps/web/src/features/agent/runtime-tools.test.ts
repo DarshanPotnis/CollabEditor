@@ -11,6 +11,7 @@ import {
   OUTPUT_GRACE_MS,
   SYNC_DELAYED,
   createRuntimeTools,
+  sandboxUnavailable,
 } from './runtime-tools.js';
 
 const runners: Runner[] = [];
@@ -35,14 +36,21 @@ function response(status: number, body: string): ApiResult {
   };
 }
 
-function setup({ docSynced = true }: { docSynced?: boolean } = {}) {
+function setup({
+  docSynced = true,
+  bootFails = null,
+}: { docSynced?: boolean; bootFails?: string | null } = {}) {
   const doc = new Y.Doc();
   initProjectDoc(doc, { name: 'P', template: 'express-api' });
   const container = new FakeContainer();
   const output = createOutputBuffer();
+  let boots = 0;
   const runner = createRunner({
     doc,
-    container: () => Promise.resolve(container),
+    container: () => {
+      boots += 1;
+      return bootFails === null ? Promise.resolve(container) : Promise.reject(new Error(bootFails));
+    },
     output,
     onState: () => undefined,
     onDependenciesChanged: () => undefined,
@@ -82,6 +90,7 @@ function setup({ docSynced = true }: { docSynced?: boolean } = {}) {
   return {
     container,
     runner,
+    boots: () => boots,
     notices,
     requests,
     stop,
@@ -311,5 +320,45 @@ describe('run_command', () => {
     expect(
       (await call({ name: 'run_command', input: { command: 'node', args: ['-v'] } })).output,
     ).toMatch(/^Start the project with run_project first/);
+  });
+});
+
+describe('a sandbox that cannot start', () => {
+  const REASON = 'Running code needs cross-origin isolation. You can still edit.';
+
+  it('tells the model it is unavailable for the session, and the person why', async () => {
+    const { call, notices } = setup({ bootFails: REASON });
+    const result = await call({ name: 'run_project', input: {} });
+    expect(result).toEqual({ ok: false, output: sandboxUnavailable(REASON) });
+    expect(result.output).toContain('Do not call run_project, run_command or http_request again');
+    expect(result.output).toContain('click Run');
+    expect(notices).toEqual([expect.stringContaining(REASON)]);
+  });
+
+  it('gives every run tool the same answer from then on, without trying to boot again', async () => {
+    const { call, boots, requests } = setup({ bootFails: REASON });
+    await call({ name: 'run_project', input: {} });
+    const answers = [
+      await call({ name: 'run_command', input: { command: 'npm', args: ['test'] } }),
+      await call({ name: 'http_request', input: { method: 'DELETE', path: '/users/1' } }),
+      await call({ name: 'run_project', input: {} }),
+    ];
+    expect(answers).toEqual(Array(3).fill({ ok: false, output: sandboxUnavailable(REASON) }));
+    expect(boots()).toBe(1);
+    expect(requests).toEqual([]);
+    // Reading the terminal and stopping still answer as usual.
+    expect((await call({ name: 'stop_project', input: {} })).ok).toBe(true);
+  });
+
+  it('is not what a failed install is: the sandbox is there, so commands still run', async () => {
+    const { call, container } = setup();
+    container.installExitCode = 1;
+    const run = await call({ name: 'run_project', input: {} });
+    expect(run.output).toMatch(/^The run failed/);
+    const command = call({ name: 'run_command', input: { command: 'node', args: ['-v'] } });
+    await vi.advanceTimersByTimeAsync(10);
+    container.last('node -v').finish(0);
+    await vi.advanceTimersByTimeAsync(OUTPUT_GRACE_MS);
+    expect((await command).output).toMatch(/^node -v exited with code 0/);
   });
 });
