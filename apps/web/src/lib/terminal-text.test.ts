@@ -14,6 +14,11 @@ describe('plainTerminalText', () => {
     );
   });
 
+  it('reads a move to the first column as a redraw, the way npm spins', () => {
+    const spinner = '\x1b[1G\x1b[0K⠙\x1b[1G\x1b[0K⠹\x1b[G\x1b[0Kadded 64 packages';
+    expect(plainTerminalText(spinner)).toBe('added 64 packages');
+  });
+
   it('removes the screen clear node --watch sends before a restart', () => {
     expect(plainTerminalText("\x1bc\x1b[32mRestarting 'index.js'\x1b[39m")).toBe(
       "Restarting 'index.js'",

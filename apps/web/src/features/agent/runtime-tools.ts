@@ -12,7 +12,6 @@
  */
 import type { RuntimeToolCall, RuntimeTools, StopSignal, ToolOutcome } from '@collabcode/agent';
 import type { AgentToolInput } from '@collabcode/shared';
-import { plainTerminalText } from '../../lib/terminal-text.js';
 import type { ApiRequest, ApiResult } from '../runtime/api-console/request-codec.js';
 import { formatBody } from '../runtime/api-console/response-format.js';
 import type { Container } from '../runtime/container.js';
@@ -25,6 +24,7 @@ import {
 } from '../runtime/process-runner.js';
 import type { RunState } from '../runtime/run-state.js';
 import { abortSignalFor } from './abort-signal.js';
+import { agentTerminalText } from './agent-terminal-text.js';
 
 /** Booting, installing and starting the project may take this long. */
 export const RUN_WAIT_MS = 120_000;
@@ -79,7 +79,7 @@ export function createRuntimeTools({
   now,
 }: RuntimeToolsDeps): RuntimeTools {
   const tail = (lines: number): string => {
-    const text = plainTerminalText(runtime.output.recent(100_000)).replace(/\s+$/, '');
+    const text = agentTerminalText(runtime.output.recent(100_000));
     return text === '' ? '' : text.split('\n').slice(-lines).join('\n');
   };
   const withOutput = (message: string, lines = TAIL_LINES): string => {
@@ -261,7 +261,7 @@ export function createRuntimeTools({
     clearTimeout(timer);
     piping.abort();
     const seconds = ((now() - started) / 1000).toFixed(1);
-    const printed = plainTerminalText(text).replace(/\s+$/, '').split('\n').slice(-150).join('\n');
+    const printed = agentTerminalText(text).split('\n').slice(-150).join('\n');
     const shown = printed === '' ? '(no output)' : printed;
     if (outcome === 'stopped') return STOPPED;
     if (outcome === 'timeout') {

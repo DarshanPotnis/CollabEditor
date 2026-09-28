@@ -18,6 +18,13 @@ const ESCAPES = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[
 // eslint-disable-next-line no-control-regex -- as above
 const CONTROLS = /[\x00-\x08\x0b-\x1f\x7f]/g;
 
+/**
+ * Moving the cursor to the first column (CSI G, 0G or 1G), which is how npm's
+ * spinner redraws its line instead of with a carriage return.
+ */
+// eslint-disable-next-line no-control-regex -- as above
+const TO_FIRST_COLUMN = /\x1b\[[01]?G/g;
+
 /** What a line finally showed: text before a `\r` was drawn over. */
 function lastDrawn(line: string): string {
   const carriageReturn = line.lastIndexOf('\r');
@@ -26,6 +33,7 @@ function lastDrawn(line: string): string {
 
 export function plainTerminalText(raw: string): string {
   return raw
+    .replace(TO_FIRST_COLUMN, '\r')
     .replace(ESCAPES, '')
     .replace(/\r\n/g, '\n')
     .split('\n')

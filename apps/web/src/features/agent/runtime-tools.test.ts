@@ -107,6 +107,21 @@ describe('run_project', () => {
     expect(output).toContain('API listening on http://localhost:3000');
   });
 
+  it('gives the model the output without npm-style spinner frames', async () => {
+    const { call, container } = setup();
+    const result = call({ name: 'run_project', input: {} });
+    await vi.advanceTimersByTimeAsync(10);
+    container
+      .last('npm run dev')
+      .print(
+        '\x1b[1G\x1b[0K⠙\x1b[1G\x1b[0K⠹\x1b[1G\x1b[0KAPI listening on http://localhost:3000\r\n⠸',
+      );
+    container.emitPort(3000, 'open');
+    const { output } = await result;
+    expect(output).toContain('API listening on http://localhost:3000');
+    expect(output).not.toMatch(/[\u2800-\u28ff]/);
+  });
+
   it('reports a crash with the stack trace, as plain text', async () => {
     const { call, container } = setup();
     const result = call({ name: 'run_project', input: {} });
