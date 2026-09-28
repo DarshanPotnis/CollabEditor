@@ -74,15 +74,64 @@ test('a crash restarts by itself once the file is fixed', async ({ page }) => {
   await page.getByRole('treeitem', { name: 'users.js' }).click();
 
   await replaceEditorText(page, 'this is not javascript');
-  await expect(page.getByRole('status', { name: 'Run status' })).toContainText(/stopped|exited/, {
-    timeout: 30_000,
-  });
+  await expect(page.getByRole('status', { name: 'Run status' })).toContainText(
+    /crashed|stopped|exited/,
+    { timeout: 30_000 },
+  );
 
   await replaceEditorText(page, route('fixed'));
   await expect(page.getByRole('status', { name: 'Run status' })).toContainText('Server running', {
     timeout: 60_000,
   });
   expect(await sendFromApiConsole(page, 'GET', '/users')).toContain('fixed');
+});
+
+test('Explain with AI explains a crash, sending the whole ES module', async ({ page }) => {
+  await createProject(page, 'Express API');
+  await runProject(page);
+  await page.getByRole('treeitem', { name: 'routes' }).click();
+  await page.getByRole('treeitem', { name: 'users.js' }).click();
+  await replaceEditorText(
+    page,
+    "import { Router } from 'express';\nconst settings = undefined;\nexport const usersRouter = Router(settings.options);",
+  );
+  await expect(page.getByRole('status', { name: 'Run status' })).toContainText('crashed', {
+    timeout: 30_000,
+  });
+
+  const sent = page.waitForRequest((request) => request.url().endsWith('/api/ai/step'));
+  await page.getByRole('button', { name: 'Explain with AI' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByText('This code is explained by the fake model.')).toBeVisible();
+
+  // WebContainer shifts ES module line numbers, so the file goes whole, with no crash line.
+  const body = (await sent).postDataJSON() as {
+    promptId: string;
+    inputs: { terminalOutput: string; excerpt?: { path: string; focusLine?: number } };
+  };
+  expect(body.promptId).toBe('explain-error');
+  expect(body.inputs.terminalOutput).toContain('TypeError');
+  expect(body.inputs.excerpt).toMatchObject({ path: 'routes/users.js' });
+  expect(body.inputs.excerpt).not.toHaveProperty('focusLine');
+});
+
+test('a program that crashes before it ever listens shows as crashed', async ({ page }) => {
+  await createProject(page, 'Express API');
+  await replaceEditorText(page, 'const settings = undefined;\nconsole.log(settings.port);');
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Run status' })).toContainText(
+    'The program crashed',
+    { timeout: 120_000 },
+  );
+  await expect(page.getByRole('button', { name: 'Explain with AI' })).toBeVisible();
+
+  await replaceEditorText(
+    page,
+    "import express from 'express';\nexpress().listen(3000, () => console.log('up'));",
+  );
+  await expect(page.getByRole('status', { name: 'Run status' })).toContainText('Server running', {
+    timeout: 60_000,
+  });
 });
 
 test('the container runs Node 22 or later, as the templates declare', async ({ page }) => {

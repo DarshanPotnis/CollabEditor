@@ -11,6 +11,7 @@ import { createMemoryProjectsRepo } from '../db/memory-projects-repo.js';
 import { createApp } from '../http/app.js';
 import { createCollabServer } from '../collab/server.js';
 import { createFakeModelGateway } from './fake-model-gateway.js';
+import { e2eModelReply } from './e2e-model-script.js';
 
 const PORT = Number(process.env['E2E_PORT'] ?? 8081);
 const HOST = '127.0.0.1';
@@ -34,9 +35,9 @@ async function main(): Promise<void> {
     // The suite creates many projects from one IP; the production limit would
     // start refusing them part way through a run.
     projectCreateLimitPerMinute: 10_000,
-    // No real model and no real key: scripted answers, never a network call.
+    // No real model and no real key: scripted answers (e2e-model-script.ts), never a network call.
     ai: {
-      gateway: createFakeModelGateway(),
+      gateway: createFakeModelGateway(e2eModelReply),
       sharedTier: { model: 'gemini-3.5-flash-lite', apiKey: 'e2e-shared-key' },
       limits: { global: 10_000, perIp: 10_000, perProject: 10_000 },
       sharedTierPerMinute: 10_000,
