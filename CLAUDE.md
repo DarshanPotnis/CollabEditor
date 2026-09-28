@@ -95,6 +95,8 @@ Run from the repository root.
 Notes:
 
 - `TEST_DATABASE_URL` enables the Postgres-backed specs; without it they skip.
-- A machine-global `DATABASE_URL` shadows `apps/server/.env`, because Node's `--env-file` does
-  not override variables that are already set. Prefix with `env -u DATABASE_URL` when that
-  happens.
+- `npm run dev` and `npm run migrate` preload `apps/server/src/load-local-env.ts`, so
+  `apps/server/.env` wins over variables already in the environment (Node's `--env-file` never
+  overrides them, and a shell profile here exports a `DATABASE_URL` for another project). It
+  logs the names of the variables it replaced. `npm start` keeps the environment's values, as
+  production should.
