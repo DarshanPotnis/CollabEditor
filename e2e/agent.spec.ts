@@ -70,6 +70,17 @@ test("the AI teammate works as a peer, and undo keeps a collaborator's edit", as
   await expect(a.getByLabel('What should the AI teammate do?')).toBeVisible();
 });
 
+test('a busy model shows a countdown to the retry, then the session goes on', async ({
+  browser,
+}) => {
+  const { a } = await openPair(browser, 'Express API');
+  await startAgent(a, `Add a DELETE route e2e-busy-agent ${String(Date.now())}`);
+  const status = a.getByRole('status').filter({ hasText: /Gemini is busy, retrying/ });
+  await expect(status).toBeVisible();
+  await expect(status).toHaveText(/^Gemini is busy, retrying (in \d s|…)$/);
+  await expect(a.getByText(SUMMARY)).toBeVisible({ timeout: 20_000 });
+});
+
 test('Stop ends a session part way through', async ({ browser }) => {
   const { a } = await openPair(browser, 'Express API');
   await startAgent(a, `Think for a long time ${SLOW_AGENT}`);

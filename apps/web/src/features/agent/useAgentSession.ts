@@ -92,7 +92,7 @@ export function useAgentSession({
       const ownKey = loadOwnKey(browserSessionStorage());
       const onEvent = (event: AgentEvent): void => {
         if (event.type === 'crashed') reportInternalError(event.error);
-        dispatch({ type: 'agent', event });
+        dispatch({ type: 'agent', event, at: Date.now() });
       };
       startAgentSession(
         goal,

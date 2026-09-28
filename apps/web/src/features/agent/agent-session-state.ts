@@ -28,7 +28,8 @@ export type UndoView =
   | { kind: 'confirm'; changedPaths: string[] }
   | { kind: 'undone'; summary: string; skipped: string[] };
 
-export type Waiting = { reason: 'busy' | 'rate-limited'; waitMs: number };
+/** A wait before the next try, and when (epoch ms) that try goes out. */
+export type Waiting = { reason: 'busy' | 'rate-limited'; until: number };
 
 type Common = {
   goal: string;
@@ -57,7 +58,8 @@ export type AgentSessionEvent =
   | { type: 'consented' }
   | { type: 'started'; maxSteps: number; modelName: string }
   | { type: 'start-failed'; message: string }
-  | { type: 'agent'; event: AgentEvent }
+  /** `at` is when it arrived, which a wait's countdown starts from. */
+  | { type: 'agent'; event: AgentEvent; at: number }
   | { type: 'notice'; message: string }
   | { type: 'nothing-to-undo' }
   | { type: 'undo-asked'; changedPaths: string[] }
@@ -78,6 +80,7 @@ function appendText(log: LogEntry[], step: number, delta: string): LogEntry[] {
 function running(
   state: Extract<AgentSessionState, { phase: 'running' }>,
   event: AgentEvent,
+  at: number,
 ): AgentSessionState {
   switch (event.type) {
     case 'step-started':
@@ -85,7 +88,7 @@ function running(
     case 'text':
       return { ...state, log: appendText(state.log, event.step, event.delta) };
     case 'waiting':
-      return { ...state, waiting: { reason: event.reason, waitMs: event.waitMs } };
+      return { ...state, waiting: { reason: event.reason, until: at + event.waitMs } };
     case 'model-answered':
       return { ...state, waiting: null, remainingToday: event.remainingToday };
     case 'tool-started':
@@ -166,7 +169,7 @@ export function agentSessionReducer(
         ? { phase: 'start-failed', goal: state.goal, message: event.message }
         : state;
     case 'agent':
-      return state.phase === 'running' ? running(state, event.event) : state;
+      return state.phase === 'running' ? running(state, event.event, event.at) : state;
     case 'notice':
       return state.phase === 'running' || state.phase === 'ended'
         ? { ...state, notice: event.message }
@@ -190,13 +193,25 @@ export function agentSessionReducer(
   }
 }
 
-/** One line for the panel: what the session is doing now. */
-export function runningStatus(state: Extract<AgentSessionState, { phase: 'running' }>): string {
+/**
+ * One line for the panel: what the session is doing now. While a busy model's
+ * retry is due it counts down; once the retry has gone out it says so, until
+ * the model answers.
+ */
+export function runningStatus(
+  state: Extract<AgentSessionState, { phase: 'running' }>,
+  now: number,
+): string {
   if (state.waiting) {
-    const seconds = Math.max(1, Math.round(state.waiting.waitMs / 1000));
-    return state.waiting.reason === 'busy'
-      ? `${state.modelName} is busy, retrying in ${String(seconds)} s`
-      : `Waiting ${String(seconds)} s for the free AI tier`;
+    const seconds = Math.ceil((state.waiting.until - now) / 1000);
+    if (state.waiting.reason === 'busy') {
+      return seconds > 0
+        ? `${state.modelName} is busy, retrying in ${String(seconds)} s`
+        : `${state.modelName} is busy, retrying…`;
+    }
+    return seconds > 0
+      ? `Waiting ${String(seconds)} s for the free AI tier`
+      : 'Trying the free AI tier again…';
   }
   const lastTool = state.log.findLast((entry) => entry.kind === 'tool');
   const doing =

@@ -30,6 +30,11 @@ const E2E_SLOW_AGENT = 'e2e-slow-agent';
 const E2E_AGENT_ROUTE = "usersRouter.delete('/:id', (req, res) => {";
 const USERS_ROUTER = 'export const usersRouter = Router();\n';
 
+/** An AI teammate goal containing this finds the model busy once, before its first step. */
+const E2E_BUSY_AGENT = 'e2e-busy-agent';
+/** Goals that have had their busy answer, so the retry succeeds. */
+const busyOnce = new Set<string>();
+
 /** An AI teammate goal containing this edits, runs the project and calls it. */
 const E2E_RUN_AGENT = 'e2e-run-agent';
 const DELETE_ROUTE = [
@@ -87,6 +92,10 @@ function agentReply(call: ModelCall): FakeReply {
     return { kind: 'text', chunks, delayMs: 250 };
   }
   if (goal.includes(E2E_RUN_AGENT)) return runningAgentReply(call);
+  if (goal.includes(E2E_BUSY_AGENT) && !busyOnce.has(goal)) {
+    busyOnce.add(goal);
+    return { kind: 'fail', failure: 'unavailable', statusCode: 503 };
+  }
   switch (conversationSteps(call.toolUse?.conversation ?? [])) {
     case 0:
       return toolCallReply(

@@ -7,6 +7,7 @@
 import { AGENT_STEP_LIMITS } from '@collabcode/shared';
 import { Bot, Check, LoaderCircle, X } from 'lucide-react';
 import { useState } from 'react';
+import { useNow } from '../../lib/useNow.js';
 import { AiText } from '../ai/AiText.js';
 import { PrivacyNotice } from '../ai/PrivacyNotice.js';
 import {
@@ -139,6 +140,20 @@ function LogView({ log }: { log: readonly LogEntry[] }): React.ReactElement {
         ),
       )}
     </ol>
+  );
+}
+
+/** Ticks every second, so a busy model's retry counts down. */
+function RunningStatus({
+  state,
+}: {
+  state: Extract<AgentSessionState, { phase: 'running' }>;
+}): React.ReactElement {
+  const now = useNow(1_000);
+  return (
+    <p role="status" aria-live="polite" className="min-w-0 flex-1 truncate text-xs text-sky-300">
+      {runningStatus(state, now)}
+    </p>
   );
 }
 
@@ -296,13 +311,7 @@ export function AgentPanel({
       {state.phase === 'running' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <p
-              role="status"
-              aria-live="polite"
-              className="min-w-0 flex-1 truncate text-xs text-sky-300"
-            >
-              {runningStatus(state)}
-            </p>
+            <RunningStatus state={state} />
             <Button onClick={controls.stop}>Stop</Button>
           </div>
           <p className="line-clamp-2 text-xs text-zinc-500">{state.goal}</p>

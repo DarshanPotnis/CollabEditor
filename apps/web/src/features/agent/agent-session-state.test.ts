@@ -16,7 +16,11 @@ function play(...events: AgentSessionEvent[]): AgentSessionState {
   return events.reduce(agentSessionReducer, IDLE_AGENT_SESSION);
 }
 
-const agent = (event: AgentEvent): AgentSessionEvent => ({ type: 'agent', event });
+const agent = (event: AgentEvent, at = 100_000): AgentSessionEvent => ({
+  type: 'agent',
+  event,
+  at,
+});
 const begin: AgentSessionEvent[] = [
   { type: 'request', goal: 'Add a route', consented: true },
   { type: 'started', maxSteps: 15, modelName: 'Gemini' },
@@ -66,7 +70,7 @@ describe('agentSessionReducer', () => {
         output: null,
       },
     ]);
-    expect(runningStatus(state)).toBe('Step 1 of 15 · Reading a.js');
+    expect(runningStatus(state, 100_000)).toBe('Step 1 of 15 · Reading a.js');
 
     const done = running(
       agentSessionReducer(
@@ -84,18 +88,21 @@ describe('agentSessionReducer', () => {
     );
     expect(done.log[1]).toMatchObject({ state: 'error' });
     expect(done.log[1]?.kind === 'tool' && done.log[1].output?.length).toBe(LOG_OUTPUT_CHARS);
-    expect(runningStatus(done)).toBe('Step 1 of 15 · Thinking');
+    expect(runningStatus(done, 100_000)).toBe('Step 1 of 15 · Thinking');
   });
 
-  it('says when the model is busy and a retry is coming, naming the model', () => {
+  it('says when the model is busy and counts down to the retry, never "Thinking"', () => {
     const state = running(
       play(
         ...begin,
         agent({ type: 'step-started', step: 1, maxSteps: 15 }),
-        agent({ type: 'waiting', step: 1, reason: 'busy', waitMs: 5_200 }),
+        agent({ type: 'waiting', step: 1, reason: 'busy', waitMs: 5_200 }, 100_000),
       ),
     );
-    expect(runningStatus(state)).toBe('Gemini is busy, retrying in 5 s');
+    expect(runningStatus(state, 100_000)).toBe('Gemini is busy, retrying in 6 s');
+    expect(runningStatus(state, 103_000)).toBe('Gemini is busy, retrying in 3 s');
+    // The retry has gone out; until the model answers, that is what is happening.
+    expect(runningStatus(state, 106_000)).toBe('Gemini is busy, retrying…');
     const answered = running(
       agentSessionReducer(
         state,
