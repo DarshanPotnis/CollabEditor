@@ -5,6 +5,7 @@
  *
  *   RUN_WEBCONTAINER_E2E=1 npm run e2e -- runtime.spec.ts
  */
+import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
   EDITOR,
@@ -162,4 +163,18 @@ test('the AI teammate edits the route, runs the project and calls it', async ({ 
   // The scripted model reports what the real server in the container answered.
   await expect(page.getByText('DELETE /users/1 answered 204.')).toBeVisible({ timeout: 180_000 });
   await expect(page.getByRole('status', { name: 'Run status' })).toContainText('Server running');
+
+  // What the model read from the real npm install: its result, without the spinner's frames.
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download trace' }).click();
+  const trace = JSON.parse(await readFile(await (await download).path(), 'utf8')) as {
+    steps: Array<{ toolCalls: Array<{ toolName: string; output: string }> }>;
+  };
+  const run = trace.steps
+    .flatMap((step) => step.toolCalls)
+    .find((call) => call.toolName === 'run_project');
+  expect(run?.output).toMatch(/added \d+ packages/);
+  // Leftovers look like a run of frames ("\\|/-\\|"), a frame alone on a line, or a frame
+  // stuck to the next line ("/28 packages"); npm's own "--watch" flags are not.
+  expect(run?.output).not.toMatch(/\\\||\|\/|^[\\|/-]$|^[\\|/]\S|[\u2800-\u28ff]/m);
 });
