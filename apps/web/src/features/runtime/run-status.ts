@@ -5,6 +5,17 @@ export type RunStatus = { text: string; tone: 'idle' | 'busy' | 'ok' | 'error' }
 
 const RECOVERY = 'Fix the error; the run restarts when a file changes.';
 
+function crashSummary(state: Extract<RunState, { phase: 'crashed' }>): string {
+  switch (state.reason) {
+    case 'exited':
+      return `The program exited with code ${String(state.exitCode)}.`;
+    case 'stopped-listening':
+      return 'The server stopped.';
+    case 'watch-failed':
+      return 'The program crashed.';
+  }
+}
+
 export function runStatus(state: RunState): RunStatus {
   switch (state.phase) {
     case 'idle':
@@ -25,12 +36,7 @@ export function runStatus(state: RunState): RunStatus {
     case 'restarting':
       return { text: 'Restarting after a change…', tone: 'busy' };
     case 'crashed':
-      return state.reason === 'exited'
-        ? {
-            text: `The program exited with code ${String(state.exitCode)}. ${RECOVERY}`,
-            tone: 'error',
-          }
-        : { text: `The server stopped. ${RECOVERY}`, tone: 'error' };
+      return { text: `${crashSummary(state)} ${RECOVERY}`, tone: 'error' };
     case 'stopped':
       return { text: 'Stopped', tone: 'idle' };
     case 'failed':

@@ -6,17 +6,22 @@
  *                                  a file is synced ──┐│    │      ▼
  *                                                     crashed ◄─ restarting
  *                                                        ▲   (no port within the grace period)
- *                                   dev process exits ───┘
+ *                                   dev process exits ───┤
+ *            the watcher reports a crash (from starting, ┘
+ *            serving or restarting)
  *
  * The runner must drop events from processes it has already replaced (a
  * Restart kills the old dev process, whose exit would otherwise read as a
  * crash of the new one).
  *
- * "Crashed" covers both ways a run dies: the dev process exits on its own, or
- * a server that was listening stops and does not come back (`node --watch`
- * waiting for changes after an error). From there the next synced file
- * restarts the run (shouldAutoRestart). "Failed" is for problems a file change
- * cannot fix by itself: booting, a missing script, a failed install.
+ * "Crashed" covers every way a run dies: the dev process exits on its own, a
+ * server that was listening stops and does not come back, or the watcher in
+ * the dev script (`node --watch`) says the program crashed and it is waiting
+ * for changes (watch-signals.ts). That last one is the only sign of a program
+ * that crashes before it ever listens, since the dev process keeps running.
+ * From there the next synced file restarts the run (shouldAutoRestart).
+ * "Failed" is for problems a file change cannot fix by itself: booting, a
+ * missing script, a failed install.
  */
 import type { RunScript } from './run-script.js';
 
@@ -32,6 +37,7 @@ export type RunState =
   | { phase: 'restarting'; script: RunScript; server: Server }
   | { phase: 'crashed'; script: RunScript; reason: 'exited'; exitCode: number }
   | { phase: 'crashed'; script: RunScript; reason: 'stopped-listening' }
+  | { phase: 'crashed'; script: RunScript; reason: 'watch-failed' }
   | { phase: 'stopped' }
   | { phase: 'failed'; message: string };
 
@@ -44,6 +50,8 @@ export type RunEvent =
   | { type: 'port-closed'; port: number }
   | { type: 'restart-grace-expired' }
   | { type: 'dev-exited'; exitCode: number }
+  /** The dev script's watcher printed that the program crashed. */
+  | { type: 'watch-failed' }
   | { type: 'stop' }
   | { type: 'failed'; message: string };
 
@@ -83,6 +91,10 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
     case 'restart-grace-expired':
       return state.phase === 'restarting'
         ? { phase: 'crashed', script: state.script, reason: 'stopped-listening' }
+        : state;
+    case 'watch-failed':
+      return state.phase === 'starting' || state.phase === 'serving' || state.phase === 'restarting'
+        ? { phase: 'crashed', script: state.script, reason: 'watch-failed' }
         : state;
     case 'dev-exited':
       return hasScript(state)

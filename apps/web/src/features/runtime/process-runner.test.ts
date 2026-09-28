@@ -20,6 +20,8 @@ import {
 import { RESTART_GRACE_MS, type RunState } from './run-state.js';
 
 const ada = { userId: 'ada', userName: 'Ada' };
+const WATCH_CRASH_LINE =
+  "\x1b[31mFailed running 'index.js'. Waiting for file changes before restarting...\x1b[39m";
 const runners: Runner[] = [];
 
 beforeEach(() => {
@@ -227,6 +229,33 @@ describe('process runner', () => {
       await settle(300 + AUTO_RESTART_DELAY_MS);
       expect(container.fs.files.has('routes/users.js')).toBe(true);
       expect(container.commandLines().filter((line) => line === 'npm run dev')).toHaveLength(2);
+    });
+
+    it('sees a crash before the server ever listened, and restarts on the next change', async () => {
+      const { doc, container, runner } = setup();
+      await runner.run();
+      const dev = container.last('npm run dev');
+      // node --watch keeps running after the crash; this line is the only sign of it.
+      dev.print(`${WATCH_CRASH_LINE}\r\n`);
+      await settle(0);
+      expect(runner.state()).toMatchObject({ phase: 'crashed', reason: 'watch-failed' });
+      expect(dev.killed).toBe(false);
+
+      readFileText(doc, idOf(doc, 'index.js'))?.insert(0, '// fixed\n');
+      await settle();
+      expect(dev.killed).toBe(true);
+      expect(container.commandLines()).toEqual(['npm install', 'npm run dev', 'npm run dev']);
+      expect(runner.state().phase).toBe('starting');
+    });
+
+    it('ignores a crash line from a dev process it has replaced', async () => {
+      const { container, runner } = setup();
+      await runner.run();
+      const old = container.last('npm run dev');
+      await runner.run();
+      old.print(`${WATCH_CRASH_LINE}\r\n`);
+      await settle(0);
+      expect(runner.state().phase).toBe('starting');
     });
 
     it('waits for edits to settle instead of restarting on every keystroke', async () => {

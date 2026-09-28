@@ -13,6 +13,7 @@ import { readFileContent, resolveDocTree } from '@collabcode/shared';
 import type { Container, ContainerProcess } from './container.js';
 import { createFsBridge, type FsBridge, type SyncResult } from './fs-bridge/fs-bridge.js';
 import type { OutputSink } from './output-buffer.js';
+import { watchForCrashes } from './watch-signals.js';
 import { needsInstall, runPlan } from './run-script.js';
 import {
   IDLE,
@@ -136,12 +137,15 @@ export function createRunner(options: RunnerOptions): Runner {
     options.onState(state);
   };
 
-  const pipe = (child: ContainerProcess, owner: number): void => {
+  /** Shows a process's output while it is current, and passes it to `read` as well. */
+  const pipe = (child: ContainerProcess, owner: number, read?: (chunk: string) => void): void => {
     child.output
       .pipeTo(
         new WritableStream({
           write: (chunk) => {
-            if (owner === generation) output.write(chunk);
+            if (owner !== generation) return;
+            output.write(chunk);
+            read?.(chunk);
           },
         }),
       )
@@ -251,7 +255,13 @@ export function createRunner(options: RunnerOptions): Runner {
       return;
     }
     dev = devProcess;
-    pipe(devProcess, owner);
+    pipe(
+      devProcess,
+      owner,
+      watchForCrashes(() => {
+        if (dev === devProcess) dispatch({ type: 'watch-failed' });
+      }),
+    );
     dispatch({ type: 'dev-started', script: plan.script });
     void devProcess.exit.then((exitCode) => {
       if (dev !== devProcess) return;

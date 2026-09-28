@@ -65,6 +65,37 @@ describe('runReducer', () => {
     expect(runReducer(back, { type: 'restart-grace-expired' })).toBe(back);
   });
 
+  describe('when the watcher reports a crash', () => {
+    const crashed = { phase: 'crashed', script: 'dev', reason: 'watch-failed' } as const;
+
+    it('is a crash even though the server never listened', () => {
+      const starting = after(toServing.slice(0, 4));
+      expect(runReducer(starting, { type: 'watch-failed' })).toEqual(crashed);
+    });
+
+    it('is a crash at once, without waiting out the grace period', () => {
+      expect(runReducer(serving, { type: 'watch-failed' })).toEqual(crashed);
+      const restarting = runReducer(serving, { type: 'port-closed', port: 3000 });
+      expect(runReducer(restarting, { type: 'watch-failed' })).toEqual(crashed);
+    });
+
+    it('changes nothing when no dev script is running', () => {
+      for (const state of [IDLE, { phase: 'stopped' } as const, crashed]) {
+        expect(runReducer(state, { type: 'watch-failed' })).toBe(state);
+      }
+    });
+
+    it('restarts on the next synced change, like any crash', () => {
+      expect(shouldAutoRestart(crashed, { written: ['index.js'], removed: [] })).toBe(true);
+    });
+
+    it('serves again when the watcher restarts the program and it listens', () => {
+      expect(runReducer(crashed, { type: 'port-opened', port: 3000, url: 'u' })).toMatchObject({
+        phase: 'serving',
+      });
+    });
+  });
+
   it('calls it a crash when the dev process exits on its own', () => {
     expect(runReducer(serving, { type: 'dev-exited', exitCode: 1 })).toEqual({
       phase: 'crashed',

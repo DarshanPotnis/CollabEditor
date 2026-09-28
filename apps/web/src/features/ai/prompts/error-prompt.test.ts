@@ -144,6 +144,10 @@ describe('runFailure', () => {
       outcome: 'stopped-listening',
       rawOutput: 'out',
     });
+    expect(runFailure({ phase: 'crashed', script, reason: 'watch-failed' }, 'out')).toEqual({
+      outcome: 'exited',
+      rawOutput: 'out',
+    });
     expect(runFailure({ phase: 'failed', message: 'npm install failed' }, 'out')).toEqual({
       outcome: 'failed',
       rawOutput: 'out',

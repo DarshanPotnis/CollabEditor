@@ -25,13 +25,26 @@ export type ProjectFiles = {
 
 type Excerpt = { startLine: number; code: string; focusLine?: number };
 
+function crashFailure(
+  state: Extract<RunState, { phase: 'crashed' }>,
+  rawOutput: string,
+): RunFailure {
+  switch (state.reason) {
+    case 'exited':
+      return { outcome: 'exited', exitCode: state.exitCode, rawOutput };
+    case 'stopped-listening':
+      return { outcome: 'stopped-listening', rawOutput };
+    case 'watch-failed':
+      // The program exited with an error; its watcher keeps running and does not say the code.
+      return { outcome: 'exited', rawOutput };
+  }
+}
+
 /** How the run stopped, when it stopped on an error; null otherwise. */
 export function runFailure(state: RunState, rawOutput: string): RunFailure | null {
   switch (state.phase) {
     case 'crashed':
-      return state.reason === 'exited'
-        ? { outcome: 'exited', exitCode: state.exitCode, rawOutput }
-        : { outcome: 'stopped-listening', rawOutput };
+      return crashFailure(state, rawOutput);
     case 'failed':
       return { outcome: 'failed', rawOutput };
     default:

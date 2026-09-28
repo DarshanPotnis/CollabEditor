@@ -18,6 +18,9 @@ describe('runStatus', () => {
     expect(runStatus({ phase: 'crashed', script: 'dev', reason: 'stopped-listening' }).tone).toBe(
       'error',
     );
+    expect(runStatus({ phase: 'crashed', script: 'dev', reason: 'watch-failed' }).text).toBe(
+      'The program crashed. Fix the error; the run restarts when a file changes.',
+    );
   });
 
   it('shows a failure message as-is', () => {
