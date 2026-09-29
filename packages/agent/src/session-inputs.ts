@@ -4,9 +4,12 @@
  * and, when the whole project is small enough, every file's content, so the
  * agent can act in its first step; that the page cannot run code, when it
  * cannot; and, for the trace, the template and a fingerprint of the starting
- * files.
+ * files. The browser and the evals both start sessions from it, so a model
+ * gets the same first message in both.
  */
-import { projectFingerprint, type AgentInputs, type AgentTrace } from '@collabcode/agent';
+import { projectFingerprint } from './fingerprint.js';
+import type { AgentTrace } from './trace.js';
+import type { AgentInputs } from './types.js';
 import { AGENT_INPUT_LIMITS, readFileContent, readMeta, resolveDocTree } from '@collabcode/shared';
 import type * as Y from 'yjs';
 

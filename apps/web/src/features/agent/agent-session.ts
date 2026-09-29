@@ -15,10 +15,12 @@
  */
 import {
   AGENT_LIMITS,
+  agentInputs,
   composeToolHost,
   createDocTools,
   createStopSource,
   runAgent,
+  startingProject,
   type AgentEvent,
   type AgentOutcome,
   type AgentRunResult,
@@ -35,7 +37,6 @@ import {
 import type * as Y from 'yjs';
 import type { OwnKey } from '../ai/byok-store.js';
 import { sendRequest } from '../runtime/api-console/send-request.js';
-import { agentInputs, startingProject } from './agent-inputs.js';
 import { connectAgentPeer } from './agent-peer.js';
 import { AGENT_NAME, agentUser, publishAgentPresence } from './agent-presence.js';
 import { AGENT_STATUS, toolStatus } from './agent-status.js';

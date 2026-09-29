@@ -1,7 +1,7 @@
 import { AGENT_INPUT_LIMITS, PROMPTS, createFile, createProjectUpdate } from '@collabcode/shared';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { agentInputs, startingProject } from './agent-inputs.js';
+import { agentInputs, startingProject } from './session-inputs.js';
 
 function project(): Y.Doc {
   const doc = new Y.Doc();

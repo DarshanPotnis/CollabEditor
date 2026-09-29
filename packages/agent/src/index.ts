@@ -20,6 +20,7 @@ export * from './runtime/terminal-text.js';
 export * from './runtime/watch-signals.js';
 export * from './scripted-model.js';
 export * from './session-changes.js';
+export * from './session-inputs.js';
 export * from './stop-source.js';
 export * from './tool-output.js';
 export * from './trace.js';
