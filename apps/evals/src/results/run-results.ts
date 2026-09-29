@@ -1,0 +1,112 @@
+/**
+ * An eval run's results, as written to docs/evals/results/*.json: what ran
+ * (model, prompt version, tier, commit), each task's verdict with every
+ * grader's reason and its metrics, and a summary. Traces are not in here:
+ * they stay in apps/evals/runs (git-ignored) and CI artifacts, and results
+ * name them. Nothing here ever holds the key.
+ */
+import { z } from 'zod';
+import { FAILURE_CATEGORIES } from '../graders/grader.js';
+import type { TaskMetrics } from './metrics.js';
+
+const metricsSchema = z.object({
+  steps: z.number(),
+  requests: z.number(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  wallMs: z.number(),
+  modelMs: z.number(),
+  toolMs: z.number(),
+  waitMs: z.number(),
+  wastedSteps: z.number(),
+  repeatedErrors: z.number(),
+}) satisfies z.ZodType<TaskMetrics>;
+
+export const taskResultSchema = z.object({
+  task: z.string(),
+  title: z.string(),
+  trial: z.number().int().positive(),
+  passed: z.boolean(),
+  category: z.enum(FAILURE_CATEGORIES).nullable(),
+  grades: z.array(
+    z.object({
+      id: z.string(),
+      passed: z.boolean(),
+      detail: z.string(),
+      category: z.enum(FAILURE_CATEGORIES),
+    }),
+  ),
+  outcome: z.string(),
+  metrics: metricsSchema,
+  /** The trace file, relative to the run's folder. */
+  trace: z.string(),
+});
+export type TaskResult = z.infer<typeof taskResultSchema>;
+
+export const runResultsSchema = z.object({
+  format: z.literal('collabcode-eval-results'),
+  version: z.literal(1),
+  run: z.object({
+    id: z.string(),
+    startedAt: z.string(),
+    finishedAt: z.string().nullable(),
+    commit: z.string(),
+    model: z.object({ provider: z.string(), id: z.string() }),
+    prompt: z.string(),
+    tier: z.enum(['shared', 'ownKey']),
+    trials: z.number().int().positive(),
+    tasks: z.array(z.string()),
+    /** False for a run in CI; true for one on someone's machine. */
+    local: z.boolean(),
+    /** Set when the run stopped early, for example at the day's request limit. */
+    stoppedEarly: z.string().nullable(),
+  }),
+  results: z.array(taskResultSchema),
+});
+export type RunResults = z.infer<typeof runResultsSchema>;
+
+export type RunSummary = {
+  tasks: number;
+  passed: number;
+  passRate: number;
+  medianSteps: number;
+  wastedStepsPerTask: number;
+  requestsPerTask: number;
+  tokensPerTask: number;
+  wallSecondsPerTask: number;
+  categories: Partial<Record<(typeof FAILURE_CATEGORIES)[number], number>>;
+};
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+    : (sorted[middle] ?? 0);
+}
+
+const mean = (values: number[]): number =>
+  values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
+
+export function summarize(results: readonly TaskResult[]): RunSummary {
+  const categories: RunSummary['categories'] = {};
+  for (const result of results) {
+    if (result.category !== null)
+      categories[result.category] = (categories[result.category] ?? 0) + 1;
+  }
+  const passed = results.filter((result) => result.passed).length;
+  return {
+    tasks: results.length,
+    passed,
+    passRate: results.length === 0 ? 0 : passed / results.length,
+    medianSteps: median(results.map((result) => result.metrics.steps)),
+    wastedStepsPerTask: mean(results.map((result) => result.metrics.wastedSteps)),
+    requestsPerTask: mean(results.map((result) => result.metrics.requests)),
+    tokensPerTask: mean(
+      results.map((result) => result.metrics.inputTokens + result.metrics.outputTokens),
+    ),
+    wallSecondsPerTask: mean(results.map((result) => result.metrics.wallMs / 1000)),
+    categories,
+  };
+}
