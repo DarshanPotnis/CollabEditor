@@ -30,6 +30,17 @@ describe('the replay’s words', () => {
     );
   });
 
+  it('adds no second full stop to a result that already ends in one', () => {
+    expect(
+      divergenceText({
+        step: 2,
+        toolName: 'edit_file',
+        recorded: 'edited lines 23–38',
+        now: 'error: Someone else is editing routes/users.js right now, so leave it alone.',
+      }),
+    ).toMatch(/so leave it alone\.$/);
+  });
+
   it('labels a recording as one, and names the browsers a live replay needs', () => {
     expect(recordingNote()).toContain('nothing in it is happening now');
     expect(recordingNote()).toContain('Chrome, Edge or Arc');

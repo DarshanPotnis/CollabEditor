@@ -24,8 +24,11 @@ export function replayBanner(label: ReplayLabel): string {
   return `Replay of a recorded session (${recordedWith(label)}). No AI is running: the model’s answers are the recording’s, and the edits, runs and checks are happening now.`;
 }
 
+/** A sentence's end, unless the text already has one. */
+const ended = (text: string): string => (/[.!?…]$/.test(text) ? text : `${text}.`);
+
 export function divergenceText(divergence: ReplayDivergence): string {
-  return `The replay stopped at step ${String(divergence.step)}: today’s code answered ${divergence.toolName} differently from the recording, so the rest of it no longer fits. Recorded: ${divergence.recorded}. Now: ${divergence.now}.`;
+  return `The replay stopped at step ${String(divergence.step)}: today’s code answered ${divergence.toolName} differently from the recording, so the rest of it no longer fits. Recorded: ${ended(divergence.recorded)} Now: ${ended(divergence.now)}`;
 }
 
 export function recordingNote(): string {
