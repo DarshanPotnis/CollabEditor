@@ -10,11 +10,13 @@ import {
 } from '@collabcode/shared';
 import type { Logger } from '../../lib/logger.js';
 import type { ProjectRecord, ProjectsRepo } from '../../db/projects-repo.js';
+import { clientKey, type ClientIpSource } from '../client-ip.js';
 import { sendApiError } from '../errors.js';
 
 export type ProjectsRouterDeps = {
   repo: ProjectsRepo;
   logger: Logger;
+  clientIpSource: ClientIpSource;
   /** Projects one IP may create per minute. */
   createLimitPerMinute: number;
 };
@@ -32,6 +34,7 @@ function toSummary(record: ProjectRecord): ProjectSummary {
 export function createProjectsRouter({
   repo,
   logger,
+  clientIpSource,
   createLimitPerMinute,
 }: ProjectsRouterDeps): Router {
   const router = Router();
@@ -41,6 +44,7 @@ export function createProjectsRouter({
     limit: createLimitPerMinute,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
+    keyGenerator: (req) => clientKey(req, clientIpSource),
     handler: (_req, res) => {
       sendApiError(res, 'rate-limited', 'Too many projects created. Try again in a minute.');
     },

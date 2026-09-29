@@ -4,17 +4,38 @@
  * destroyed in reverse order in its cleanup, so StrictMode's double mount
  * produces two complete lifecycles and the registry never outlives the editor.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as monaco from 'monaco-editor';
 import type { Awareness } from 'y-protocols/awareness';
 import { setupMonaco } from './monaco-setup.js';
-import { createModelRegistry, type ModelRegistry, type ModelSpec } from './model-registry.js';
+import {
+  createModelRegistry,
+  type ActiveSelection,
+  type ApplyEditResult,
+  type ModelRegistry,
+  type ModelSpec,
+} from './model-registry.js';
 import { isAtFileSizeLimit, isTextInsertingKey, pasteWouldExceedLimit } from './file-size-guard.js';
+import type { SelectionAnchor } from './selection-anchor.js';
 
 setupMonaco();
 
 /** Scroll to a character offset in a file once it is shown. */
-export type RevealRequest = { fileId: string; index: number; requestId: number };
+export type RevealRequest = {
+  fileId: string;
+  index: number;
+  requestId: number;
+  /** Scroll only when the position is out of view: following the AI teammate. */
+  gentle?: boolean;
+};
+
+/** Someone chose Explain with AI or Edit with AI on a selection. */
+export type EditorAiAction = { kind: 'explain' | 'edit'; selection: ActiveSelection };
+
+/** What the editor lets its parent do imperatively. */
+export type CodeEditorHandle = {
+  applyEdit: (fileId: string, anchor: SelectionAnchor, replacement: string) => ApplyEditResult;
+};
 
 export type CodeEditorProps = {
   awareness: Awareness;
@@ -23,6 +44,8 @@ export type CodeEditorProps = {
   reveal: RevealRequest | null;
   /** Called when an edit was blocked because the file is at its size limit. */
   onFileSizeLimit: () => void;
+  onAiAction: (action: EditorAiAction) => void;
+  ref?: React.Ref<CodeEditorHandle>;
 };
 
 const EDITOR_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
@@ -46,9 +69,22 @@ export function CodeEditor({
   activeId,
   reveal,
   onFileSizeLimit,
+  onAiAction,
+  ref,
 }: CodeEditorProps): React.ReactElement {
   const container = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState<Mounted | null>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyEdit: (fileId, anchor, replacement) =>
+        mounted
+          ? mounted.registry.applyEdit(fileId, anchor, replacement)
+          : { ok: false, message: 'The editor is still loading. Try again in a moment.' },
+    }),
+    [mounted],
+  );
 
   useEffect(() => {
     const element = container.current;
@@ -88,8 +124,40 @@ export function CodeEditor({
   // Declared after the sync effect so that, when a follow opens a new tab
   // and asks to reveal in the same render, the model exists and is shown.
   useEffect(() => {
-    if (reveal) mounted?.registry.reveal(reveal.fileId, reveal.index);
+    if (reveal) mounted?.registry.reveal(reveal.fileId, reveal.index, reveal.gentle);
   }, [mounted, reveal]);
+
+  // The AI actions, in the context menu (and the command palette) when there
+  // is a selection. Editing is not offered on a deleted, read-only file.
+  useEffect(() => {
+    if (!mounted) return;
+    const { editor, registry } = mounted;
+    const runWith = (kind: EditorAiAction['kind']) => (): void => {
+      const selection = registry.activeSelection();
+      if (selection) onAiAction({ kind, selection });
+    };
+    const actions = [
+      editor.addAction({
+        id: 'collabcode.ai.explain',
+        label: 'Explain with AI',
+        contextMenuGroupId: '1_ai',
+        contextMenuOrder: 1,
+        precondition: 'editorHasSelection',
+        run: runWith('explain'),
+      }),
+      editor.addAction({
+        id: 'collabcode.ai.edit',
+        label: 'Edit with AI…',
+        contextMenuGroupId: '1_ai',
+        contextMenuOrder: 2,
+        precondition: 'editorHasSelection && !editorReadonly',
+        run: runWith('edit'),
+      }),
+    ];
+    return () => {
+      for (const action of actions) action.dispose();
+    };
+  }, [mounted, onAiAction]);
 
   // The per-file size limit. Editor keystrokes bypass packages/shared's ops
   // (y-monaco writes into Y.Text directly), so this is where it is enforced.

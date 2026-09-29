@@ -29,6 +29,15 @@ describe('remoteCursorStyles', () => {
     expect(css).toContain(`background-color: ${PRESENCE_COLORS[3]};`);
   });
 
+  it("dashes an AI agent's caret", () => {
+    const css = remoteCursorStyles([
+      cursor({ clientId: 1 }),
+      cursor({ clientId: 2, user: user({ kind: 'agent', color: PRESENCE_COLORS[1] }) }),
+    ]);
+    expect(css).toContain(`border-left: 2px solid ${PRESENCE_COLORS[0]}`);
+    expect(css).toContain(`border-left: 2px dashed ${PRESENCE_COLORS[1]}`);
+  });
+
   it('puts the name in the label', () => {
     expect(remoteCursorStyles([cursor({ user: user({ name: 'Grace Hopper' }) })])).toContain(
       'content: "Grace Hopper"',

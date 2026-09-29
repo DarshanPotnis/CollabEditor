@@ -153,6 +153,41 @@ describe('rate limiting', () => {
       await limited.stop();
     }
   });
+
+  const createFrom = (url: string, forwardedFor: string): Promise<Response> =>
+    fetch(`${url}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': forwardedFor },
+      body: JSON.stringify({ template: 'blank-node' }),
+    });
+
+  it('behind Render, gives each visitor their own allowance, whatever proxies follow', async () => {
+    const limited = await startTestServer({
+      projectCreateLimitPerMinute: 1,
+      clientIpSource: 'render',
+    });
+    try {
+      expect((await createFrom(limited.httpUrl, '203.0.113.1, 172.68.0.1')).status).toBe(201);
+      // The same visitor through a longer proxy chain is still the same visitor.
+      expect((await createFrom(limited.httpUrl, '203.0.113.1, 172.68.0.9, 10.0.0.1')).status).toBe(
+        429,
+      );
+      // Someone else is not held back by the first visitor's use.
+      expect((await createFrom(limited.httpUrl, '198.51.100.7, 172.68.0.1')).status).toBe(201);
+    } finally {
+      await limited.stop();
+    }
+  });
+
+  it('with no proxy in front, ignores X-Forwarded-For so it cannot dodge the limit', async () => {
+    const limited = await startTestServer({ projectCreateLimitPerMinute: 1 });
+    try {
+      expect((await createFrom(limited.httpUrl, '203.0.113.1')).status).toBe(201);
+      expect((await createFrom(limited.httpUrl, '198.51.100.7')).status).toBe(429);
+    } finally {
+      await limited.stop();
+    }
+  });
 });
 
 describe('CORS', () => {

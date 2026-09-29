@@ -1,0 +1,8 @@
+{
+  "name": "collabcode-eval-sandbox-deps",
+  "private": true,
+  "description": "Every package an eval fixture uses, installed into the sandbox image, which has no network.",
+  "dependencies": {
+    "express": "5.2.1"
+  }
+}

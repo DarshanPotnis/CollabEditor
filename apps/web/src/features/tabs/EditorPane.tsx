@@ -1,11 +1,18 @@
 /**
  * The middle pane: open tabs, a banner when the active file is gone, and the
  * editor. The editor stays mounted whatever is active, because it holds every
- * open tab's model and binding.
+ * open tab's model and binding. An overlay, such as an AI edit to review,
+ * covers the editor without unmounting it.
  */
+import type { ReactNode } from 'react';
 import type { Awareness } from 'y-protocols/awareness';
 import type { ResolvedTree } from '@collabcode/shared';
-import { CodeEditor, type RevealRequest } from '../editor/CodeEditor.js';
+import {
+  CodeEditor,
+  type CodeEditorHandle,
+  type EditorAiAction,
+  type RevealRequest,
+} from '../editor/CodeEditor.js';
 import type { ModelSpec } from '../editor/model-registry.js';
 import { DeletedBanner, PurgedNotice } from './FileStateBanner.js';
 import { TabBar } from './TabBar.js';
@@ -21,6 +28,9 @@ export type EditorPaneProps = {
   myUserId: string;
   onRestore: (id: string) => void;
   onFileSizeLimit: () => void;
+  onAiAction: (action: EditorAiAction) => void;
+  editorRef: React.Ref<CodeEditorHandle>;
+  overlay: ReactNode;
 };
 
 export function EditorPane({
@@ -32,6 +42,9 @@ export function EditorPane({
   myUserId,
   onRestore,
   onFileSizeLimit,
+  onAiAction,
+  editorRef,
+  overlay,
 }: EditorPaneProps): React.ReactElement {
   const { activeId } = tabs.state;
   const status = activeId === null ? null : tabStatus(tree, activeId);
@@ -55,7 +68,10 @@ export function EditorPane({
           activeId={activeId}
           reveal={reveal}
           onFileSizeLimit={onFileSizeLimit}
+          onAiAction={onAiAction}
+          ref={editorRef}
         />
+        {showsEditor && overlay}
         {!showsEditor && (
           <div className="absolute inset-0 bg-zinc-950">
             {status?.kind === 'purged' && activeTab ? (

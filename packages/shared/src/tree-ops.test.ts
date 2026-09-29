@@ -363,6 +363,25 @@ describe('restore', () => {
   });
 });
 
+describe('origin', () => {
+  it('tags every op with the origin it is given, for undo tracking', () => {
+    const { doc, src, lib, index } = project();
+    const origins: unknown[] = [];
+    doc.on('afterTransaction', (transaction: Y.Transaction) => origins.push(transaction.origin));
+    const tag = 'collabcode:agent:test';
+
+    const file = createFile(doc, { parentId: null, name: 'a.js' }, alice, tag);
+    createFolder(doc, { parentId: null, name: 'b' }, alice, tag);
+    rename(doc, file, 'c.js', tag);
+    move(doc, file, lib, tag);
+    softDelete(doc, index, alice, tag);
+    restore(doc, index, tag);
+    softDelete(doc, src, alice);
+
+    expect(origins).toEqual([tag, tag, tag, tag, tag, tag, OPS_ORIGIN]);
+  });
+});
+
 describe('concurrency: what write-time checks cannot see', () => {
   function replicas(): [Y.Doc, Y.Doc] {
     const a = new Y.Doc();

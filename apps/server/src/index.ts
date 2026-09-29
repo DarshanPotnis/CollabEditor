@@ -8,6 +8,7 @@ import { createSqlClient } from './db/client.js';
 import { createPostgresProjectsRepo } from './db/projects-repo.js';
 import { createApp } from './http/app.js';
 import { createCollabServer } from './collab/server.js';
+import { createAiSdkGateway } from '@collabcode/model-gateway';
 
 /** How long shutdown may take before we stop waiting. Render allows ~30s. */
 const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -48,7 +49,29 @@ async function main(): Promise<void> {
   const sql = createSqlClient(config.DATABASE_URL);
   const repo = createPostgresProjectsRepo(sql);
 
-  const app = createApp({ allowedOrigins: config.ALLOWED_ORIGINS, repo, logger });
+  const app = createApp({
+    allowedOrigins: config.ALLOWED_ORIGINS,
+    repo,
+    logger,
+    clientIpSource: config.CLIENT_IP_SOURCE,
+    ai: {
+      gateway: createAiSdkGateway({ logger }),
+      sharedTier: config.GEMINI_API_KEY
+        ? {
+            model: config.AI_DEFAULT_MODEL,
+            fallbackModel: config.AI_FALLBACK_MODEL ?? null,
+            apiKey: config.GEMINI_API_KEY,
+          }
+        : null,
+      limits: {
+        global: config.AI_GLOBAL_DAILY_REQUESTS,
+        perIp: config.AI_PER_IP_DAILY_REQUESTS,
+        perProject: config.AI_PER_PROJECT_DAILY_REQUESTS,
+      },
+      sharedTierPerMinute: config.AI_GLOBAL_REQUESTS_PER_MINUTE,
+      agentPerMinute: config.AI_AGENT_REQUESTS_PER_MINUTE,
+    },
+  });
   const server = createCollabServer({
     app,
     repo,
@@ -59,7 +82,14 @@ async function main(): Promise<void> {
 
   await server.listen();
   logger.info(
-    { port: config.PORT, host: config.HOST, allowedOrigins: config.ALLOWED_ORIGINS },
+    {
+      port: config.PORT,
+      host: config.HOST,
+      allowedOrigins: config.ALLOWED_ORIGINS,
+      clientIpSource: config.CLIENT_IP_SOURCE,
+      sharedAi: config.GEMINI_API_KEY ? config.AI_DEFAULT_MODEL : 'off',
+      sharedAiFallback: config.GEMINI_API_KEY ? (config.AI_FALLBACK_MODEL ?? 'none') : 'off',
+    },
     'collabcode server listening',
   );
 

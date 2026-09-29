@@ -4,7 +4,7 @@
  * since the collaborator may be looking at one to decide whether to restore it.
  */
 import type { ResolvedTree } from '@collabcode/shared';
-import type { Collaborator } from './collaborators.js';
+import { agentHostName, type Collaborator } from './collaborators.js';
 
 export type FollowTarget =
   { kind: 'file'; fileId: string; name: string } | { kind: 'nowhere'; message: string };
@@ -22,10 +22,29 @@ export function followTarget(collaborator: Collaborator, tree: ResolvedTree): Fo
   return { kind: 'nowhere', message: `${name} is looking at a file that no longer exists.` };
 }
 
-/** The avatar's accessible label: where clicking it takes you. */
-export function followLabel(collaborator: Collaborator, tree: ResolvedTree): string {
+/**
+ * Who an avatar is. An AI agent says whom it works for, named by what that
+ * person shows (not by the agent's own claim), and what it is doing.
+ */
+function whoIs(collaborator: Collaborator, everyone: readonly Collaborator[]): string {
+  const { name, kind } = collaborator.user;
+  if (kind !== 'agent') return name;
+  const { agent } = collaborator;
+  const host = agent === null ? null : agentHostName(agent, everyone);
+  const status = agent === null ? '' : `: ${agent.status}`;
+  return `${name} (AI, working for ${host ?? 'someone who has left'})${status}`;
+}
+
+/** The avatar's accessible label: who it is, and where clicking it takes you. */
+export function followLabel(
+  collaborator: Collaborator,
+  tree: ResolvedTree,
+  everyone: readonly Collaborator[],
+): string {
+  const who = whoIs(collaborator, everyone);
   const target = followTarget(collaborator, tree);
+  const their = collaborator.user.kind === 'agent' ? 'its' : 'their';
   return target.kind === 'file'
-    ? `${collaborator.user.name}, in ${target.name}. Go to their cursor`
-    : `${collaborator.user.name}, no file open`;
+    ? `${who}, in ${target.name}. Go to ${their} cursor`
+    : `${who}, no file open`;
 }

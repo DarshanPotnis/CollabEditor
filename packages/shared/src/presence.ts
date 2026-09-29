@@ -8,7 +8,7 @@
  * names are escaped again at the point they enter CSS.
  */
 import { z } from 'zod';
-import { MAX_USER_NAME_LENGTH } from './limits.js';
+import { MAX_AGENT_STATUS_LENGTH, MAX_USER_NAME_LENGTH } from './limits.js';
 
 /**
  * The only colors a collaborator may have. Restricting to a fixed palette
@@ -30,7 +30,7 @@ export type PresenceColor = (typeof PRESENCE_COLORS)[number];
 
 export const presenceColorSchema = z.enum(PRESENCE_COLORS);
 
-/** 'agent' is reserved for the AI teammate in a later phase. */
+/** 'agent' is an AI teammate working for one of the humans in the room. */
 export const awarenessUserKindSchema = z.enum(['human', 'agent']);
 export type AwarenessUserKind = z.infer<typeof awarenessUserKindSchema>;
 
@@ -39,43 +39,71 @@ export type AwarenessUserKind = z.infer<typeof awarenessUserKindSchema>;
 const UNSAFE_NAME_CHARS = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
 
 /**
- * Make a peer-supplied display name safe to render: collapse whitespace (so a
- * name split over lines reads as one line), drop invisible and
+ * Make peer-supplied text safe to render on one line: collapse whitespace (so
+ * text split over lines reads as one line), drop invisible and
  * direction-changing characters, cap the length. Truncation walks code points
  * so a surrogate pair is never split.
  */
-export function sanitizeUserName(raw: string): string {
+function sanitizeLine(raw: string, max: number): string {
   const collapsed = raw.replace(/\s+/g, ' ').replace(UNSAFE_NAME_CHARS, '').trim();
   const codePoints = Array.from(collapsed);
-  return codePoints.length <= MAX_USER_NAME_LENGTH
-    ? collapsed
-    : codePoints.slice(0, MAX_USER_NAME_LENGTH).join('');
+  return codePoints.length <= max ? collapsed : codePoints.slice(0, max).join('');
+}
+
+/** Make a peer-supplied display name safe to render. */
+export function sanitizeUserName(raw: string): string {
+  return sanitizeLine(raw, MAX_USER_NAME_LENGTH);
+}
+
+/**
+ * One line of peer-written text. The .max() guards against absurd input before
+ * any string work; ordinary over-long text is truncated instead.
+ */
+function peerLineSchema(max: number) {
+  return z
+    .string()
+    .max(4096)
+    .transform((raw) => sanitizeLine(raw, max))
+    .pipe(z.string().min(1).max(max));
 }
 
 const identifierSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 
 export const awarenessUserSchema = z.object({
   id: identifierSchema,
-  // The .max() is a guard against absurd input before we run string work on
-  // it; an ordinary over-long name is truncated by sanitizeUserName instead.
-  name: z
-    .string()
-    .max(4096)
-    .transform(sanitizeUserName)
-    .pipe(z.string().min(1).max(MAX_USER_NAME_LENGTH)),
+  name: peerLineSchema(MAX_USER_NAME_LENGTH),
   color: presenceColorSchema,
   kind: awarenessUserKindSchema,
 });
 export type AwarenessUser = z.infer<typeof awarenessUserSchema>;
 
 /**
+ * What an AI agent says about itself. It is a claim like any other awareness
+ * field: it decides how the agent is shown, never what anyone may do.
+ */
+export const agentInfoSchema = z.object({
+  /** The awareness user id of the person who started the agent. */
+  hostUserId: identifierSchema,
+  hostName: peerLineSchema(MAX_USER_NAME_LENGTH),
+  sessionId: identifierSchema,
+  /** What it is doing, such as "Editing routes/users.js". */
+  status: peerLineSchema(MAX_AGENT_STATUS_LENGTH),
+});
+export type AgentInfo = z.infer<typeof agentInfoSchema>;
+
+/**
  * What we publish and read. y-monaco keeps its own `selection` field on the
  * same state; unknown keys are stripped here rather than rejected so a peer
- * running a newer client still shows up in the presence bar.
+ * running a newer client still shows up in the presence bar. The optional
+ * fields drop a malformed value rather than the whole peer.
  */
 export const awarenessStateSchema = z.object({
   user: awarenessUserSchema,
   activeFileId: identifierSchema.nullable().default(null),
+  /** When this peer last edited a file, in milliseconds since the epoch by its own clock. */
+  lastEditAt: z.number().int().nonnegative().optional().catch(undefined),
+  /** Only an AI agent sets this. */
+  agent: agentInfoSchema.optional().catch(undefined),
 });
 export type AwarenessState = z.infer<typeof awarenessStateSchema>;
 

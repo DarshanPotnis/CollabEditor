@@ -16,6 +16,10 @@
  * origins and the history carries over. Each model's own undo and redo are
  * routed to that manager (route-history.ts), so no Monaco path, keybinding,
  * menu or command, can reach Monaco's shared stack.
+ *
+ * An AI edit is applied through the file's model too (applyEdit), so y-monaco
+ * writes it with the binding as origin and this person's undo covers it, as
+ * one step of its own.
  */
 import * as monaco from 'monaco-editor';
 import * as Y from 'yjs';
@@ -23,9 +27,12 @@ import type { Awareness } from 'y-protocols/awareness';
 import { MonacoBinding } from 'y-monaco';
 import { planModels } from './model-plan.js';
 import { routeModelHistory } from './route-history.js';
+import { planAnchoredEdit, type SelectionAnchor } from './selection-anchor.js';
 
 export type ModelSpec = {
   uri: monaco.Uri;
+  /** The file's project path, or its last name when it was deleted. */
+  path: string;
   language: string;
   ytext: Y.Text;
   readOnly: boolean;
@@ -40,6 +47,17 @@ type Entry = {
 
 type History = { ytext: Y.Text; undo: Y.UndoManager };
 
+/** The selection in the file shown, with offsets into its whole text. */
+export type ActiveSelection = {
+  fileId: string;
+  spec: ModelSpec;
+  text: string;
+  start: number;
+  end: number;
+};
+
+export type ApplyEditResult = { ok: true } | { ok: false; message: string };
+
 export type ModelRegistry = {
   /** Make the models match the open tabs, and show the active one. */
   sync: (specs: ReadonlyMap<string, ModelSpec>, activeId: string | null) => void;
@@ -48,7 +66,12 @@ export type ModelRegistry = {
   /** The Y.Text shown in the editor, for the file size guard. */
   activeText: () => Y.Text | null;
   /** Scroll a shown file so that a character offset is in view. */
-  reveal: (fileId: string, index: number) => void;
+  /** Scrolls to a position; `gentle` only when it is out of view, for following someone. */
+  reveal: (fileId: string, index: number, gentle?: boolean) => void;
+  /** The shown file's selection, or null when nothing is selected. */
+  activeSelection: () => ActiveSelection | null;
+  /** Replace an anchored range as this person's own edit, unless its text has changed. */
+  applyEdit: (fileId: string, anchor: SelectionAnchor, replacement: string) => ApplyEditResult;
   destroy: () => void;
 };
 
@@ -194,10 +217,57 @@ export function createModelRegistry(
 
     activeText: () => shown()?.spec.ytext ?? null,
 
-    reveal(fileId, index) {
+    reveal(fileId, index, gentle = false) {
       const entry = entries.get(fileId);
       if (!entry || editor.getModel() !== entry.model) return;
-      editor.revealPositionInCenter(entry.model.getPositionAt(index));
+      const position = entry.model.getPositionAt(index);
+      if (gentle) editor.revealPositionInCenterIfOutsideViewport(position);
+      else editor.revealPositionInCenter(position);
+    },
+
+    activeSelection() {
+      const entry = shown();
+      const selection = editor.getSelection();
+      if (!entry || shownId === null || !selection || selection.isEmpty()) return null;
+      return {
+        fileId: shownId,
+        spec: entry.spec,
+        text: entry.model.getValue(),
+        start: entry.model.getOffsetAt(selection.getStartPosition()),
+        end: entry.model.getOffsetAt(selection.getEndPosition()),
+      };
+    },
+
+    applyEdit(fileId, anchor, replacement) {
+      const entry = entries.get(fileId);
+      const history = histories.get(fileId);
+      if (!entry || !history) return { ok: false, message: 'Open the file to apply this edit.' };
+      if (entry.spec.readOnly) {
+        return { ok: false, message: 'This file was deleted. Restore it to apply the edit.' };
+      }
+      const plan = planAnchoredEdit(entry.spec.ytext, anchor, replacement);
+      if (!plan.ok) return plan;
+
+      const { model } = entry;
+      const range = monaco.Range.fromPositions(
+        model.getPositionAt(plan.start),
+        model.getPositionAt(plan.end),
+      );
+      // Its own undo step: not merged with typing just before or just after.
+      history.undo.stopCapturing();
+      model.applyEdits([{ range, text: plan.text }]);
+      history.undo.stopCapturing();
+
+      if (editor.getModel() === model) {
+        const applied = monaco.Range.fromPositions(
+          model.getPositionAt(plan.start),
+          model.getPositionAt(plan.start + plan.text.length),
+        );
+        editor.setSelection(applied);
+        editor.revealRangeInCenterIfOutsideViewport(applied);
+        editor.focus();
+      }
+      return { ok: true };
     },
 
     destroy() {

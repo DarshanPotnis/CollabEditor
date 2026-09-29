@@ -16,6 +16,17 @@ function ada(activeFileId: string | null): Collaborator {
     activeFileId,
     isYou: false,
     user: { id: 'ada', name: 'Ada', color: '#2563eb', kind: 'human' },
+    agent: null,
+  };
+}
+
+function agent(hostUserId: string): Collaborator {
+  return {
+    clientId: 9,
+    activeFileId: 'live',
+    isYou: false,
+    user: { id: 'agent-s1', name: 'AI teammate', color: '#7c3aed', kind: 'agent' },
+    agent: { hostUserId, hostName: 'Claimed Name', sessionId: 's1', status: 'Editing src/app.js' },
   };
 }
 
@@ -45,7 +56,16 @@ describe('followTarget', () => {
 
 describe('followLabel', () => {
   it('says where clicking goes', () => {
-    expect(followLabel(ada('live'), tree)).toBe('Ada, in src/app.js. Go to their cursor');
-    expect(followLabel(ada(null), tree)).toBe('Ada, no file open');
+    expect(followLabel(ada('live'), tree, [])).toBe('Ada, in src/app.js. Go to their cursor');
+    expect(followLabel(ada(null), tree, [])).toBe('Ada, no file open');
+  });
+
+  it('says whom an agent works for, by the name that person shows, and what it is doing', () => {
+    expect(followLabel(agent('ada'), tree, [ada(null), agent('ada')])).toBe(
+      'AI teammate (AI, working for Ada): Editing src/app.js, in src/app.js. Go to its cursor',
+    );
+    expect(followLabel(agent('gone'), tree, [ada(null)])).toContain(
+      'working for someone who has left',
+    );
   });
 });

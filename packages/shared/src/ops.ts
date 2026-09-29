@@ -20,7 +20,7 @@ import { getTemplate, type TemplateId } from './templates/index.js';
 import { layoutTemplate } from './templates/layout.js';
 import { OPS_ORIGIN, OpError } from './op-error.js';
 
-export { OPS_ORIGIN, OpError, type OpErrorCode } from './op-error.js';
+export { OPS_ORIGIN, OpError, agentOrigin, type OpErrorCode } from './op-error.js';
 
 export type InitProjectDocInput = {
   name: string;

@@ -6,8 +6,16 @@
  * tell failures apart.
  */
 
-/** Origin tag on every transaction the ops perform. */
+/** Origin tag on every transaction the ops perform for a person. */
 export const OPS_ORIGIN = 'collabcode:ops';
+
+/**
+ * Origin tag for one AI agent session. Everything the agent writes carries it,
+ * so "Undo AI changes" can track exactly that session's edits and nothing else.
+ */
+export function agentOrigin(sessionId: string): string {
+  return `collabcode:agent:${sessionId}`;
+}
 
 export type OpErrorCode =
   | 'already-initialised'
@@ -19,7 +27,9 @@ export type OpErrorCode =
   | 'would-create-cycle'
   | 'too-many-nodes'
   | 'too-many-nodes-total'
-  | 'file-too-large';
+  | 'file-too-large'
+  | 'no-match'
+  | 'ambiguous-match';
 
 export class OpError extends Error {
   readonly code: OpErrorCode;

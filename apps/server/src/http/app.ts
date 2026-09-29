@@ -5,10 +5,12 @@
  */
 import express, { type ErrorRequestHandler, type Express, type RequestHandler } from 'express';
 import cors from 'cors';
-import { pinoHttp } from 'pino-http';
 import type { Logger } from '../lib/logger.js';
 import type { ProjectsRepo } from '../db/projects-repo.js';
+import type { ClientIpSource } from './client-ip.js';
 import { sendApiError } from './errors.js';
+import { requestLogging } from './request-logging.js';
+import { createAiRouter, type AiRouterDeps } from './routes/ai.js';
 import { createHealthRouter } from './routes/health.js';
 import { createProjectsRouter } from './routes/projects.js';
 
@@ -19,6 +21,10 @@ export type CreateAppDeps = {
   allowedOrigins: string[];
   repo: ProjectsRepo;
   logger: Logger;
+  /** Where per-IP limits read the client's address from (http/client-ip.ts). */
+  clientIpSource: ClientIpSource;
+  /** The model proxy: which gateway to call, the shared tier and its limits. */
+  ai: Omit<AiRouterDeps, 'repo' | 'clientIpSource'>;
   startedAt?: number;
   /**
    * Raised by the end-to-end harness, which creates many projects from one IP
@@ -45,34 +51,48 @@ function createOriginGuard(allowedOrigins: string[], logger: Logger): RequestHan
   };
 }
 
+/** The error express.json raises for a body over its limit. */
+function isBodyTooLarge(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'type' in error &&
+    error.type === 'entity.too.large'
+  );
+}
+
 export function createApp({
   allowedOrigins,
   repo,
   logger,
+  clientIpSource,
+  ai,
   startedAt = Date.now(),
   projectCreateLimitPerMinute = DEFAULT_PROJECT_CREATE_LIMIT,
 }: CreateAppDeps): Express {
   const app = express();
 
-  // Render terminates TLS and adds exactly one proxy hop, so req.ip is the
-  // last entry of X-Forwarded-For. Needed for per-IP rate limiting.
-  app.set('trust proxy', 1);
+  // 'trust proxy' stays unset: per-IP limits read the client address through
+  // clientIp() instead, because Render's proxy chain has no fixed length.
   app.disable('x-powered-by');
 
-  app.use(
-    pinoHttp({
-      logger,
-      autoLogging: { ignore: (req) => req.url === '/health' },
-    }),
-  );
+  app.use(requestLogging(logger));
   app.use(createOriginGuard(allowedOrigins, logger));
   app.use(cors({ origin: allowedOrigins, credentials: false, maxAge: 600 }));
+  // The AI route parses its own, larger bodies, so it comes before the 16 kB
+  // parser the rest of the API uses.
+  app.use(createAiRouter({ ...ai, repo, clientIpSource }));
   app.use(express.json({ limit: '16kb' }));
 
   app.use(createHealthRouter(startedAt));
   app.use(
     '/api',
-    createProjectsRouter({ repo, logger, createLimitPerMinute: projectCreateLimitPerMinute }),
+    createProjectsRouter({
+      repo,
+      logger,
+      clientIpSource,
+      createLimitPerMinute: projectCreateLimitPerMinute,
+    }),
   );
 
   app.use((_req, res) => {
@@ -82,6 +102,10 @@ export function createApp({
   const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _next) => {
     if (error instanceof SyntaxError && 'body' in error) {
       sendApiError(res, 'bad-request', 'Request body is not valid JSON.');
+      return;
+    }
+    if (isBodyTooLarge(error)) {
+      sendApiError(res, 'payload-too-large', 'The request is too large.');
       return;
     }
     req.log.error({ err: error }, 'unhandled request error');

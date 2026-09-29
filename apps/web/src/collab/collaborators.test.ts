@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PRESENCE_COLORS } from '@collabcode/shared';
-import { parseCollaborators, remoteOnly } from './collaborators.js';
+import { agentHostName, parseCollaborators, remoteOnly } from './collaborators.js';
 
 const ada = { id: 'ada', name: 'Ada', color: PRESENCE_COLORS[0], kind: 'human' };
 const grace = { id: 'grace', name: 'Grace', color: PRESENCE_COLORS[1], kind: 'human' };
@@ -17,8 +17,8 @@ describe('parseCollaborators', () => {
     ]);
 
     expect(parseCollaborators(states, 1)).toEqual([
-      { clientId: 1, user: ada, activeFileId: null, isYou: true },
-      { clientId: 2, user: grace, activeFileId: 'file1', isYou: false },
+      { clientId: 1, user: ada, activeFileId: null, isYou: true, agent: null },
+      { clientId: 2, user: grace, activeFileId: 'file1', isYou: false, agent: null },
     ]);
   });
 
@@ -67,5 +67,44 @@ describe('remoteOnly', () => {
       [2, { user: grace }],
     ]);
     expect(remoteOnly(parseCollaborators(states, 1)).map((c) => c.clientId)).toEqual([2]);
+  });
+});
+
+describe('agents', () => {
+  const agentUser = {
+    id: 'agent-s1',
+    name: 'AI teammate',
+    color: PRESENCE_COLORS[2],
+    kind: 'agent',
+  };
+  const info = { hostUserId: 'ada', hostName: 'Ada', sessionId: 's1', status: 'Editing a.js' };
+
+  it('keeps what an agent says about itself, and ignores it on a person', () => {
+    const states = new Map<number, unknown>([
+      [1, { user: agentUser, agent: info }],
+      [2, { user: grace, agent: info }],
+    ]);
+    const [agent, person] = parseCollaborators(states, 0);
+    expect(agent?.agent).toEqual(info);
+    expect(person?.agent).toBeNull();
+  });
+
+  it('names the host by what they show now, not what the agent claims', () => {
+    const collaborators = parseCollaborators(
+      new Map<number, unknown>([
+        [1, { user: { ...ada, name: 'Ada L.' } }],
+        [2, { user: agentUser, agent: { ...info, hostName: 'Someone Famous' } }],
+      ]),
+      0,
+    );
+    expect(agentHostName(info, collaborators)).toBe('Ada L.');
+  });
+
+  it('has no host name when the host has left, or when only an agent has that id', () => {
+    const onlyAgents = parseCollaborators(
+      new Map<number, unknown>([[2, { user: { ...agentUser, id: 'ada' }, agent: info }]]),
+      0,
+    );
+    expect(agentHostName(info, onlyAgents)).toBeNull();
   });
 });

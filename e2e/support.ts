@@ -133,3 +133,42 @@ export async function treePaths(page: Page): Promise<string[]> {
     .evaluateAll((rows) => rows.map((row) => row.getAttribute('title') ?? ''));
   return titles.sort();
 }
+
+/** Replaces the open file's whole content, bypassing auto-closing brackets. */
+export async function replaceEditorText(page: Page, text: string): Promise<void> {
+  await page.locator(EDITOR).click();
+  await page.keyboard.press(`${MOD}+a`);
+  await page.keyboard.press('Delete');
+  await page.keyboard.insertText(text);
+}
+
+/** Clicks Run and waits until the project's server is listening. */
+export async function runProject(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Run status' })).toContainText('Server running', {
+    timeout: 120_000,
+  });
+}
+
+/** Sends a request from the API console and returns the result's text. */
+export async function sendFromApiConsole(
+  page: Page,
+  method: string,
+  path: string,
+  body = '',
+): Promise<string> {
+  await page.getByRole('tab', { name: 'API' }).click();
+  const form = page.getByRole('form', { name: 'Request' });
+  await form.getByLabel('Method').selectOption(method);
+  await form.getByLabel('Path').fill(path);
+  if (body !== '') await form.getByLabel('Body').fill(body);
+  // A new history entry is the reliable sign that this send finished.
+  const history = page.getByText(/^History \(\d+\)$/);
+  const before =
+    (await history.count()) === 0
+      ? 0
+      : Number(/\d+/.exec((await history.textContent()) ?? '')?.[0]);
+  await form.getByRole('button', { name: 'Send' }).click();
+  await expect(page.getByText(`History (${String(before + 1)})`)).toBeVisible({ timeout: 45_000 });
+  return (await page.getByLabel('API result').textContent()) ?? '';
+}

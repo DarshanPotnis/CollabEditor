@@ -1,0 +1,26 @@
+{
+  "name": "@collabcode/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "selftest": "vitest run --config vitest.selftest.config.ts",
+    "evals": "tsx src/cli.ts",
+    "readme": "tsx src/readme-cli.ts",
+    "regrade": "tsx src/regrade-cli.ts",
+    "compare": "tsx src/compare-cli.ts"
+  },
+  "dependencies": {
+    "@collabcode/agent": "*",
+    "@collabcode/model-gateway": "*",
+    "@collabcode/shared": "*",
+    "yjs": "^13.6.33",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "yaml": "^2.9.1"
+  }
+}

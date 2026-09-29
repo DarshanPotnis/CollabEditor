@@ -19,13 +19,13 @@ describe('editorSpecs', () => {
   it('opens live files at their path, editable, in their language', () => {
     const spec = editorSpecs(tabs, tree, textFor).get('live');
     expect(spec?.uri.toString()).toBe('file:///src/app.ts');
-    expect(spec).toMatchObject({ language: 'typescript', readOnly: false });
+    expect(spec).toMatchObject({ path: 'src/app.ts', language: 'typescript', readOnly: false });
   });
 
   it('keeps a deleted file open read-only under its own URI', () => {
     const spec = editorSpecs(tabs, tree, textFor).get('dead');
     expect(spec?.uri.scheme).toBe('collabcode-deleted');
-    expect(spec).toMatchObject({ language: 'javascript', readOnly: true });
+    expect(spec).toMatchObject({ path: 'old.js', language: 'javascript', readOnly: true });
   });
 
   it('gives a permanently deleted file no model', () => {

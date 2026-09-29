@@ -14,7 +14,7 @@ This plan is written for Claude Code. Work one phase at a time, in order. For ea
 Later phases (AI agent, checkpoints, GitHub push, accounts) are intentionally out of scope here.
 Design choices below leave room for them, but do not build them yet.
 
-Phases 0, 1 and 2 are **done**. Where reality diverged from the original plan — mostly because
+Phases 0, 1, 2 and 3 are **done**. Where reality diverged from the original plan — mostly because
 installed library versions differ from what it assumed — this document has been corrected in
 place so it stays the source of truth, and §14 lists every change with its reason.
 
@@ -103,8 +103,8 @@ every copy can merge in any order and still end up identical.
 | Validation   | zod                                                                                     | Env, HTTP bodies, params                                                                                                                                              |
 | Logging      | pino                                                                                    | Structured logs on Render                                                                                                                                             |
 | IDs          | nanoid                                                                                  | Project and file-node IDs                                                                                                                                             |
-| Runtime      | `@webcontainer/api`                                                                     | Node.js in the browser at $0; free for personal/open-source use                                                                                                       |
-| Terminal     | `@xterm/xterm` + fit addon                                                              | Standard web terminal                                                                                                                                                 |
+| Runtime      | `@webcontainer/api` 1.6.4 (Node 22 inside the container)                                | Node.js in the browser at $0. Commercial production use needs a StackBlitz licence; this non-commercial open-source project does not (ADR 006)                        |
+| Terminal     | `@xterm/xterm` 6 + fit addon                                                            | Standard web terminal; loaded on first Run only                                                                                                                       |
 | Tests        | Vitest (unit/integration), Playwright (e2e)                                             | Fast, TS-native                                                                                                                                                       |
 | Server build | tsup (bundles `packages/shared` in)                                                     | Avoids publishing/building the shared package separately                                                                                                              |
 | Node         | 24 (current LTS), pinned in `.nvmrc` and `engines`                                      | Reproducible builds. Its global `WebSocket` means tests need no `ws` polyfill                                                                                         |
@@ -142,7 +142,9 @@ the Phase 1 cutover, once it worked end to end.
 │   │       │   ├── notifications/ # toasts
 │   │       │   ├── ui/        # context menu, confirm dialog
 │   │       │   ├── presence/
-│   │       │   └── runtime/   # Phase 3: WebContainer, FS bridge, terminal, preview, API console
+│   │       │   └── runtime/   # WebContainer boot, runner, run state, terminal, shell, preview
+│   │       │       ├── fs-bridge/    # one-way Y.Doc → container sync (ADR 005)
+│   │       │       └── api-console/  # request helper, spoof-proof codec, console UI
 │   │       ├── lib/           # config (zod-parsed env), identity, api client
 │   │       └── styles/
 │   └── server/
@@ -187,7 +189,8 @@ Deployment changes (apply only when merging to `main`, documented in the README)
 - Render: root at repo root; build
   `npm ci && npm run build -w @collabcode/shared && npm run build -w @collabcode/server`; start
   `npm run start -w @collabcode/server`; run `npm run migrate -w @collabcode/server` on deploy;
-  env `DATABASE_URL`, `ALLOWED_ORIGINS`, `LOG_LEVEL`.
+  env `DATABASE_URL`, `ALLOWED_ORIGINS`, `LOG_LEVEL` (and `CLIENT_IP_SOURCE`, whose default
+  `render` is right; see the README's launch checklist).
 - Confirm both platforms install workspace dependencies correctly before switching `main`.
 - **Still outstanding.** Neither platform has been reconfigured yet; `main` still deploys the
   deleted layout.
@@ -587,7 +590,7 @@ Each item has an e2e test (`e2e/workspace.spec.ts`, `undo.spec.ts`, `tabs.spec.t
 
 ---
 
-## 10. Phase 3: Run the backend in the browser (WebContainers)
+## 10. Phase 3: Run the backend in the browser (WebContainers) — **done**
 
 **Goal:** anyone in the project can run the Node backend in their own tab and call its
 endpoints, and it reloads as collaborators edit.
@@ -595,61 +598,80 @@ endpoints, and it reloads as collaborators edit.
 ### 10.1 Prerequisites
 
 - **Cross-origin isolation.** Serve `Cross-Origin-Embedder-Policy: require-corp` and
-  `Cross-Origin-Opener-Policy: same-origin` on every route: in `apps/web/vercel.json` for
-  production and in Vite `server.headers` / `preview.headers` locally.
-- Audit every cross-origin asset (fonts, images, analytics scripts). Self-host them or make
-  sure they send the right headers. Monaco is already bundled locally from Phase 1, and the app
-  currently loads no cross-origin assets at all.
-- **Feature detection.** If `window.crossOriginIsolated` is false or booting fails, show a
-  banner ("Running code needs a Chromium browser like Chrome, Edge or Arc"). Editing keeps
-  working.
-- **License.** Add a README note: the WebContainer API is free for personal and open-source use,
-  and this project is non-commercial open source.
+  `Cross-Origin-Opener-Policy: same-origin` on every route, worker scripts included: in
+  `apps/web/vercel.json` for production and in Vite `server.headers` / `preview.headers` locally,
+  all from one constant (`apps/web/src/lib/isolation-headers.ts`) that a test checks against
+  `vercel.json`. `require-corp` rather than `credentialless`: we load no cross-origin `no-cors`
+  resources, and Safari does not implement `credentialless`. The container boots with the
+  matching `coep` option.
+- Audit every cross-origin asset. Done: the app loads no fonts, scripts or images from other
+  origins; Monaco and its workers are bundled; REST calls are `cors`-mode and WebSockets are not
+  subject to COEP. The e2e suite runs isolated throughout.
+- **Feature detection.** If `window.crossOriginIsolated` is false, Run is disabled with an
+  explanation; editing keeps working. Chromium browsers are fully supported; Safari 16.4+ (beta)
+  and Firefox (alpha) run with a notice; a failed boot mentions third-party cookies, since the
+  runtime lives in a `stackblitz.com` iframe.
+- **Licence.** The README quotes StackBlitz's terms: a licence is required for production use in
+  a commercial, for-profit setting; prototypes do not need one; this project is non-commercial
+  open source.
+- **Launch check.** The README's launch checklist confirms the headers on the deployed site.
 
 ### 10.2 Runtime module (`apps/web/src/features/runtime`)
 
-- `webcontainer.ts`: boot once per page behind a module-level promise (only one instance is
-  allowed; StrictMode-safe). Tear down when leaving the workspace.
-- **FS bridge, one-way from Yjs to the WebContainer:**
-  - Brute force first: on Run, build a `FileSystemTree` from the resolved tree snapshot and
-    `mount` it.
-  - Then live sync: observe `nodes` and `contents` deeply, debounce per file (~250 ms), and
-    apply `writeFile` / `rm` / rename (rm + write if rename is unavailable) through a serial
-    queue so operations apply in order. Map by resolved display paths.
-  - Never sync the container back into Yjs (`node_modules`, lockfiles and build output stay
-    local). Record opt-in lockfile sync as future work.
-  - Put the diff/queue logic behind a small FS interface so it can be unit-tested with a fake.
-- **Process manager:** Run = `npm install` (skipped if the hash of `package.json` hasn't changed
-  since the last install), then `npm run dev`, falling back to `npm start`. Stop and Restart
-  buttons. Stream output to the terminal, and show exit codes. Templates use `node --watch`
-  so edits from any collaborator restart the server.
-- **Terminal:** xterm.js with the fit addon. One "Run output" tab and one interactive shell
-  tab (`jsh`) with resize handling.
-- **Preview and API console:** listen for `server-ready` and store `{ port, url }`.
-  - Preview tab: iframe for HTML responses.
-  - API console tab (the key demo for backend work): method, path, headers, JSON body, Send.
-    Execute requests _inside the container_ with a helper script written once to the
-    container (for example `/.collabcode/request.mjs`) that takes the request as a base64 JSON
-    argument and calls `fetch('http://localhost:<port>…')`. This avoids CORS entirely. Show
-    status, timing, headers and a pretty-printed body, plus per-user request history.
+- `webcontainer.ts`: boots on the **first Run**, not when a project opens (only one instance per
+  page is allowed). Torn down when leaving the workspace; a boot that finishes after teardown is
+  discarded. The API package and xterm are loaded then, so editing-only visitors never download
+  them.
+- **FS bridge, one way from Yjs to the WebContainer** (ADR 005): observe `nodes` and `contents`,
+  wait for **one shared quiet period** (250 ms, at most 1 s), **diff the whole project** against
+  what was last written, and apply removals, folder changes and writes in a safe order, never
+  overlapping. A rename is a remove plus a write (`fs.rename` exists but is not needed). The first
+  sync is the same diff rather than `mount`. **It only removes what it wrote**, so `node_modules`,
+  lockfiles and program output survive. Never sync the container back into Yjs.
+- **Process manager:** Run = `npm install` (only when the dependency sections of `package.json`
+  changed, skipped when there are none), then `npm run dev`, falling back to `npm start`. Stop and
+  Restart at any step. A closed port is a restart; a port gone for 3 s, or a dev process that
+  exits, is a crash, and **a crashed run restarts itself when the next file syncs**. A notice says
+  when dependencies changed since the install. Templates use `node --watch` and declare
+  `engines: { node: ">=22" }`, the container's Node.
+- **Terminal:** xterm.js 6 with the fit addon: a "Run output" tab and an interactive shell tab
+  (`jsh`) with resize handling. Output is buffered so switching tabs loses nothing.
+- **Preview:** listen for port events and keep `{ port, url }`.
+  - Preview tab: iframe with `sandbox="allow-scripts allow-same-origin allow-forms"` (no top
+    navigation, popups or modals; `allow-same-origin` is required because previews are served by
+    a service worker on their own StackBlitz origin), labelled as running project code.
+  - API console tab: method, path, headers, body, Send. Each request runs a helper **inline with
+    `node -e`** inside the container (no file is written), which calls `localhost` and so avoids
+    CORS. The response is read **only from the helper's own process output**, as one line: a
+    per-request nonce, then base64 JSON of status, headers, body bytes and timing; exactly one such
+    line is accepted and it is schema-validated, so the server's logs and bodies cannot fake a
+    response. Bodies up to 2 MB, no redirects followed, 30 s timeout; text, JSON or hex, never
+    HTML. Send waits out a restart. History is per user, in memory.
 - **Safety and UX:** code never runs automatically on join. It runs only when the local user
-  clicks Run, and the Run panel notes that the code includes edits from collaborators. Run
-  state is per user in this phase.
+  clicks Run, and the Run panel notes that the code includes edits from collaborators. Run state
+  is per user.
 
-### 10.3 Definition of done
+### 10.3 Definition of done — met
 
 - Express template: Run → install → server ready → `GET /users` in the API console returns JSON.
 - Editing a route while it runs restarts the server and the next request shows the change.
 - A collaborator edits a file in their browser, and your running server picks it up.
 - Unsupported browsers show the banner and can still edit.
 
+The first three are covered by the opt-in WebContainer e2e suite (`RUN_WEBCONTAINER_E2E=1`), the
+fourth by the default suite; `docs/manual-tests/phase-3.md` walks through all of them.
+
 ### 10.4 Tests and ADRs
 
-- Unit tests for the FS bridge diff and ordering logic with a fake file system.
-- Optional Chromium-only Playwright smoke test for Run + API console.
-- ADR **005**: one-way Yjs → WebContainer sync.
+- Unit tests for the FS bridge diff, ordering and safety with a fake file system and a real
+  Y.Doc; for the run lifecycle and auto-restart with a fake container; for the API console codec
+  against forged and binary output. The request helper runs under real Node against a real HTTP
+  server, on Node 24 and, in CI, on Node 22.
+- Opt-in, Chromium-only Playwright suite against a real WebContainer; a default-suite test for
+  unsupported browsers and one for the isolation headers and workers.
+- ADR **005**: one-way Yjs → WebContainer sync — written.
 - ADR **006**: in-browser execution with WebContainers (cost, sandboxing, browser support,
-  license). (Both renumbered by one — see §8.7.)
+  licence) — written.
 
 ---
 
@@ -659,29 +681,42 @@ endpoints, and it reloads as collaborators edit.
   (`useSyncExternalStore`) so a keystroke doesn't re-render the whole workspace. Tree resolution
   is not debounced: it observes only `nodes`, which keystrokes never change, so it runs only on
   structural edits, and a debounce would only delay renames on screen. Debounce the FS sync.
-- **Known optimisation, deliberately not built: the Monaco bundle.** Importing all of
-  `monaco-editor` produces a 4.36 MB main chunk (**1.14 MB gzipped**). Importing
-  `monaco-editor/editor/editor.api` plus only the language contributions we use would cut that
-  roughly in half. It is deferred until **after Phase 2**, when the real set of file types the
-  workspace supports is known — doing it now would mean guessing that set and then revisiting
-  it, and every new language would become a registration someone has to remember. Revisit it as
-  part of the Phase 3 asset audit, since cross-origin isolation touches the same loading path.
+- **The Monaco bundle: measured in Phase 3, and not worth splitting.** Importing all of
+  `monaco-editor` produces a 4.3 MB main chunk (1.13 MB gzipped). The plan expected that importing
+  `monaco-editor/editor/editor.api` plus only the features and languages we use would roughly
+  halve it. Built and measured against what a visitor actually downloads to see the Express
+  template's `index.js` (the resources the page loaded, gzipped):
+
+  |           | Before   | Lean entry | Change        |
+  | --------- | -------- | ---------- | ------------- |
+  | Page code | 1,235 kB | 1,227 kB   | −8 kB (−0.6%) |
+  | Workers   | 1,582 kB | 1,582 kB   | none          |
+
+  The 84 syntax-highlighting languages were already split into chunks loaded on first use, and
+  `editor.api` alone brings in the editor core and its services, which is nearly all of the
+  weight; the features we could drop were small. Below the 20% bar set before measuring, so it
+  was reverted: it would have made every new language or feature a registration to remember for
+  under 1%. The real cost is the TypeScript worker (1.5 MB gzipped, loaded when the first JS/TS
+  file opens), which is the TypeScript compiler itself; it loads in a worker, off the main thread.
+
 - **Accessibility:** keyboard-reachable controls, visible focus states, sufficient contrast in
   both themes, and remote-cursor labels that stay readable.
 - **Error handling:** an error boundary per pane; user-facing errors are specific and
   actionable.
 - **Environment variables:**
 
-| Variable            | App            | Purpose                                                  |
-| ------------------- | -------------- | -------------------------------------------------------- |
-| `VITE_API_URL`      | web            | Base URL for the REST API                                |
-| `VITE_COLLAB_URL`   | web            | WebSocket URL for Hocuspocus (`wss://…/collab`)          |
-| `PORT`              | server         | Injected by Render; defaults to 8080                     |
-| `HOST`              | server         | Bind address; defaults to `0.0.0.0`                      |
-| `TEST_DATABASE_URL` | server (tests) | Enables the Postgres-backed specs; unset means they skip |
-| `DATABASE_URL`      | server         | Neon Postgres connection string                          |
-| `ALLOWED_ORIGINS`   | server         | Comma-separated allowed web origins                      |
-| `LOG_LEVEL`         | server         | pino log level                                           |
+| Variable               | App            | Purpose                                                                      |
+| ---------------------- | -------------- | ---------------------------------------------------------------------------- |
+| `VITE_API_URL`         | web            | Base URL for the REST API                                                    |
+| `VITE_COLLAB_URL`      | web            | WebSocket URL for Hocuspocus (`wss://…/collab`)                              |
+| `PORT`                 | server         | Injected by Render; defaults to 8080                                         |
+| `HOST`                 | server         | Bind address; defaults to `0.0.0.0`                                          |
+| `TEST_DATABASE_URL`    | server (tests) | Enables the Postgres-backed specs; unset means they skip                     |
+| `RUN_WEBCONTAINER_E2E` | e2e (tests)    | Runs the WebContainer specs, which need the network; unset means they skip   |
+| `DATABASE_URL`         | server         | Neon Postgres connection string                                              |
+| `ALLOWED_ORIGINS`      | server         | Comma-separated allowed web origins                                          |
+| `LOG_LEVEL`            | server         | pino log level                                                               |
+| `CLIENT_IP_SOURCE`     | server         | Per-IP limits: `render` (first `X-Forwarded-For` entry) or `direct` (socket) |
 
 Provide `.env.example` files for both apps. Make sure `.env` is gitignored in every package.
 
@@ -701,8 +736,9 @@ layout beyond "doesn't break".
 - ADRs 001–006 as listed in each phase (renumbered — see §8.7).
 - `docs/manual-tests/<phase>.md`: the definition-of-done script for each phase.
 - README: written at the Phase 1 cutover, since deleting `frontend/` and `backend/` changed how
-  the project is run. Still to add at the end of Phase 3: demo GIF, WebContainer licence note,
-  and the architecture diagram once it stops changing.
+  the project is run. Phase 3 added the WebContainer licence note, browser support and the launch
+  checklist. Still outstanding: a demo GIF, and the architecture diagram in the README now that it
+  has stopped changing.
 
 ---
 
@@ -753,3 +789,22 @@ corrected in place above.
 | Subdocument optimisation recorded in ADR 004 rather than its own ADR (§9.4)                      | Avoids renumbering Phase 3's 005/006 again                                                                                                                             |
 | Templates are path → content maps with an `entryPath` (§6.1)                                     | Folders and a `package.json` for Phase 3; the old "earliest file" entry rule is arbitrary once files share a `createdAt`                                               |
 | E2E presses Ctrl, not Cmd, even on a Mac host                                                    | Playwright's Desktop Chrome profile reports a Windows user agent, and the app follows the page's platform                                                              |
+
+**Phase 3 (2026-09-27)**
+
+| Change                                                                                                                         | Reason                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| COEP `require-corp`, not `credentialless`, with the container booted to match (§10.1)                                          | We load no cross-origin `no-cors` resources, and Safari has no `credentialless`, so it could never be isolated                             |
+| Browser support wording: Chromium full, Safari 16.4+ beta, Firefox alpha (§10.1)                                               | StackBlitz's support page; the plan's "Chromium only" banner was stricter than reality                                                     |
+| Licence note quotes StackBlitz's terms rather than "free for personal and open-source use" (§10.1)                             | The terms speak of commercial, for-profit production use; the paraphrase was not what they say                                             |
+| Boot on first Run, lazy-load the API client and xterm (§10.2)                                                                  | Most visitors edit and never run; they should not pay for the runtime                                                                      |
+| One shared debounce over a full diff; renames as remove plus write; no `mount` (§10.2)                                         | Simpler, with the same result at our project sizes; `fs.rename` exists but is not needed                                                   |
+| The bridge only removes what it wrote (§10.2)                                                                                  | Otherwise deleting a folder in the project could delete `node_modules` or program output                                                   |
+| Install keyed on the dependency sections of `package.json` (§10.2)                                                             | Editing a script should not reinstall; a project without dependencies should not install at all                                            |
+| Auto-restart a crashed run when a file syncs (§10.2)                                                                           | `node --watch` watches only files it had loaded, so restoring a deleted file after a crash went unnoticed                                  |
+| API console helper run inline with `node -e`, response read only from its own output as one nonce-prefixed base64 line (§10.2) | The container's file system is the project's, so a helper file could clash; and server logs or bodies must not be able to fake a response  |
+| Helper script free of shell-special characters (§10.2)                                                                         | WebContainer's `spawn` processes backslash escapes in arguments: `'\n'` arrived as `'n'`                                                   |
+| Preview sandbox `allow-scripts allow-same-origin allow-forms` (§10.2)                                                          | Verified: previews need a service worker on their own origin, and without top navigation or popups the preview cannot hijack the workspace |
+| Templates declare `engines: { node: ">=22" }`; CI runs the helper test on Node 22 (§10.2, §10.4)                               | The container runs Node 22 while the repository runs 24                                                                                    |
+| WebContainer e2e is opt-in (`RUN_WEBCONTAINER_E2E`) (§10.4)                                                                    | It depends on the network and StackBlitz, so CI would not be deterministic                                                                 |
+| The Monaco bundle split was measured and not kept (§11)                                                                        | A lean import saved 0.6% of what a visitor downloads; the languages were already lazy                                                      |

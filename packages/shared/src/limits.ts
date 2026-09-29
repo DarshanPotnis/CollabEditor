@@ -28,6 +28,9 @@ export const MAX_PROJECT_NAME_LENGTH = 80;
 /** Largest display name a collaborator may broadcast through awareness. */
 export const MAX_USER_NAME_LENGTH = 32;
 
+/** Largest status line an AI agent may broadcast through awareness. */
+export const MAX_AGENT_STATUS_LENGTH = 80;
+
 /**
  * Largest single WebSocket frame the collab server accepts.
  *

@@ -25,6 +25,7 @@ export function editorSpecs(
     if (status.kind === 'live' && status.node.kind === 'file') {
       specs.set(tab.id, {
         uri: liveFileUri(status.node.path),
+        path: status.node.path,
         language: languageForFileName(status.node.displayName),
         ytext,
         readOnly: false,
@@ -32,6 +33,7 @@ export function editorSpecs(
     } else if (status.kind === 'deleted' && status.hidden.kind === 'file') {
       specs.set(tab.id, {
         uri: deletedFileUri(tab.id, status.hidden.name),
+        path: status.hidden.name,
         language: languageForFileName(status.hidden.name),
         ytext,
         readOnly: true,

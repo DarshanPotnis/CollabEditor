@@ -13,6 +13,7 @@ function person(clientId: number, activeFileId: string | null, isYou = false): C
       color: '#2563eb',
       kind: 'human',
     },
+    agent: null,
   };
 }
 

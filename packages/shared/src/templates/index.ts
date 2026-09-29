@@ -2,6 +2,10 @@
  * Starter projects. The server builds a project's initial Y.Doc from one of
  * these (ops.ts); Phase 3 runs them, which is why each has a package.json
  * whose dev script uses `node --watch`.
+ *
+ * They run in a WebContainer, whose Node is 22 (22.22 when Phase 3 was built),
+ * not the Node 24 this repository uses. Template code may only use what Node
+ * 22 has, and each package.json says so with `engines`.
  */
 import { blankNodeFiles } from './blank-node.js';
 import { expressApiFiles } from './express-api.js';
@@ -13,7 +17,7 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   'express-api': {
     id: 'express-api',
     label: 'Express API',
-    description: 'A small REST API you can run in your browser later.',
+    description: 'A small REST API you can run and call right in your browser.',
     files: expressApiFiles,
     entryPath: 'index.js',
   },

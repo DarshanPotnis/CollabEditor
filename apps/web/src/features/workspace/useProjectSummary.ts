@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ProjectSummary } from '@collabcode/shared';
-import { ApiError, fetchProject } from '../../lib/api.js';
+import { ApiError } from '../../lib/api-error.js';
+import { fetchProject } from '../../lib/api.js';
 
 export type ProjectSummaryState =
   | { status: 'loading' }

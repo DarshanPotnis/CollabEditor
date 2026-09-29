@@ -4,6 +4,9 @@ const packageJson = `{
   "name": "blank-node",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js"

@@ -97,7 +97,7 @@ test.describe('multi-file workspace', () => {
 
     await expect(b.getByText(/permanently deleted, so it can't be restored/)).toBeVisible();
     await b.getByRole('button', { name: 'Close tab' }).click();
-    await expect(b.getByRole('tab')).toHaveCount(0);
+    await expect(b.getByRole('tablist', { name: 'Open files' }).getByRole('tab')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
@@ -127,7 +127,9 @@ test.describe('multi-file workspace', () => {
     const { a, b, bContext } = await openPair(browser);
 
     await bContext.setOffline(true);
-    await expect(b.getByRole('status')).toContainText(/offline|reconnecting/i);
+    await expect(b.getByRole('status', { name: 'Connection' })).toContainText(
+      /offline|reconnecting/i,
+    );
     await createRootFile(a, 'utils.js');
     await typeAtEnd(a, '// ada');
     await createRootFile(b, 'utils.js');
@@ -172,7 +174,9 @@ test.describe('multi-file workspace', () => {
     await expect(treeRow(b, 'Y')).toBeVisible();
 
     await bContext.setOffline(true);
-    await expect(b.getByRole('status')).toContainText(/offline|reconnecting/i);
+    await expect(b.getByRole('status', { name: 'Connection' })).toContainText(
+      /offline|reconnecting/i,
+    );
     await treeRow(a, 'X').dragTo(treeRow(a, 'Y'));
     await treeRow(b, 'Y').dragTo(treeRow(b, 'X'));
     await bContext.setOffline(false);

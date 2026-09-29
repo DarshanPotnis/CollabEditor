@@ -76,4 +76,11 @@ describe('response schemas', () => {
       false,
     );
   });
+
+  it.each(['payload-too-large', 'quota-exhausted', 'invalid-key', 'unavailable'])(
+    'knows the %s error code the AI route sends',
+    (code) => {
+      expect(apiErrorSchema.safeParse({ error: { code, message: 'x' } }).success).toBe(true);
+    },
+  );
 });

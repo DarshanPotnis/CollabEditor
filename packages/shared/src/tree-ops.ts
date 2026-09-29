@@ -1,7 +1,8 @@
 /**
  * The write path for the file tree. Every op resolves the current tree, checks
  * the write against tree-rules.ts and the limits, and then changes the
- * document inside one `doc.transact(…, OPS_ORIGIN)`.
+ * document inside one `doc.transact(…, origin)`. The origin is OPS_ORIGIN for a
+ * person and `agentOrigin(sessionId)` for an AI agent session.
  *
  * A refused write throws an OpError whose message can be shown to the user
  * as-is. The checks see only this client's copy, so two people doing the same
@@ -119,6 +120,7 @@ function createNode(
   kind: NodeKind,
   input: CreateNodeInput,
   context: TreeOpContext,
+  origin: unknown,
   content?: string,
 ): string {
   const tree = resolveDocTree(doc);
@@ -145,12 +147,17 @@ function createNode(
       },
       content,
     );
-  }, OPS_ORIGIN);
+  }, origin);
   return id;
 }
 
 /** Create a file and return its id. */
-export function createFile(doc: Y.Doc, input: CreateFileInput, context: TreeOpContext): string {
+export function createFile(
+  doc: Y.Doc,
+  input: CreateFileInput,
+  context: TreeOpContext,
+  origin: unknown = OPS_ORIGIN,
+): string {
   const content = input.content ?? '';
   if (content.length > MAX_FILE_SIZE) {
     throw new OpError(
@@ -158,16 +165,26 @@ export function createFile(doc: Y.Doc, input: CreateFileInput, context: TreeOpCo
       `That content is over the ${String(Math.round(MAX_FILE_SIZE / 1024))} KB limit for one file.`,
     );
   }
-  return createNode(doc, 'file', input, context, content);
+  return createNode(doc, 'file', input, context, origin, content);
 }
 
 /** Create a folder and return its id. */
-export function createFolder(doc: Y.Doc, input: CreateNodeInput, context: TreeOpContext): string {
-  return createNode(doc, 'folder', input, context);
+export function createFolder(
+  doc: Y.Doc,
+  input: CreateNodeInput,
+  context: TreeOpContext,
+  origin: unknown = OPS_ORIGIN,
+): string {
+  return createNode(doc, 'folder', input, context, origin);
 }
 
 /** Rename a visible node. Renaming to its current name does nothing. */
-export function rename(doc: Y.Doc, nodeId: string, rawName: string): void {
+export function rename(
+  doc: Y.Doc,
+  nodeId: string,
+  rawName: string,
+  origin: unknown = OPS_ORIGIN,
+): void {
   const tree = resolveDocTree(doc);
   const node = requireVisible(tree, nodeId);
   const name = validName(rawName);
@@ -177,11 +194,16 @@ export function rename(doc: Y.Doc, nodeId: string, rawName: string): void {
 
   doc.transact(() => {
     nodesMap(doc).get(nodeId)?.set('name', name);
-  }, OPS_ORIGIN);
+  }, origin);
 }
 
 /** Move a visible node into a folder, or to the root with null. */
-export function move(doc: Y.Doc, nodeId: string, parentId: string | null): void {
+export function move(
+  doc: Y.Doc,
+  nodeId: string,
+  parentId: string | null,
+  origin: unknown = OPS_ORIGIN,
+): void {
   const tree = resolveDocTree(doc);
   const problem = moveProblem(tree, nodeId, parentId);
   if (problem) {
@@ -201,18 +223,23 @@ export function move(doc: Y.Doc, nodeId: string, parentId: string | null): void 
 
   doc.transact(() => {
     nodesMap(doc).get(nodeId)?.set('parentId', parentId);
-  }, OPS_ORIGIN);
+  }, origin);
 }
 
 /** Tombstone a visible node. Its content, and everything under it, is kept. */
-export function softDelete(doc: Y.Doc, nodeId: string, context: TreeOpContext): void {
+export function softDelete(
+  doc: Y.Doc,
+  nodeId: string,
+  context: TreeOpContext,
+  origin: unknown = OPS_ORIGIN,
+): void {
   requireVisible(resolveDocTree(doc), nodeId);
   doc.transact(() => {
     const node = nodesMap(doc).get(nodeId);
     node?.set('deletedAt', context.now ?? Date.now());
     node?.set('deletedBy', context.userId);
     node?.set('deletedByName', context.userName);
-  }, OPS_ORIGIN);
+  }, origin);
 }
 
 /** The node and every tombstoned ancestor along the stored parents, top first. */
@@ -237,7 +264,7 @@ function tombstonedChain(byId: ReadonlyMap<string, NodeFields>, nodeId: string):
  * whose name now clashes takes the next free `name (n)`, for real, and is
  * reported in `renamed` so the UI can say so.
  */
-export function restore(doc: Y.Doc, nodeId: string): RestoreResult {
+export function restore(doc: Y.Doc, nodeId: string, origin: unknown = OPS_ORIGIN): RestoreResult {
   const nodes = readAllNodes(doc);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   if (!byId.has(nodeId)) throw notFound();
@@ -286,7 +313,7 @@ export function restore(doc: Y.Doc, nodeId: string): RestoreResult {
       map.get(id)?.set('deletedByName', null);
     }
     for (const change of renamed) map.get(change.id)?.set('name', change.to);
-  }, OPS_ORIGIN);
+  }, origin);
 
   return { restoredIds: chain, renamed };
 }

@@ -32,6 +32,8 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/collabcode_test
+      # The evals' sandbox specs need Docker, which the runner has; never let them skip here.
+      REQUIRE_DOCKER: '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +53,27 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+
+  helper-node22:
+    # The request helper (packages/agent/src/runtime/request-script.ts) runs
+    # inside the WebContainer and the evals' sandbox, both Node 22, not the
+    # Node 24 everything else here uses. Run its
+    # integration test (real Node, real HTTP server) on Node 22 as well, so a
+    # newer-Node feature cannot slip into the helper unnoticed.
+    name: API console helper on Node 22
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npx vitest run --project agent request-script
 
   e2e:
     name: end-to-end
@@ -78,3 +101,24 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  evals:
+    # No model and no key: every eval task's reference session and known-bad
+    # sessions through the real harness and Docker sandbox (the graders' own
+    # test), the recorded AI-2 sessions replayed, and the whole-run key canary.
+    # Real-model evals are the Evals workflow, started by hand.
+    name: evals (graders, replays, key canary)
+    runs-on: ubuntu-latest
+    env:
+      REQUIRE_DOCKER: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run evals:selftest

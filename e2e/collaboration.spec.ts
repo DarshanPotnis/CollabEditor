@@ -80,7 +80,9 @@ test.describe('two people in one project', () => {
     await waitForEditor(pageB);
 
     await second.setOffline(true);
-    await expect(pageB.getByRole('status')).toContainText(/offline|reconnecting/i);
+    await expect(pageB.getByRole('status', { name: 'Connection' })).toContainText(
+      /offline|reconnecting/i,
+    );
 
     await focusStartOfDocument(pageA);
     await pageA.keyboard.type('online-edit ');
