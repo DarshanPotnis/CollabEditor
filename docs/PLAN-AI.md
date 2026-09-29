@@ -513,41 +513,45 @@ Goal: the AI works around humans instead of over them.
 
 ### AI-4: Evals
 
-Goal: measure the agent before improving it.
+Goal: measure the agent before improving it. Built as described in `docs/evals/README.md` and ADR
+010; this is the summary.
 
-- **Node ToolHost:** in-memory Y.Doc plus a temporary directory and real child processes for
-  run, command and HTTP tools. Same agent core.
-- **Tasks:** about 20, each with a fixture project, a goal, and an automatic grader (hidden
-  tests, HTTP assertions, or document checks). Mix: add an endpoint, add validation, fix a
-  seeded bug, handle 404s, rename a route file and update imports, add a test, refactor
-  without behavior change, and at least two **multiplayer tasks** where a simulated human is
-  active in a file and the grader requires a proposal there and no direct edit.
-- **A task with no sandbox.** The run tools report that the sandbox isn't available. The agent
-  must make the change, stop trying to run anything, and finish with a clear summary that tells
-  the person to click Run. The grader checks the change, that no run tool was called again after
-  the first refusal, and that `finish` was called.
-- **Regression traces.** Recorded AI-2 sessions are committed fixtures in
-  `packages/agent/fixtures/traces`, read with `parseTrace` (which also reads version 1 traces),
-  and replayed with `scriptFromTrace` against the Node ToolHost:
-  - "model busy mid-session": a real demo session that failed at step 6 on Gemini 503s after
-    both retries;
-  - "runtime unavailable; agent loops": a real demo session whose page could not boot a
-    WebContainer. The model made the change, then went past the goal, called `run_command` six
-    times against the missing sandbox, and used all 15 steps without calling `finish`. It is the
-    recorded counterpart of the no-sandbox task above.
-- **Metrics per run:** pass rate, steps, tokens, wall time, and failures grouped by cause.
-- **Output:** JSON results plus a markdown summary; the README shows the latest summary table.
-- **CI:** agent-core unit tests with the fake model run on every push. Real-model evals run
-  only on manual dispatch (and optionally nightly) with the API key as a repository secret,
-  because they cost quota and aren't deterministic.
-- **Evals use their own key and quota.** Free-tier limits are per Google Cloud project, and one
-  run (about 20 tasks × 10–25 steps) would spend the deployment's whole free day, so evals run
-  on a key from a separate project (or a paid key), never the deployed app's.
-- **Choose the default model by numbers.** Run the suite on `gemini-3.5-flash-lite` and on a
-  Flash model, compare pass rate, steps, tokens, wall time and requests used, and set
-  `AI_DEFAULT_MODEL` from the result. Record the comparison in `docs/evals/`.
-- Definition of done: a baseline eval run is recorded in `docs/evals/`.
-- ADR 010: eval methodology (task design, grading, why real-model evals stay out of PR CI).
+- **The same agent, in Node** (`apps/evals`): `packages/agent`'s loop and file tools over a Y.Doc
+  from a fixture project, a model client calling `packages/model-gateway` (moved out of
+  `apps/server` so both use it) in-process with the same prompt, conversation checks and step
+  count as the server, and run tools that say what the browser's say (`packages/agent/src/runtime`).
+- **A Docker sandbox for model-written code:** one container per session with no network, the
+  host's non-root user, no capabilities, a read-only root, the project directory as the only
+  writable mount, resource limits and timeouts, and the fixtures' dependencies baked into the image.
+- **The key** stays in the runner's memory: a one-time file in CI, `apps/evals/.env` locally,
+  never the environment. Two canaries test it (a hostile program in the sandbox; a whole run).
+- **21 tasks**, each with a fixture project, a goal and automatic graders: endpoints with
+  validation checked on every path, a seeded bug, an ES-module crash whose reported line is shifted
+  as WebContainer's is (emulated: Node's lines are right), JSON 404s and 500s, a rename, a
+  refactor, a test that must fail once the code is broken, a rename across a project too big to be
+  sent whole, nothing to do, no sandbox (known or found out), instructions planted in a file and in
+  the server's output, and two presence-rule tasks. Those grade AI-2's behaviour (leave the file,
+  say what it would change) until AI-3's proposals exist.
+- **Graders are tested:** each task's reference solution, played by a scripted model through the
+  real harness, passes every grader; each known-bad session fails the one it names.
+- **Regression traces:** the recorded AI-2 sessions ("model busy mid-session", "runtime
+  unavailable; agent loops", "successful demo") replay through today's tools and graders against
+  pinned verdicts and lists of results that differ from the recording.
+- **Metrics:** pass rate, steps, requests (every attempt), tokens, wall time, wasted steps,
+  repeated errors, and failures by category.
+- **Output:** `docs/evals/results/<run id>.json` and `.md`; `npm run evals:readme` puts the latest
+  run per model in the README.
+- **CI:** every push runs the graders' self-test and the replays (no model, no key, Docker
+  required). Real-model evals run only from the Evals workflow, started by hand; never nightly.
+- **Quota:** the evals' own Google Cloud project; a pacer and a daily ledger keep to its limits,
+  and a run stops before a session it cannot pay for and resumes the next day.
+- **Choosing the default model:** the full suite on `gemini-3.5-flash-lite`; the six-task
+  comparison subset on a Flash model (about 20 requests a day) over three days, and on Flash-Lite
+  three times. Indicative, not significant: `AI_DEFAULT_MODEL` changes only for a clear gap.
+- Definition of done: the graders' self-test and the replays pass in CI, and a baseline eval run
+  is recorded in `docs/evals/`.
+- ADR 010: the evals, their sandbox and key handling, grading, and why real-model evals stay out
+  of push CI.
 
 ### AI-5: Context engine and trace viewer
 
@@ -628,6 +632,18 @@ open, persistence of traces across devices, fine-tuning, voice, and paid-tier fe
 
 What changed in this document during implementation, and why. Everything here is already
 corrected in place above.
+
+**AI-4 (2026-09-29)**
+
+| Change                                                                                                   | Reason                                                                                                                              |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Model-written code runs in a Docker sandbox, not as child processes on the machine (AI-4)                | The Node ToolHost in the plan had no isolation, and two tasks try to make the model misbehave on purpose                            |
+| The key stays out of the runner's environment; real-model runs in CI by default (AI-4)                   | `/proc/<pid>/environ` shows a process's starting environment to the same user, and CI runners are thrown away                       |
+| The model gateway moves to `packages/model-gateway`, and the run tools' words to `packages/agent` (AI-4) | Evals must send a model what the app sends and show it what the browser shows, or they measure a different agent                    |
+| Presence-rule tasks grade leaving the file alone, not a proposal (AI-4)                                  | Proposals are AI-3, which is not built yet                                                                                          |
+| Every grader is tested against reference and known-bad sessions (AI-4)                                   | Graders are code; a grader that cannot fail, or fails a good solution, would mislead every run                                      |
+| Evals run the shared tier's 15 steps; no nightly runs; comparisons on a six-task subset (AI-4)           | That is what people get; nightly runs would spend the eval quota on a non-deterministic model; Flash allows about 20 requests a day |
+| `edit_file` finds text copied with read_file's `N                                                        | ` formatting (AI-4, Step 0)                                                                                                         | In the AI-2 browser test three edits in a row missed on the space after the prefix |
 
 **AI-2 (2026-09-28)**
 

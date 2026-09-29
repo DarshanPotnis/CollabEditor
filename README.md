@@ -165,6 +165,22 @@ it into its files until you type or open another file (**Follow AI** resumes).
 
 [ADR 008](docs/decisions/008-agent-as-a-crdt-peer.md) explains the design.
 
+## Evals
+
+The AI teammate is measured on 21 tasks: endpoints with validation, seeded bugs, a crash whose
+stack trace points at the wrong line, refactors, a test that must be able to fail, instructions
+planted in files and output, and people working in the files it needs. Each task runs the same
+agent the browser runs, against a real model, with model-written code in a locked-down Docker
+sandbox, and automatic graders check the result, not the agent's word for it. The graders are
+tested too: every task's reference solution must pass them and deliberately bad sessions must
+fail them. How it works and how to run it: [docs/evals](docs/evals/README.md).
+
+<!-- evals:start -->
+
+No eval run is recorded yet.
+
+<!-- evals:end -->
+
 ## Running it locally
 
 **Prerequisites:** Node 24 (see `.nvmrc`) and a Postgres database. The free
@@ -229,6 +245,10 @@ npm run e2e       # Playwright, two browser contexts against the production bund
 
 # Boots real WebContainers, so it needs the network; not part of CI:
 RUN_WEBCONTAINER_E2E=1 npm run e2e -- runtime.spec.ts
+
+# The evals' graders against their reference and known-bad sessions, and the recorded
+# sessions replayed: no model or key, but Docker. CI runs it:
+npm run evals:selftest
 ```
 
 `npm test` runs without a database or an AI key. The integration tests start the real Express + Hocuspocus
@@ -332,9 +352,12 @@ packages/shared/   Document schema, tree resolution, write-path ops (tree, text,
                    awareness validation, templates, limits, AI prompts, tools and the
                    model-proxy contract
 packages/agent/    The AI teammate's core, with no browser or Node dependency: the loop,
-                   limits, retries, file tools, presence rule, typing and traces
+                   limits, retries, file tools, presence rule, typing, traces, and what the
+                   run tools say
+packages/model-gateway/  Model calls through the Vercel AI SDK, for the server and the evals
+apps/evals/        The evals: tasks, graders, the Docker sandbox and the eval runner
 e2e/               Playwright specs
-docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/
+docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/, evals/
 ```
 
 ## Roadmap
