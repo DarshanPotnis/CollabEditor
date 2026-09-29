@@ -84,6 +84,22 @@ trial per task, a difference of one or two tasks is noise: change `AI_DEFAULT_MO
 clear gap, and weigh requests per task as much as the pass rate. Your own Anthropic or OpenAI key
 can give a reference ceiling for a few dollars; the report prints the tokens used.
 
+**Status: the Flash comparison on agent@5 is blocked by availability (2026-09-29).** Every attempt
+at a Flash model on the eval project got HTTP 503 ("busy"), so no Flash session has measured
+anything:
+
+| When (Pacific) | Model              | Run                                                    | Attempts, all 503 |
+| -------------- | ------------------ | ------------------------------------------------------ | ----------------: |
+| 00:01          | `gemini-3.8-flash` | `2026-09-29-gemini-3.8-flash-a7f0a02` (CI 36534085352) |                 3 |
+| 11:41          | `gemini-3.8-flash` | `2026-09-29-gemini-3.8-flash-edca946` (CI 36613783162) |                 3 |
+| 11:51          | `gemini-3.7-flash` | `2026-09-29-gemini-3.7-flash-551d738` (CI 36614916623) |                 3 |
+
+Each session's first request and both of the agent's retries (after about 5 s and 15 s) were
+refused, and it ended `model-unavailable`. Flash-Lite answered every one of its 357 requests the
+same day, through the same path and key. The logs keep only the status, not the provider's error
+text, so these runs cannot tell an overloaded model from one this project cannot use. The
+comparison stays stopped until that is known.
+
 ## Reading the results
 
 Per task: pass or fail, and for a failure its category and the first failing grader's reason; the
