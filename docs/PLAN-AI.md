@@ -185,7 +185,7 @@ Tool design rules:
 | -------------------------------------------------- | ----------------------- | -------------------------------------------------------------- |
 | `list_files()`                                     | Project tree            | Resolved display paths, sizes                                  |
 | `read_file(path, startLine?, endLine?)`            | Read content            | Line-numbered, truncated                                       |
-| `search_code(query)`                               | Find text               | Keyword search in AI-2; ranked retrieval in AI-5               |
+| `search_code(query)`                               | Find text               | Keyword search in AI-2; ranked retrieval deferred (ADR 013)    |
 | `edit_file(path, oldText, newText)`                | Precise edit            | `oldText` must match exactly once, else a helpful error        |
 | `create_file(path, content)`                       | New file                | Uses tree ops with the agent origin                            |
 | `rename_file(path, newPath)` / `delete_file(path)` | Tree changes            | Delete is soft only; there is no purge tool                    |
@@ -407,7 +407,7 @@ using your own key avoids the shared free tier. Repeat this in the README.
   replacement out of a fenced block), so the app and the evals read answers the same way.
 - **AI-2's agent is one more definition** (`agent@5`). Its inputs are the goal, the file list and,
   when the project's files total at most 24,000 characters, every file's content with real line
-  numbers, so the first step can act (in AI-5, the project map too), and `sandbox: 'unavailable'`
+  numbers, so the first step can act (a project map is deferred, ADR 013), and `sandbox: 'unavailable'`
   when the page cannot run code (it can only take the sandbox away). The server appends the
   validated conversation (the model's messages, tool results, and fixed nudges whose words are the
   prompt's) after the built messages, then the step's reminder if it has one (§5), and the
@@ -553,32 +553,57 @@ Goal: measure the agent before improving it. Built as described in `docs/evals/R
 - ADR 010: the evals, their sandbox and key handling, grading, and why real-model evals stay out
   of push CI.
 
-### AI-5: Context engine and trace viewer
+### AI-5: Trace viewer and "Watch a demo" (revised)
 
-Goal: make the agent better and show why, with numbers.
+Goal: let people see what the agent did, step by step, and watch a real session replayed at no
+cost. The context engine this phase first held is deferred (below, and ADR 013).
 
-- **Project map:** file list plus exported symbols per file, included in the system prompt.
-  Brute force first (lightweight parsing of JS/TS exports); evaluate using Monaco's
-  TypeScript worker or a parser only if needed.
-- **Ranked retrieval for `search_code`:** start with keyword ranking (BM25-style). Add
-  in-browser embeddings only if the eval suite shows a real improvement over keyword ranking.
-  If embeddings are tried, verify that model and runtime files load under our cross-origin
-  isolation headers (self-host if needed).
-- **Trace viewer:** a timeline in the AI panel showing each model call and tool call with
-  inputs, outputs (truncated), tokens and latency. Traces can be downloaded as JSON. Eval runs
-  use the same trace format.
-- **"Watch a demo" replay mode.** Replays a recorded agent trace into a fresh project made from
-  the same template, with **zero model calls**: a scripted `ModelClient` (AI-2's test fake)
-  feeds the recorded model responses to the real browser ToolHost, so visitors see the avatar,
-  the cursor, the live typing and the runs exactly as they happened. It is labelled as a replay
-  everywhere it shows (a banner, the agent's status, the AI panel), so nobody mistakes it for a
-  live model. It works when the free quota is used up, costs nothing, and is the source of the
-  README demo. Recorded traces are committed fixtures. The mechanics exist after AI-2, so it can
-  move earlier if that is convenient; it sits here because it shares the trace format with the
-  viewer.
-- Definition of done: an eval run after the context engine, compared with the AI-4 baseline in
-  `docs/evals/`, with the before/after table in the README.
-- ADR 011: retrieval choice, backed by eval numbers.
+- **Trace viewer.** A timeline in the AI panel, for the session that just ended and for any
+  downloaded trace (formats 1 to 4, read through `parseTrace`; what an older format did not record
+  shows as not recorded): the goal, prompt version, model, tier, limits, outcome and totals; per
+  step the model's latency, tokens, finish reason, busy and rate-limit waits, the reminder and any
+  nudge; per tool call its input, its output (truncated), error or not, and duration; and the
+  finish summary with its verified checks and any listed but not made. A trace file is untrusted
+  input: it is size-capped, validated, and shown as text only. During a session the live log
+  stays; the timeline takes its place when the session ends.
+- **"Watch a demo".** Plays a committed recording into a fresh project with **zero model calls**,
+  like a player piano: the recorded model answers are the roll, and everything they drive is real.
+  The project is created from the recording's template and named "Demo — DELETE endpoint", so a
+  cleanup can find demo projects; it stays real and editable afterwards.
+  - **Recorded:** the goal, every model answer (text, tool calls and their inputs, the finish
+    summary and listed checks) and their order; pacing is recorded thinking time, capped.
+  - **Real, now:** the project, the agent's own connection and avatar, every tool call through
+    today's tools (edits typed live, the WebContainer booting and installing, requests to the
+    running server), the loop, the verification of the finish's checks against this replay's
+    calls, and Undo AI changes. No model request is made, so no key and no quota.
+  - **Labelled everywhere:** a banner (what was recorded, when, with which prompt and model, and
+    that no AI is running), the agent's status, and the avatar's name, "AI teammate (replay)",
+    which anyone who opens the link sees. Download trace gives the recording, never the replay's
+    own trace.
+  - **Drift:** before playing, the fresh project must match the recording's starting-files
+    fingerprint, or the replay refuses and says the recording needs making again. While playing,
+    each real tool result is compared with the recorded one (error or not, HTTP status, exit code,
+    served or crashed); at the first difference the replay stops and says what was recorded and
+    what happened now. Tests replay the demo through today's file tools, and the evals replay it
+    through the real tools in Docker with no difference allowed, so a change that would break the
+    demo fails CI. The fix is always a new recording, never an edited one.
+  - **Where it cannot run.** When the page is not cross-origin isolated or the sandbox cannot boot,
+    "Watch a demo" offers "View the recorded session" instead: the recording in the trace viewer,
+    labelled as a recording, with a note that the live replay needs Chrome, Edge or Arc. Recorded
+    run results are never shown as if they were happening now.
+  - **The recording** is `packages/agent/fixtures/traces/demo-agent-5.json`: an agent@5 session on
+    `gemini-3.5-flash-lite` (4 steps: run, one edit, four checks sent together, finish with all
+    four verified). The older `successful-demo.json` stays as a regression fixture: today's tools
+    no longer replay it as recorded.
+- **Deferred: the context engine** (a project map in the prompt, ranked retrieval for
+  `search_code`). The evals' failures so far are about verification, not finding code: the one
+  task that needs search across a project too big to send whole passed in every run. That is weak
+  evidence, since the suite has one such task, so the follow-up is one or two multi-file retrieval
+  tasks, added after the three-session headline runs, which need the task set frozen. The context
+  engine waits until an eval shows retrieval failures (ADR 013).
+- Definition of done: "Watch a demo" plays the recording end to end in the browser, with the
+  labels, zero model requests and the checks verified; the trace viewer opens every trace format;
+  the replay tests and the Docker replay pass in CI; `docs/manual-tests/ai-5.md`.
 
 ---
 
@@ -632,6 +657,14 @@ open, persistence of traces across devices, fine-tuning, voice, and paid-tier fe
 
 What changed in this document during implementation, and why. Everything here is already
 corrected in place above.
+
+**AI-5, revised (2026-09-29)**
+
+| Change                                                                                     | Reason                                                                                                                               |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| AI-5 becomes the trace viewer and "Watch a demo"; the context engine is deferred (ADR 013) | The evals' failures were about verification, not retrieval; a replay and a viewer show the agent's work at no cost                   |
+| The demo plays a new agent@5 recording, not `successful-demo.json`                         | Today's tools replay the old one differently (its failed edits now land, adding the route three times), and format 3 lists no checks |
+| Where a live replay cannot run, the recording opens in the trace viewer instead            | Recorded run results must never look as if they were happening now                                                                   |
 
 **AI-4 (2026-09-29)**
 
