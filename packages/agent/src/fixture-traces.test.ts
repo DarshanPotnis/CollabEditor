@@ -13,9 +13,16 @@
  * (rewrote index.js, added and deleted test files, edited package.json, tried to install
  * supertest), called run_command six times against a sandbox that did not exist, and used all
  * 15 steps without calling finish.
+ *
+ * successful-demo.json is the demo task passing under agent@3 (2026-09-29, gemini-3.5-flash-lite,
+ * trace format 3), run through the real app by Playwright: it ran the project, added the route to
+ * routes/users.js only, checked a DELETE that succeeds and one that fails, and finished. Its
+ * first three edits missed because oldText kept the space after the "N| " line-number prefix;
+ * the repeated-error reminder was sent twice before the fourth landed.
  */
 import { readFileSync } from 'node:fs';
 import { REPEATED_ERROR_REMINDER, stepsLeftReminder } from '@collabcode/shared';
+import { sessionChanges } from './session-changes.js';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from './fake-clock.js';
 import { runAgent } from './loop.js';
@@ -197,5 +204,75 @@ describe('the "runtime unavailable; agent loops" trace', () => {
       `${repeated}\n\n${stepsLeftReminder(2)}`,
       `${repeated}\n\n${stepsLeftReminder(1)}`,
     ]);
+  });
+});
+
+describe('the "successful demo" trace', () => {
+  const trace = fixture('successful-demo.json');
+  const calls = trace.steps.flatMap((step) => step.toolCalls);
+
+  it('records a session that kept to the goal, checked it, and finished', () => {
+    expect(trace).toMatchObject({
+      version: 3,
+      tier: 'shared',
+      project: { template: 'express-api' },
+      prompt: { id: 'agent', version: 3 },
+      outcome: { kind: 'finished' },
+    });
+    expect(sessionChanges(trace)).toEqual({
+      created: [],
+      edited: ['routes/users.js'],
+      renamed: [],
+      deleted: [],
+    });
+    const names = calls.map((call) => call.toolName);
+    expect(names).not.toContain('run_command');
+    expect(names.at(-1)).toBe('finish');
+    expect(calls.find((call) => call.toolName === 'run_project')?.isError).toBe(false);
+
+    // After its edit landed, one request that should succeed and one that should fail.
+    const landed = calls.findIndex((call) => call.toolName === 'edit_file' && !call.isError);
+    const checks = calls
+      .slice(landed)
+      .filter((call) => call.toolName === 'http_request')
+      .map((call) => /^HTTP (\d+)/.exec(call.output)?.[1]);
+    expect(checks).toEqual(['200', '404']);
+  });
+
+  it('records the reminders it was sent: twice, after the same missed edit', () => {
+    expect(trace.steps.map((step) => step.reminder)).toEqual([
+      null,
+      null,
+      null,
+      REPEATED_ERROR_REMINDER,
+      null,
+      REPEATED_ERROR_REMINDER,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('replays with its waits: the same calls, the same reminders, the same summary', async () => {
+    const { result, tools, recorded } = await replay(trace, true);
+    expect(tools.calls).toEqual(
+      recorded
+        .filter((call) => call.toolName !== 'finish')
+        .map((call) => ({ name: call.toolName, input: call.input })),
+    );
+    expect(result.outcome).toEqual(trace.outcome);
+    expect(result.trace.steps.map((step) => step.reminder)).toEqual(
+      trace.steps.map((step) => step.reminder),
+    );
+    expect(result.trace.steps.map((step) => step.waits.map((wait) => wait.reason))).toEqual(
+      trace.steps.map((step) => step.waits.map((wait) => wait.reason)),
+    );
+  });
+
+  it('replays as a demo would, never waiting', async () => {
+    const { result, elapsedMs } = await replay(trace, false);
+    expect(result.outcome).toEqual(trace.outcome);
+    expect(result.trace.steps.flatMap((step) => step.waits)).toEqual([]);
+    expect(elapsedMs).toBe(0);
   });
 });
