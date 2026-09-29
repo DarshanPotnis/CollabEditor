@@ -166,7 +166,7 @@ export const AGENT_TOOLS = {
   },
   finish: {
     description:
-      'End the session. The summary is shown to the person who asked: what you changed and anything left to do, or that you could not check it. checkedRequests and checkedCommands list the checks you made after your last change, each exactly as you made it and with what it got. The person sees them; a finish that lists a check this session did not make is refused.',
+      'End the session. The summary is shown to the person who asked: what you changed and anything left to do, or that you could not check it. checkedRequests and checkedCommands list the checks you made after your last change, each exactly as you made it and with what it got. checkedCommands lists only run_command calls; starting the project with run_project is not a check. The person sees them; a finish that lists a check this session did not make is refused.',
     input: z.object({
       summary: z.string().trim().min(1).max(AGENT_TOOL_LIMITS.summaryChars),
       checkedRequests: z
@@ -190,7 +190,7 @@ export const AGENT_TOOLS = {
               .string()
               .min(1)
               .max(AGENT_TOOL_LIMITS.commandArgChars)
-              .describe('As you ran it, such as "npm test"'),
+              .describe('As you ran it with run_command, such as "npm test"'),
             exitCode: z.number().int().describe('The exit code it got'),
           }),
         )

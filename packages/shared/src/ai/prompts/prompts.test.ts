@@ -193,6 +193,16 @@ describe('the agent prompt', () => {
     expect(prepared.prompt.system).toMatch(/several tool calls in one answer/);
   });
 
+  it('says that only run_command calls are command checks, and starting the project is not one', () => {
+    const prepared = PROMPTS.agent.prepare({ goal, files: ['index.js'] });
+    if (!prepared.ok) throw new Error(prepared.message);
+    // agent@4 listed run_project's `npm run dev → exit code 0` in 9 of 21 sessions, refused each time.
+    expect(prepared.prompt.system).toMatch(
+      /checkedCommands lists only commands you ran with run_command/,
+    );
+    expect(prepared.prompt.system).toMatch(/Starting the project with run_project is not a check/);
+  });
+
   it('says to read files, several at once, when their contents are not included', () => {
     const content = userMessage(PROMPTS.agent.prepare({ goal, files: ['index.js'] }));
     expect(content).toContain(

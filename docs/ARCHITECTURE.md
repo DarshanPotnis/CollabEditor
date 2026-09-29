@@ -353,7 +353,7 @@ the running project, is in the browser.
 │ AgentPanel ── useAgentSession ── agent-session.ts                                          │
 │                                     │                                                      │
 │      packages/agent: runAgent (loop, limits, retries, trace) ─────── fetch ─► /api/ai/step │
-│                                     │ tool calls                     agent@4, 13 tools     │
+│                                     │ tool calls                     agent@5, 13 tools     │
 │                 ┌───────────────────┴──────────────────┐                                   │
 │   doc tools (packages/agent)              runtime tools (settle barrier first)             │
 │   over the agent's own Y.Doc              the person's runner, output, API console helper  │
@@ -391,11 +391,12 @@ ADR 008 has the reasoning. The pieces:
   refused once, naming each and why, and never on the last step. After that it is accepted with
   those checks set apart, and the panel shows the checks made and, separately, those listed but
   not made.
-- **The prompt** (`agent@4`, `packages/shared/src/ai/prompts/agent.ts`) keeps the agent to the
+- **The prompt** (`agent@5`, `packages/shared/src/ai/prompts/agent.ts`) keeps the agent to the
   smallest change the goal needs (no tests, dependencies, files or refactors unless asked; nothing
   unrelated touched; no reasoning written into the code), edit first, then check every behaviour it
   added with `run_project` and `http_request` (each case, each error case and one thing that worked
-  before, in one answer), then `finish` with its checks listed.
+  before, in one answer), then `finish` with its checks listed: requests, and only `run_command`
+  commands, since starting the project is not a check.
   Its inputs are the goal, the file list, every file's content for a project under 24,000
   characters, and `sandbox: 'unavailable'` when the page cannot run code; that input can only take
   the sandbox away.

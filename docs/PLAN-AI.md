@@ -405,7 +405,7 @@ using your own key avoids the shared free tier. Repeat this in the README.
   record it.
 - A prompt that expects code back also owns its output parser (for example, pulling the
   replacement out of a fenced block), so the app and the evals read answers the same way.
-- **AI-2's agent is one more definition** (`agent@4`). Its inputs are the goal, the file list and,
+- **AI-2's agent is one more definition** (`agent@5`). Its inputs are the goal, the file list and,
   when the project's files total at most 24,000 characters, every file's content with real line
   numbers, so the first step can act (in AI-5, the project map too), and `sandbox: 'unavailable'`
   when the page cannot run code (it can only take the sandbox away). The server appends the
@@ -637,6 +637,7 @@ corrected in place above.
 
 | Change                                                                                                                | Reason                                                                                                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent@5`: only `run_command` calls are command checks; starting the project with `run_project` is not one (ADR 012)  | agent@4 listed `npm run dev → exit code 0` in 9 of 21 sessions, and each finish was refused for it once, a wasted step                                                                                  |
 | `agent@4`: finish lists its checks and the loop verifies them; check every behaviour; precise edit refusals (ADR 012) | The Flash-Lite baseline's failures were mostly checking: agent@3 asked for one success and one failure, one summary claimed a 201 it never saw, and a session re-sent one wrong 24-line copy five times |
 | Graders versions, and grading a run again from its traces (ADR 011)                                                   | The baseline showed a grader false fail and an ungraded overclaim; fixing graders must not cost a run or mix verdicts                                                                                   |
 | Model-written code runs in a Docker sandbox, not as child processes on the machine (AI-4)                             | The Node ToolHost in the plan had no isolation, and two tasks try to make the model misbehave on purpose                                                                                                |

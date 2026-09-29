@@ -89,3 +89,6 @@ What did change, and is not noise:
   without it: 9 of agent@4's 18 wasted steps.
 - **The edit refusal went untested.** No session copied a block wrong past its first line, so the
   first-differing-line refusal and the shorter-copy hint never fired.
+
+agent@5 changes only the words: the finish tool and the prompt say that `checkedCommands` lists
+only `run_command` calls, and that starting the project with `run_project` is not a check.

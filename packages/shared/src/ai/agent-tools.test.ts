@@ -76,6 +76,12 @@ describe('tool inputs', () => {
     expect(input.safeParse({ summary: '   ' }).success).toBe(false);
   });
 
+  it("finish's description says command checks are run_command calls, never run_project", () => {
+    expect(AGENT_TOOLS.finish.description).toMatch(
+      /checkedCommands lists only run_command calls; starting the project with run_project is not a check/,
+    );
+  });
+
   it('finish may list the requests and commands it checked, each with what it got', () => {
     const input = AGENT_TOOLS.finish.input;
     const checked = {
