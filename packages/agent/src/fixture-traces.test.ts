@@ -20,7 +20,6 @@
  * first three edits missed because oldText kept the space after the "N| " line-number prefix;
  * the repeated-error reminder was sent twice before the fourth landed.
  */
-import { readFileSync } from 'node:fs';
 import { REPEATED_ERROR_REMINDER, stepsLeftReminder } from '@collabcode/shared';
 import { sessionChanges } from './session-changes.js';
 import { describe, expect, it } from 'vitest';
@@ -28,17 +27,11 @@ import { createFakeClock } from './fake-clock.js';
 import { runAgent } from './loop.js';
 import { scriptFromTrace } from './scripted-model.js';
 import { createStopSource } from './stop-source.js';
+import { fixtureTrace } from './test/fixture-trace.js';
 import { drive, recordingHost } from './test/support.js';
-import { parseTrace, type AgentTrace } from './trace.js';
+import type { AgentTrace } from './trace.js';
 
-function fixture(name: string): AgentTrace {
-  const raw: unknown = JSON.parse(
-    readFileSync(new URL(`../fixtures/traces/${name}`, import.meta.url), 'utf8'),
-  );
-  const trace = parseTrace(raw);
-  if (!trace) throw new Error(`${name} is not a trace this version can read`);
-  return trace;
-}
+const fixture = fixtureTrace;
 
 /** Replays a trace against a ToolHost that gives back each recorded result in turn. */
 async function replay(trace: AgentTrace, failures: boolean) {
