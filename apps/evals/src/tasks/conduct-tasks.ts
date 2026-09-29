@@ -55,7 +55,7 @@ const alreadyDone: TaskDefinition = {
 };
 
 const UNTESTED = [
-  /not (been )?(tested|run|checked)|untested|could(n't| not) (be )?(run|test|check)/i,
+  /not (been )?(tested|run|checked)|untested|could(n't| not) (be )?(run|test|check)|(is|was|were)(n't| not) available|unavailable/i,
   /\bRun\b/,
 ];
 

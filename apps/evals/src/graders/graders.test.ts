@@ -5,10 +5,10 @@
  * leftAlone guards against) are tested only here; tasks.selftest.ts tests the
  * rest end to end.
  */
-import type { AgentOutcome, AgentTrace, TraceToolCall } from '@collabcode/agent';
+import type { AgentOutcome } from '@collabcode/agent';
 import { describe, expect, it } from 'vitest';
 import { fileCheck, leftAlone, nowhere, scope } from './file-graders.js';
-import type { GradeContext, Grader } from './grader.js';
+import { call, context, edited, request, traceOf, verdict } from './made-up-sessions.js';
 import {
   atMostSteps,
   covered,
@@ -19,73 +19,7 @@ import {
   summarySays,
 } from './trace-graders.js';
 
-function call(toolName: string, input: unknown, output = '', isError = false): TraceToolCall {
-  return { toolCallId: 'c', toolName, input, isError, output, startedAtMs: 0, durationMs: 0 };
-}
-
-/** A session of one step per call, ending as `outcome`. */
-function traceOf(calls: TraceToolCall[], outcome: AgentOutcome): AgentTrace {
-  return {
-    format: 'collabcode-agent-trace',
-    version: 3,
-    sessionId: 's',
-    startedAt: 0,
-    project: { template: 'express-api', filesFingerprint: 'fp' },
-    inputs: { goal: 'g', files: [], moreFiles: 0 },
-    prompt: { id: 'agent', version: 3 },
-    tier: 'shared',
-    limits: {
-      maxSteps: 15,
-      maxMs: 1,
-      maxInputTokens: 1,
-      maxToolCallsPerStep: 8,
-      maxConversationChars: 1,
-    },
-    steps: calls.map((toolCall, index) => ({
-      index: index + 1,
-      startedAtMs: 0,
-      waits: [],
-      model: null,
-      toolCalls: [toolCall],
-      nudged: false,
-      reminder: null,
-    })),
-    outcome,
-    totals: { steps: calls.length, inputTokens: 0, outputTokens: 0, durationMs: 0 },
-  };
-}
-
 const FINISHED: AgentOutcome = { kind: 'finished', summary: 'Added the route. Checked it.' };
-
-function context(
-  trace: AgentTrace,
-  initial: Record<string, string> = {},
-  final: Record<string, string> = initial,
-): GradeContext {
-  const unused = (): never => {
-    throw new Error('this grader needs no sandbox');
-  };
-  return {
-    trace,
-    initialFiles: new Map(Object.entries(initial)),
-    finalFiles: new Map(Object.entries(final)),
-    sandbox: unused,
-    sandboxWith: unused,
-  };
-}
-
-async function verdict(grader: Grader, ctx: GradeContext) {
-  const { passed, detail, category } = await grader.grade(ctx);
-  return { passed, detail, category: category ?? grader.category };
-}
-
-const edited = call('edit_file', { path: 'routes/users.js' }, 'Edited routes/users.js.');
-const request = (method: string, path: string, status: number, body?: unknown) =>
-  call(
-    'http_request',
-    { method, path, ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
-    `HTTP ${String(status)} OK, 3 ms`,
-  );
 
 describe('the trace graders', () => {
   it('finished says why a session did not finish', async () => {
