@@ -158,7 +158,14 @@ it into its files until you type or open another file (**Follow AI** resumes).
 - **No sandbox, no guessing.** If this page can't run code, the Run panel says why, and the AI
   teammate makes its change without running it and tells you to click Run yourself.
 - **It is recorded.** **Download trace** saves the session as JSON: every model answer and tool
-  call, for replaying or for evals. It never contains your key.
+  call, for replaying or for evals. It never contains your key. The AI panel shows a finished
+  session, or any trace you open, as a timeline: each model call with its tokens and latency, each
+  tool call with its input and output, and the checks it made.
+- **Watch a demo.** On the home page, **Watch a demo** replays a recorded session into a fresh
+  project: the AI adds a DELETE endpoint, runs the project and checks every case. No AI runs and
+  nothing is sent to a model; the edits, the runs and the checks happen live in your browser, and
+  everything says it is a replay. Where the browser cannot run the project, you get the recording
+  as a timeline instead.
 - **Prompt injection.** Files, output and responses may have been written by anyone in the
   project. The agent treats them as data, and its tools cannot do more than a collaborator could:
   edit or soft-delete this project's files, and run code in your own sandbox.
@@ -397,8 +404,11 @@ docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/, evals/
   explain a crashed run.
 - **AI-2** (done) — an AI teammate that joins the project as its own CRDT peer, types live, runs
   and calls the project, and is undone in one click.
-- **AI-3 to AI-5** (planned, [`docs/PLAN-AI.md`](docs/PLAN-AI.md)) — presence-aware proposals,
-  evals, and a context engine with a trace viewer and a replayed demo.
+- **AI-4** (done) — evals: 21 tasks, graders tested against reference and known-bad sessions, and
+  real-model runs in CI.
+- **AI-5** (in review) — a trace viewer and "Watch a demo". A context engine is deferred until an eval
+  shows retrieval failures ([ADR 013](docs/decisions/013-context-engine-deferred.md)).
+- **AI-3** (planned, [`docs/PLAN-AI.md`](docs/PLAN-AI.md)) — presence-aware proposals.
 
 Later, deliberately out of scope for now: accounts, checkpoints, and pushing to GitHub.
 
