@@ -76,8 +76,9 @@ describe('the request ledger', () => {
     });
   });
 
-  it('knows the two models, and gives an unknown one very little', () => {
+  it("knows the eval project's models, and gives an unknown one very little", () => {
     expect(limitsFor('gemini-3.8-flash').rpd).toBeLessThanOrEqual(20);
+    expect(limitsFor('gemini-3.7-flash')).toEqual({ rpm: 5, rpd: 20 });
     expect(limitsFor('gemini-9-typo')).toEqual({ rpm: 2, rpd: 10 });
     expect(limitsFor('gemini-3.8-flash', { rpd: 12 }).rpd).toBe(12);
   });

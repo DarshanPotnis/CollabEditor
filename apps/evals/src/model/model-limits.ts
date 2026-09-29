@@ -18,6 +18,8 @@ export type ModelLimits = {
 export const MODEL_LIMITS: Readonly<Record<string, ModelLimits>> = {
   'gemini-3.5-flash-lite': { rpm: 15, rpd: 500 },
   'gemini-3.8-flash': { rpm: 5, rpd: 20 },
+  // Its own allowance on the same project; the Flash comparison uses it when 3.8 is too busy.
+  'gemini-3.7-flash': { rpm: 5, rpd: 20 },
 };
 
 /** For a model not listed: very little, so a mistyped id cannot spend much. */
