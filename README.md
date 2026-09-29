@@ -406,7 +406,7 @@ docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/, evals/
   and calls the project, and is undone in one click.
 - **AI-4** (done) — evals: 21 tasks, graders tested against reference and known-bad sessions, and
   real-model runs in CI.
-- **AI-5** (in review) — a trace viewer and "Watch a demo". A context engine is deferred until an eval
+- **AI-5** (done) — a trace viewer and "Watch a demo". A context engine is deferred until an eval
   shows retrieval failures ([ADR 013](docs/decisions/013-context-engine-deferred.md)).
 - **AI-3** (planned, [`docs/PLAN-AI.md`](docs/PLAN-AI.md)) — presence-aware proposals.
 
