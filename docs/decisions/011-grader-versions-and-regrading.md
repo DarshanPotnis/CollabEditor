@@ -34,6 +34,25 @@ differently from one day to the next.
   trial count other than the run's own; in CI the run starts from a tag and each resume starts from
   it too.
 
+## Rule: fixing a grader after seeing results
+
+Graders get fixed after someone has read a run's results, which is exactly when a fix can be bent
+toward the answer one hoped for. So a grader fix made after viewing results:
+
+1. **is justified on its own terms.** The grader was wrong about a session, whichever run or agent
+   version that session came from, and a test built from that session shows it. "It makes the new
+   version look better" is never the reason.
+2. **applies to every run.** Every recorded run that is compared is graded again from its traces
+   with the fixed graders (`npm run evals:regrade`), not just the run the fix was found in. The
+   graders version is bumped, so no run judged by the old graders sits beside one judged by the
+   new.
+3. **is recorded.** The version's line in `graders/version.ts` says what changed, each run's results
+   list the verdicts it flipped, and the comparison reports the result with the fix, stating that
+   it was applied.
+
+graders@3 was such a fix: found in the agent@4 comparison, it flipped agent@4's presence-busy-target
+and json-404 and the same-day agent@3 run's json-404 alike, and left the baseline unchanged.
+
 ## Alternatives
 
 - **Run the baseline again.** It costs a day's requests, and the model would produce different
