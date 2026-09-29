@@ -16,7 +16,12 @@
 import { readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { parseTrace, scriptFromTrace, type AgentTrace } from '@collabcode/agent';
+import {
+  createReplayMonitor,
+  parseTrace,
+  scriptFromTrace,
+  type AgentTrace,
+} from '@collabcode/agent';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { nodeClock } from '../harness/node-clock.js';
 import { runTask } from '../harness/run-task.js';
@@ -53,6 +58,8 @@ type Expected = {
   failing: string[];
   /** Each difference as "step tool: recorded … → replayed …", both shortened. */
   differences: string[];
+  /** A demo recording: "Watch a demo" would play it, so the replay monitor must find nothing. */
+  demo?: true;
 };
 
 const short = (line: string): string => line.slice(0, 72);
@@ -60,6 +67,16 @@ const diff = (step: number, tool: string, recorded: string, replayed: string): s
   `${String(step)} ${tool}: ${short(recorded)} → ${short(replayed)}`;
 
 const REPLAYS: Expected[] = [
+  {
+    // The recording "Watch a demo" plays (docs/PLAN-AI.md, AI-5): through the real run tools, it
+    // must come out exactly as recorded.
+    fixture: 'demo-agent-5.json',
+    task: 'delete-user',
+    category: null,
+    failing: [],
+    differences: [],
+    demo: true,
+  },
   {
     fixture: 'successful-demo.json',
     task: 'delete-user',
@@ -147,6 +164,7 @@ describe.skipIf(!hasDocker)(
         const recorded = fixture(expected.fixture);
         const task = TASKS.find((candidate) => candidate.id === expected.task);
         if (!task) throw new Error(`no task ${expected.task}`);
+        const monitor = createReplayMonitor(recorded);
         const run = await runTask({
           task,
           runId,
@@ -155,7 +173,9 @@ describe.skipIf(!hasDocker)(
           baked,
           clock: nodeClock,
           tier: 'shared',
+          onEvent: (event) => monitor.observe(event),
         });
+        if (expected.demo) expect(monitor.divergence()).toBeNull();
         expect(run.category).toBe(expected.category);
         expect(run.grades.filter((grade) => !grade.passed).map((grade) => grade.id)).toEqual(
           expected.failing,
