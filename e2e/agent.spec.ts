@@ -6,7 +6,7 @@
  * project is covered by the opt-in WebContainer suite and the manual test.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { downloadTrace, startAgent } from './agent-support.js';
+import { downloadTrace, startAgent, traceToolCalls } from './agent-support.js';
 import { openPair, readEditorText, treeItem, treeRow, typeAtEnd } from './support.js';
 
 /** What the scripted agent adds. */
@@ -16,6 +16,8 @@ const SLOW_AGENT = 'e2e-slow-agent';
 /** A goal with this makes a scratch file, deletes it, then edits routes/users.js. */
 const SCRATCH_AGENT = 'e2e-scratch-agent';
 const SUMMARY = 'Added DELETE /users/:id to routes/users.js.';
+/** A goal with this lists a check it never made in finish, twice. */
+const UNCHECKED_AGENT = 'e2e-unchecked-agent';
 
 async function openUsersRoute(page: Page): Promise<void> {
   await treeRow(page, 'routes').click();
@@ -133,6 +135,29 @@ test('a busy model shows a countdown to the retry, then the session goes on', as
   await expect(status).toBeVisible();
   await expect(status).toHaveText(/^Gemini is busy, retrying (in \d s|…)$/);
   await expect(a.getByText(SUMMARY)).toBeVisible({ timeout: 20_000 });
+});
+
+test('a finish listing a check it never made is refused once, then shown as not made', async ({
+  browser,
+}) => {
+  const { a } = await openPair(browser, 'Express API');
+  await startAgent(a, `Add a DELETE /users/:id endpoint ${UNCHECKED_AGENT}`);
+
+  await expect(a.getByText(SUMMARY)).toBeVisible();
+  const notMade = a.getByRole('list', { name: 'Checks it listed but did not make' });
+  await expect(notMade).toHaveText('DELETE /users/1 → 204 (not sent)');
+  await expect(a.getByRole('list', { name: 'Checks it made' })).toHaveCount(0);
+
+  const text = await downloadTrace(a);
+  const trace = JSON.parse(text) as {
+    version: number;
+    outcome: { kind: string; checks: { made: unknown[]; notMade: unknown[] } };
+  };
+  expect(trace.version).toBe(4);
+  const finishes = traceToolCalls(text).filter((call) => call.toolName === 'finish');
+  expect(finishes.map((call) => call.isError)).toEqual([true, false]);
+  expect(finishes[0]?.output).toContain('- DELETE /users/1 → 204: not sent');
+  expect(trace.outcome.checks).toMatchObject({ made: [], notMade: [{ reason: 'not sent' }] });
 });
 
 test('Stop ends a session part way through', async ({ browser }) => {

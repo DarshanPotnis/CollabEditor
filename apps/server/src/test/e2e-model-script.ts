@@ -123,6 +123,34 @@ function scratchAgentReply(call: ModelCall): FakeReply {
   }
 }
 
+/** An AI teammate goal containing this adds the route, then lists a check it never made, twice. */
+const E2E_UNCHECKED_AGENT = 'e2e-unchecked-agent';
+
+/** Scripted for finish's checks: refused once for the unmade check, then accepted with it set apart. */
+function uncheckedAgentReply(call: ModelCall): FakeReply {
+  if (conversationSteps(call.toolUse?.conversation ?? []) === 0) {
+    return toolCallReply([
+      {
+        toolName: 'edit_file',
+        input: {
+          path: 'routes/users.js',
+          oldText: USERS_ROUTER,
+          newText: `${USERS_ROUTER}\n${E2E_AGENT_ROUTE}\n  res.status(204).end();\n});\n`,
+        },
+      },
+    ]);
+  }
+  return toolCallReply([
+    {
+      toolName: 'finish',
+      input: {
+        summary: 'Added DELETE /users/:id to routes/users.js.',
+        checkedRequests: [{ method: 'DELETE', path: '/users/1', status: 204 }],
+      },
+    },
+  ]);
+}
+
 /**
  * The AI teammate, on the Express template: read the users route, add a
  * DELETE route to it, finish. The same three steps every time.
@@ -135,6 +163,7 @@ function agentReply(call: ModelCall): FakeReply {
   }
   if (goal.includes(E2E_RUN_AGENT)) return runningAgentReply(call);
   if (goal.includes(E2E_SCRATCH_AGENT)) return scratchAgentReply(call);
+  if (goal.includes(E2E_UNCHECKED_AGENT)) return uncheckedAgentReply(call);
   if (goal.includes(E2E_BUSY_AGENT) && !busyOnce.has(goal)) {
     busyOnce.add(goal);
     return { kind: 'fail', failure: 'unavailable', statusCode: 503 };

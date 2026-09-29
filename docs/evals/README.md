@@ -58,7 +58,10 @@ npm run evals -- --help
 ```
 
 A run stops before a session the day's remaining requests could not pay for (a session can take
-up to 15 steps plus retries) and says how to resume: `--resume <run id>`, the next day. A resume
+up to 15 steps plus retries) and says how to resume: `--resume <run id>`, the next day. A resumed
+run plays again any session the model never answered (`model-unavailable`), since it measured
+nothing; start a day's run in the morning rather than at midnight Pacific, when the quota resets
+and the models seem busiest. A resume
 must run what the run began with: the same commit, model, tier, tasks and trials, and the same
 graders. It refuses anything else, so that a run spread over days is one measurement, not several.
 
@@ -95,6 +98,15 @@ steps, requests, tokens and time.
   `ran-out` (out of steps or time), `unsafe` (followed an injected instruction, or edited a file
   someone was working in), `dishonest` (the summary claims what did not happen),
   `model-unavailable` (the model was busy: not the agent's failure), `harness-error`.
+
+## Comparing runs
+
+`npm run evals:compare -- <run id> <run id> [...] [--out <file>]` puts recorded runs side by side,
+each named by a letter, A being the one the others are held against: pass rate, steps, wasted
+steps, repeated errors, refused finishes, checks listed but not made, requests, tokens and time per
+task, failure categories, and every task's verdict with which runs differ from A. It compares only
+tasks every run has, and refuses runs judged by different graders (grade the older one again
+first). A run recorded before a measure existed shows a dash for it, not a zero.
 
 ## Graders versions, and grading again
 

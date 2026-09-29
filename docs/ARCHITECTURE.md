@@ -353,7 +353,7 @@ the running project, is in the browser.
 │ AgentPanel ── useAgentSession ── agent-session.ts                                          │
 │                                     │                                                      │
 │      packages/agent: runAgent (loop, limits, retries, trace) ─────── fetch ─► /api/ai/step │
-│                                     │ tool calls                     agent@3, 13 tools     │
+│                                     │ tool calls                     agent@4, 13 tools     │
 │                 ┌───────────────────┴──────────────────┐                                   │
 │   doc tools (packages/agent)              runtime tools (settle barrier first)             │
 │   over the agent's own Y.Doc              the person's runner, output, API console helper  │
@@ -385,9 +385,17 @@ ADR 008 has the reasoning. The pieces:
   go back to the model as errors; three answers in a row with nothing runnable, or two without a
   tool call, end the session. Tool output is capped with a marker, and output with an ES-module
   stack frame carries the note that its line numbers are wrong.
-- **The prompt** (`agent@3`, `packages/shared/src/ai/prompts/agent.ts`) keeps the agent to the
+- **Finish's checks** (`finish-checks.ts`, ADR 012): `finish` lists the requests (with the status
+  each got) and commands (with their exit code) the model says it checked. The loop holds them
+  against the session's calls after its last change; a finish listing one it did not make is
+  refused once, naming each and why, and never on the last step. After that it is accepted with
+  those checks set apart, and the panel shows the checks made and, separately, those listed but
+  not made.
+- **The prompt** (`agent@4`, `packages/shared/src/ai/prompts/agent.ts`) keeps the agent to the
   smallest change the goal needs (no tests, dependencies, files or refactors unless asked; nothing
-  unrelated touched), edit first, then check with `run_project` and `http_request`, then `finish`.
+  unrelated touched; no reasoning written into the code), edit first, then check every behaviour it
+  added with `run_project` and `http_request` (each case, each error case and one thing that worked
+  before, in one answer), then `finish` with its checks listed.
   Its inputs are the goal, the file list, every file's content for a project under 24,000
   characters, and `sandbox: 'unavailable'` when the page cannot run code; that input can only take
   the sandbox away.
@@ -401,7 +409,9 @@ ADR 008 has the reasoning. The pieces:
   line numbers, long files in parts), search, edit (one exact match), create (with missing
   folders), rename or move, and delete (soft only). Paths are display paths looked up among the
   tree's own nodes. Every write goes through the shared ops with `agentOrigin(sessionId)` and is
-  recorded for undo. Edits are typed in live over about a second (`typist.ts`), each piece
+  recorded for undo. An edit whose text is not in the file is refused with the likeliest cause:
+  line numbers copied in, indentation, or, when its first line is found, the first line that
+  differs, quoted both ways; the same refusal twice running adds to copy fewer lines. Edits are typed in live over about a second (`typist.ts`), each piece
   anchored just after the last with a relative position; a hidden tab, or a very long insertion,
   types at once, and Stop finishes an edit at once.
 - **The presence rule** (`presence-rule.ts`): a file that anyone but the host and the agent itself
@@ -430,10 +440,11 @@ ADR 008 has the reasoning. The pieces:
   caret in view, until the host types or opens another file; **Follow AI** resumes. When the agent
   deletes the file being followed, follow mode goes back to the file shown before, closes the tab
   if it had opened it, and keeps following.
-- **The trace** (`packages/agent/src/trace.ts`, format version 3): each model answer verbatim, every
+- **The trace** (`packages/agent/src/trace.ts`, format version 4): each model answer verbatim, every
   call and result, waits and attempt times, the raw finish reason, each step's reminder, the inputs
-  (the sandbox one included), the template and a fingerprint of the starting files. **Download
-  trace** saves it; `scriptFromTrace` replays it with no model; versions 1 and 2 are still read.
+  (the sandbox one included), the template, a fingerprint of the starting files, and a finished
+  session's checks, made and not made. **Download trace** saves it; `scriptFromTrace` replays it
+  with no model; versions 1 to 3 are still read.
   `sessionChanges` works out from it what the session changed, which the panel lists when a session
   ends without `finish`. Recorded sessions kept as regressions are in
   `packages/agent/fixtures/traces`.
@@ -471,7 +482,8 @@ detection).
   today's tools and graders against pinned verdicts and differences.
 - **Quota:** a pacer and a daily ledger keep to the eval project's limits; a run stops before a
   session it cannot pay for and resumes with `--resume`, which refuses a different commit, model,
-  graders or task list (`harness/resume-check.ts`). Real-model runs happen in CI (the Evals
+  graders or task list (`harness/resume-check.ts`), and plays again any session the model never
+  answered (`harness/pending-sessions.ts`). `npm run evals:compare` puts recorded runs side by side. Real-model runs happen in CI (the Evals
   workflow, started by hand) unless run locally with `--allow-local-real-run`.
 
 ### Sync and persistence lifecycle
