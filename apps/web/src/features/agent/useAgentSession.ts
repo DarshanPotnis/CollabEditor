@@ -45,6 +45,8 @@ export type AgentSessionControls = {
   startReplay: (recording: AgentTrace) => void;
   /** The recording being replayed, or last replayed, for "View the recorded session". */
   recording: AgentTrace | null;
+  /** Whether the project has loaded, so a replay can check it has the recording's files. */
+  replayReady: boolean;
   acceptPrivacyNotice: () => void;
   stop: () => void;
   requestUndo: () => void;
@@ -57,6 +59,8 @@ export type AgentSessionControls = {
 export type UseAgentSessionOptions = {
   projectId: string;
   session: ProjectSession | null;
+  /** Whether the project's document has had its first sync (useProject). */
+  hasSynced: boolean;
   host: { userId: string; name: string };
   runtime: RuntimeControls;
 };
@@ -75,6 +79,7 @@ function reportInternalError(error: unknown): void {
 export function useAgentSession({
   projectId,
   session,
+  hasSynced,
   host,
   runtime,
 }: UseAgentSessionOptions): AgentSessionControls {
@@ -197,7 +202,9 @@ export function useAgentSession({
   const startReplay = useCallback(
     (trace: AgentTrace) => {
       setRecording(trace);
-      const plan = session ? planReplay(trace, startingProject(session.doc)) : null;
+      // Before the first sync the document is empty, and the check would
+      // refuse a project that has exactly the recording's files.
+      const plan = session && hasSynced ? planReplay(trace, startingProject(session.doc)) : null;
       const model = trace.steps.find((step) => step.model !== null)?.model ?? null;
       dispatch({
         type: 'replay-requested',
@@ -222,7 +229,7 @@ export function useAgentSession({
       }
       begin(plan.goal, trace);
     },
-    [session, begin],
+    [session, hasSynced, begin],
   );
 
   const acceptPrivacyNotice = useCallback(() => {
@@ -280,6 +287,7 @@ export function useAgentSession({
     start,
     startReplay,
     recording,
+    replayReady: session !== null && hasSynced,
     acceptPrivacyNotice,
     stop,
     requestUndo,
