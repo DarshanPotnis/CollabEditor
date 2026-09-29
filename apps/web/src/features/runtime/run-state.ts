@@ -23,7 +23,7 @@
  * "Failed" is for problems a file change cannot fix by itself: booting, a
  * missing script, a failed install.
  */
-import type { RunScript } from './run-script.js';
+import type { RunScript } from '@collabcode/agent';
 
 export type Server = { port: number; url: string };
 

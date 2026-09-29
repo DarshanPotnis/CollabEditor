@@ -1,5 +1,6 @@
 /**
  * What Run does, read from the project's package.json (PLAN.md §10.2).
+ * Shared by the browser's runner and the evals' sandbox, so both run the same script.
  *
  * package.json is written by collaborators, so it is parsed defensively and
  * every problem becomes a sentence the person can act on. The scripts

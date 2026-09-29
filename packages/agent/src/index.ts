@@ -14,6 +14,7 @@ export * from './runtime/agent-terminal-text.js';
 export * from './runtime/request-codec.js';
 export * from './runtime/request-script.js';
 export * from './runtime/response-body.js';
+export * from './runtime/run-plan.js';
 export * from './runtime/run-text.js';
 export * from './runtime/terminal-text.js';
 export * from './scripted-model.js';

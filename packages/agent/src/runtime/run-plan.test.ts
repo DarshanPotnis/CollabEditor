@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATES } from '@collabcode/shared';
-import { installKey, needsInstall, runPlan } from './run-script.js';
+import { installKey, needsInstall, runPlan } from './run-plan.js';
 
 const pkg = (value: unknown): string => JSON.stringify(value);
 
