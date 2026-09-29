@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Loader2, Users } from 'lucide-react';
+import { ArrowRight, Loader2, Play, Users } from 'lucide-react';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from '@collabcode/shared';
 import { ApiError } from '../../lib/api-error.js';
 import { createProject, fetchProject, pingHealth } from '../../lib/api.js';
+import { DEMO } from '../agent/demo-recording.js';
 import { useSlowFlag } from '../../lib/useSlowFlag.js';
 import { projectIdFromInput } from './join-input.js';
 
@@ -12,7 +13,7 @@ const COLD_START_AFTER_MS = 2_000;
 export function LandingPage(): React.ReactElement {
   const navigate = useNavigate();
   const [template, setTemplate] = useState<TemplateId>('express-api');
-  const [busy, setBusy] = useState<'creating' | 'joining' | null>(null);
+  const [busy, setBusy] = useState<'creating' | 'joining' | 'demo' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [joinInput, setJoinInput] = useState('');
   const slow = useSlowFlag(busy !== null, COLD_START_AFTER_MS);
@@ -31,6 +32,19 @@ export function LandingPage(): React.ReactElement {
       void navigate(`/p/${project.id}`);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not create the project.');
+      setBusy(null);
+    }
+  }
+
+  /** A fresh project from the recording's template, opened with the replay offered. */
+  async function watchDemo(): Promise<void> {
+    setBusy('demo');
+    setError(null);
+    try {
+      const project = await createProject({ template: DEMO.template, name: DEMO.projectName });
+      void navigate(`/p/${project.id}?demo=${DEMO.id}`);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not create the demo project.');
       setBusy(null);
     }
   }
@@ -106,6 +120,30 @@ export function LandingPage(): React.ReactElement {
             <ArrowRight className="size-4" aria-hidden />
           )}
           Create project
+        </button>
+      </section>
+
+      <section aria-labelledby="demo-heading" className="space-y-3">
+        <h2 id="demo-heading" className="text-sm font-medium text-zinc-300">
+          Or watch the AI teammate work
+        </h2>
+        <p className="text-sm text-zinc-400">
+          A recorded session replayed into a fresh project: the AI adds a DELETE endpoint, runs the
+          project and checks every case. No AI runs; the edits, the runs and the checks happen live
+          in your browser.
+        </p>
+        <button
+          type="button"
+          onClick={() => void watchDemo()}
+          disabled={busy !== null}
+          className="flex items-center gap-2 rounded-md border border-violet-700 px-4 py-2 text-sm text-violet-100 hover:border-violet-500 disabled:opacity-60"
+        >
+          {busy === 'demo' ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Play className="size-4" aria-hidden />
+          )}
+          Watch a demo
         </button>
       </section>
 

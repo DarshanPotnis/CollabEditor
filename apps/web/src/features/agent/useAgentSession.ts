@@ -3,8 +3,23 @@
  * Download trace, Dismiss. A session starts only from a click and is dismissed
  * when the panel goes away or the project changes, so no session outlives the
  * workspace it works in.
+ *
+ * A replay ("Watch a demo") is the same session with the recording's answers
+ * in place of a model: it needs no consent, since nothing goes to a model, and
+ * it stops at the first place today's tools answer differently from the
+ * recording (the core's replay monitor). Its Download trace gives the
+ * recording, so a replay's own trace is never mistaken for a live session.
  */
-import { createLiveTypist, instantTypist, type AgentEvent } from '@collabcode/agent';
+import {
+  createLiveTypist,
+  createReplayModel,
+  createReplayMonitor,
+  instantTypist,
+  planReplay,
+  startingProject,
+  type AgentEvent,
+  type AgentTrace,
+} from '@collabcode/agent';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { ProjectSession } from '../../collab/useProject.js';
 import { config } from '../../lib/app-config.js';
@@ -26,6 +41,10 @@ import { downloadTrace } from './trace-download.js';
 export type AgentSessionControls = {
   state: AgentSessionState;
   start: (goal: string) => void;
+  /** Replays a recorded session into this project, with no model. */
+  startReplay: (recording: AgentTrace) => void;
+  /** The recording being replayed, or last replayed, for "View the recorded session". */
+  recording: AgentTrace | null;
   acceptPrivacyNotice: () => void;
   stop: () => void;
   requestUndo: () => void;
@@ -61,6 +80,7 @@ export function useAgentSession({
 }: UseAgentSessionOptions): AgentSessionControls {
   const [state, dispatch] = useReducer(agentSessionReducer, IDLE_AGENT_SESSION);
   const live = useRef<AgentSession | null>(null);
+  const [recording, setRecording] = useState<AgentTrace | null>(null);
   const starting = useRef<AbortController | null>(null);
   const [consentStorage] = useState(() => bestEffortStorage(browserStorage()));
   const hostRef = useRef(host);
@@ -79,7 +99,7 @@ export function useAgentSession({
   useEffect(() => end, [session, end]);
 
   const begin = useCallback(
-    (goal: string) => {
+    (goal: string, replaying: AgentTrace | null = null) => {
       const runner = runtime.runner();
       if (!session || !runner) {
         dispatch({
@@ -91,9 +111,16 @@ export function useAgentSession({
       end();
       const controller = new AbortController();
       starting.current = controller;
-      const ownKey = loadOwnKey(browserSessionStorage());
+      // A replay asks no model, so it never uses a key.
+      const ownKey = replaying ? null : loadOwnKey(browserSessionStorage());
+      const monitor = replaying ? createReplayMonitor(replaying) : null;
       const onEvent = (event: AgentEvent): void => {
         if (event.type === 'crashed') reportInternalError(event.error);
+        const divergence = monitor?.observe(event) ?? null;
+        if (divergence) {
+          dispatch({ type: 'replay-diverged', divergence });
+          live.current?.stop();
+        }
         dispatch({ type: 'agent', event, at: Date.now() });
       };
       startAgentSession(
@@ -112,6 +139,7 @@ export function useAgentSession({
             : instantTypist,
           onEvent,
           onNotice: (message) => dispatch({ type: 'notice', message }),
+          ...(replaying && { replay: { model: createReplayModel(replaying, systemClock) } }),
         },
         controller.signal,
       ).then(
@@ -125,7 +153,11 @@ export function useAgentSession({
           dispatch({
             type: 'started',
             maxSteps: agent.maxSteps,
-            modelName: ownKey ? MODEL_NAMES[ownKey.choice.provider] : 'Gemini',
+            modelName: replaying
+              ? 'The recording'
+              : ownKey
+                ? MODEL_NAMES[ownKey.choice.provider]
+                : 'Gemini',
             agentClientId: agent.clientId,
           });
           agent.run().then(
@@ -160,6 +192,37 @@ export function useAgentSession({
       if (consented) begin(goal);
     },
     [consentStorage, begin],
+  );
+
+  const startReplay = useCallback(
+    (trace: AgentTrace) => {
+      setRecording(trace);
+      const plan = session ? planReplay(trace, startingProject(session.doc)) : null;
+      const model = trace.steps.find((step) => step.model !== null)?.model ?? null;
+      dispatch({
+        type: 'replay-requested',
+        goal: trace.inputs.goal,
+        replay: {
+          recordedAt: trace.startedAt,
+          prompt:
+            trace.prompt === null ? null : `${trace.prompt.id}@${String(trace.prompt.version)}`,
+          model: model?.id ?? null,
+        },
+      });
+      if (plan === null) {
+        dispatch({
+          type: 'start-failed',
+          message: 'The project is still connecting. Try again in a moment.',
+        });
+        return;
+      }
+      if (!plan.ok) {
+        dispatch({ type: 'start-failed', message: plan.reason });
+        return;
+      }
+      begin(plan.goal, trace);
+    },
+    [session, begin],
   );
 
   const acceptPrivacyNotice = useCallback(() => {
@@ -202,9 +265,10 @@ export function useAgentSession({
   const cancelUndo = useCallback(() => dispatch({ type: 'undo-cancelled' }), []);
 
   const saveTrace = useCallback(() => {
-    const trace = live.current?.trace();
+    // A replay's download is the recording it played, never the replay's own trace.
+    const trace = state.phase === 'ended' && state.replay ? recording : live.current?.trace();
     if (trace) downloadTrace(trace);
-  }, []);
+  }, [state, recording]);
 
   const dismiss = useCallback(() => {
     end();
@@ -214,6 +278,8 @@ export function useAgentSession({
   return {
     state,
     start,
+    startReplay,
+    recording,
     acceptPrivacyNotice,
     stop,
     requestUndo,

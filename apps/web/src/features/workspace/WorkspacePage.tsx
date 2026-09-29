@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   fileSizeLimitMessage,
   readFileText,
@@ -28,6 +28,7 @@ import { useExpandedFolders } from '../file-tree/useExpandedFolders.js';
 import { useRemoteCursorStyles } from '../editor/useRemoteCursorStyles.js';
 import { AiDiffView } from '../ai/AiDiffView.js';
 import { AiPanel } from '../ai/AiPanel.js';
+import { DEMO } from '../agent/demo-recording.js';
 import { describeStep } from '../ai/ai-messages.js';
 import { EditInstructionDialog } from '../ai/EditInstructionDialog.js';
 import { projectFiles } from '../ai/project-files.js';
@@ -48,7 +49,13 @@ import { WorkspaceLayout } from './WorkspaceLayout.js';
 
 const COLD_START_AFTER_MS = 2_000;
 
-function Workspace({ project }: { project: ProjectSummary }): React.ReactElement {
+function Workspace({
+  project,
+  demo,
+}: {
+  project: ProjectSummary;
+  demo: boolean;
+}): React.ReactElement {
   const { session, connection } = useProject(project.id);
   const [identity, setIdentity] = useState(() => loadIdentity(browserStorage()));
   const toasts = useToasts();
@@ -235,6 +242,7 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
                   request={aiRequest}
                   edit={proposal}
                   onShowEdit={ai.showEdit}
+                  demo={demo}
                 />
               }
             />
@@ -253,8 +261,31 @@ function Workspace({ project }: { project: ProjectSummary }): React.ReactElement
   );
 }
 
+/**
+ * A demo link (`?demo=…`, from "Watch a demo") opens the project with the replay offered. The
+ * flag is read once and taken out of the address, so a link copied to invite someone opens the
+ * project as it is.
+ */
+function useDemoFlag(): boolean {
+  const [search, setSearch] = useSearchParams();
+  const [demo] = useState(() => search.get('demo') === DEMO.id);
+  useEffect(() => {
+    if (!search.has('demo')) return;
+    setSearch(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete('demo');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [search, setSearch]);
+  return demo;
+}
+
 export function WorkspacePage(): React.ReactElement {
   const { projectId = '' } = useParams();
+  const demo = useDemoFlag();
   const summary = useProjectSummary(projectId);
   const slow = useSlowFlag(summary.status === 'loading', COLD_START_AFTER_MS);
 
@@ -297,7 +328,7 @@ export function WorkspacePage(): React.ReactElement {
 
   return (
     <ToastProvider>
-      <Workspace project={summary.project} />
+      <Workspace project={summary.project} demo={demo} />
     </ToastProvider>
   );
 }

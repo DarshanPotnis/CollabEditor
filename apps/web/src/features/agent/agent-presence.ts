@@ -21,9 +21,9 @@ import { AGENT_STATUS } from './agent-status.js';
 
 export const AGENT_NAME = 'AI teammate';
 
-export function agentUser(sessionId: string): AwarenessUser {
+export function agentUser(sessionId: string, name: string = AGENT_NAME): AwarenessUser {
   const id = `agent-${sessionId}`;
-  return { id, name: AGENT_NAME, color: presenceColorFor(id), kind: 'agent' };
+  return { id, name, color: presenceColorFor(id), kind: 'agent' };
 }
 
 export type AgentPresence = {
@@ -40,6 +40,8 @@ export type AgentPresenceOptions = {
   sessionId: string;
   host: { userId: string; name: string };
   now: () => number;
+  /** A replay's name and status prefix, so everyone in the room can tell it from a live agent. */
+  label?: { name: string; statusPrefix: string };
 };
 
 /** Tools that change a file, which is what `lastEditAt` reports. */
@@ -51,14 +53,20 @@ export function publishAgentPresence({
   sessionId,
   host,
   now,
+  label,
 }: AgentPresenceOptions): AgentPresence {
+  const prefix = label?.statusPrefix ?? '';
   let agent: AgentInfo = {
     hostUserId: host.userId,
     hostName: host.name,
     sessionId,
-    status: AGENT_STATUS.starting,
+    status: `${prefix}${AGENT_STATUS.starting}`,
   };
-  awareness.setLocalState({ user: agentUser(sessionId), activeFileId: null, agent });
+  awareness.setLocalState({
+    user: agentUser(sessionId, label?.name),
+    activeFileId: null,
+    agent,
+  });
 
   const caretAt = (fileId: string, index: number): unknown => {
     const text = readFileText(doc, fileId);
@@ -69,7 +77,10 @@ export function publishAgentPresence({
 
   return {
     setStatus(status) {
-      agent = { ...agent, status: Array.from(status).slice(0, MAX_AGENT_STATUS_LENGTH).join('') };
+      agent = {
+        ...agent,
+        status: Array.from(`${prefix}${status}`).slice(0, MAX_AGENT_STATUS_LENGTH).join(''),
+      };
       awareness.setLocalStateField('agent', agent);
     },
     showActivity({ tool, fileId, cursor }) {

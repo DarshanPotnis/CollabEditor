@@ -44,7 +44,7 @@ export function planReplay(trace: AgentTrace, project: AgentTrace['project']): R
     return {
       ok: false,
       reason:
-        'This project does not start with the files the recording started with: the template has changed since it was recorded, so the recording needs making again.',
+        'This project does not have the files the recording started with: a file was changed before the replay began, or the template has changed since it was recorded (then the recording needs making again).',
     };
   }
   const model = trace.steps[0]?.model ?? null;

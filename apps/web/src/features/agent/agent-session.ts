@@ -25,6 +25,7 @@ import {
   type AgentOutcome,
   type AgentRunResult,
   type AgentTrace,
+  type ModelClient,
   type Typist,
 } from '@collabcode/agent';
 import {
@@ -43,6 +44,7 @@ import { AGENT_STATUS, toolStatus } from './agent-status.js';
 import { createAwarenessPresence } from './awareness-presence.js';
 import { waitForEditsOf } from './doc-sync.js';
 import { createHttpModelClient } from './http-model-client.js';
+import { REPLAY_AGENT_NAME, REPLAY_STATUS_PREFIX } from './replay-labels.js';
 import { isolationProblem, pageIsolation } from '../runtime/runtime-support.js';
 import { createRuntimeTools, type AgentRuntime } from './runtime-tools.js';
 import { systemClock } from './system-clock.js';
@@ -60,6 +62,8 @@ export type AgentSessionDeps = {
   typist: Typist;
   onEvent: (event: AgentEvent) => void;
   onNotice: (message: string) => void;
+  /** A replay ("Watch a demo"): the recorded answers in place of a model, and its labels. */
+  replay?: { model: ModelClient };
 };
 
 export type UndoPreview = { empty: boolean; changedPaths: string[] };
@@ -109,16 +113,18 @@ export async function startAgentSession(
   // Known before the first step, so the model is told at once rather than finding out.
   const sandboxProblem = isolationProblem(pageIsolation());
   const peer = await connectAgentPeer({ url: deps.collabUrl, projectId: deps.projectId, signal });
+  const name = deps.replay ? REPLAY_AGENT_NAME : AGENT_NAME;
   const presence = publishAgentPresence({
     awareness: peer.awareness,
     doc: peer.doc,
     sessionId,
     host: deps.host,
     now: Date.now,
+    ...(deps.replay && { label: { name, statusPrefix: REPLAY_STATUS_PREFIX } }),
   });
   const origin = agentOrigin(sessionId);
   const undo = createAgentUndo(peer.doc, origin);
-  const actor = { userId: agentUser(sessionId).id, userName: AGENT_NAME };
+  const actor = { userId: agentUser(sessionId).id, userName: name };
   const peers = createAwarenessPresence(peer.awareness, deps.host.userId, Date.now);
   const tools = composeToolHost(
     createDocTools({
@@ -166,12 +172,15 @@ export async function startAgentSession(
       sessionId,
       inputs: agentInputs(peer.doc, goal, sandboxProblem === null),
       tier,
-      model: createHttpModelClient({
-        apiUrl: deps.apiUrl,
-        projectId: deps.projectId,
-        sessionId,
-        ownKey: deps.ownKey,
-      }),
+      // A replay never builds the model client: it makes no model request at all.
+      model:
+        deps.replay?.model ??
+        createHttpModelClient({
+          apiUrl: deps.apiUrl,
+          projectId: deps.projectId,
+          sessionId,
+          ownKey: deps.ownKey,
+        }),
       tools,
       clock: systemClock,
       stop: stop.signal,

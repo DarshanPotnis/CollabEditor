@@ -19,7 +19,11 @@ import {
   runningStatus,
   type AgentSessionState,
   type LogEntry,
+  type ReplayLabel,
 } from './agent-session-state.js';
+import { DemoIntro } from './DemoIntro.js';
+import { RecordingView } from './RecordingView.js';
+import { divergenceText, replayBanner } from './replay-labels.js';
 import { TraceFileViewer } from './TraceFileViewer.js';
 import { traceTimeline } from './trace-timeline.js';
 import { TraceTimeline } from './TraceTimeline.js';
@@ -237,6 +241,18 @@ function CheckList({ checks }: { checks: VerifiedChecks }): React.ReactElement {
   );
 }
 
+/** Marks a replay everywhere it shows: nobody may take it for a live session. */
+function ReplayBanner({ label }: { label: ReplayLabel }): React.ReactElement {
+  return (
+    <p
+      aria-label="Replay"
+      className="rounded-md border border-violet-900/60 bg-violet-950/30 p-2 text-xs text-violet-100"
+    >
+      {replayBanner(label)}
+    </p>
+  );
+}
+
 function EndedView({
   state,
   controls,
@@ -245,9 +261,19 @@ function EndedView({
   controls: AgentSessionControls;
 }): React.ReactElement {
   const { outcome, totals, undo } = state;
+  const [viewingRecording, setViewingRecording] = useState(false);
   const tokens = (totals.inputTokens + totals.outputTokens).toLocaleString('en-US');
   return (
     <div className="space-y-3">
+      {state.replay && <ReplayBanner label={state.replay} />}
+      {state.divergence && (
+        <p
+          role="alert"
+          className="rounded-md border border-amber-900/60 bg-amber-950/30 p-2 text-xs text-amber-50"
+        >
+          {divergenceText(state.divergence)}
+        </p>
+      )}
       <div
         className={`rounded-md border p-2 text-sm ${
           outcome.kind === 'finished'
@@ -258,7 +284,7 @@ function EndedView({
         {outcome.kind === 'finished' ? (
           <AiText text={outcomeText(outcome)} />
         ) : (
-          <p>{outcomeText(outcome)}</p>
+          <p>{state.divergence ? 'The replay stopped.' : outcomeText(outcome)}</p>
         )}
       </div>
       {outcome.kind === 'finished' && outcome.checks !== null && (
@@ -316,9 +342,17 @@ function EndedView({
         {undo.kind === 'available' && (
           <Button onClick={controls.requestUndo}>Undo AI changes</Button>
         )}
-        <Button onClick={controls.downloadTrace}>Download trace</Button>
+        <Button onClick={controls.downloadTrace}>
+          {state.replay ? 'Download the recording' : 'Download trace'}
+        </Button>
+        {state.replay && controls.recording && (
+          <Button onClick={() => setViewingRecording((open) => !open)}>
+            {viewingRecording ? 'Hide the recorded session' : 'View the recorded session'}
+          </Button>
+        )}
         <Button onClick={controls.dismiss}>Done</Button>
       </div>
+      {viewingRecording && controls.recording && <RecordingView recording={controls.recording} />}
       <details>
         <summary className="cursor-pointer text-xs text-zinc-500">What it did</summary>
         <div className="mt-2">
@@ -329,6 +363,22 @@ function EndedView({
           )}
         </div>
       </details>
+    </div>
+  );
+}
+
+/** A replay that could not start offers its recording instead; nothing else is shown as live. */
+function StartFailedReplay({ controls }: { controls: AgentSessionControls }): React.ReactElement {
+  const [viewing, setViewing] = useState(false);
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        {controls.recording && !viewing && (
+          <Button onClick={() => setViewing(true)}>View the recorded session</Button>
+        )}
+        <Button onClick={controls.dismiss}>Done</Button>
+      </div>
+      {viewing && controls.recording && <RecordingView recording={controls.recording} />}
     </div>
   );
 }
@@ -348,10 +398,13 @@ export function AgentPanel({
   controls,
   follow,
   usingOwnKey,
+  demo,
 }: {
   controls: AgentSessionControls;
   follow: FollowAgent;
   usingOwnKey: boolean;
+  /** A demo project ("Watch a demo"): the replay's introduction in place of the goal form. */
+  demo: boolean;
 }): React.ReactElement {
   const { state } = controls;
   return (
@@ -363,12 +416,15 @@ export function AgentPanel({
         <Bot className="size-3.5" aria-hidden />
         AI teammate
       </h2>
-      {state.phase === 'idle' && (
-        <>
-          <GoalForm usingOwnKey={usingOwnKey} onStart={controls.start} />
-          <TraceFileViewer />
-        </>
-      )}
+      {state.phase === 'idle' &&
+        (demo ? (
+          <DemoIntro onPlay={controls.startReplay} />
+        ) : (
+          <>
+            <GoalForm usingOwnKey={usingOwnKey} onStart={controls.start} />
+            <TraceFileViewer />
+          </>
+        ))}
       {state.phase === 'needs-consent' && (
         <PrivacyNotice onAccept={controls.acceptPrivacyNotice} onCancel={controls.dismiss} />
       )}
@@ -388,14 +444,19 @@ export function AgentPanel({
           >
             {state.message}
           </p>
-          <div className="flex gap-2">
-            <Button onClick={() => controls.start(state.goal)}>Try again</Button>
-            <Button onClick={controls.dismiss}>Cancel</Button>
-          </div>
+          {state.replay ? (
+            <StartFailedReplay controls={controls} />
+          ) : (
+            <div className="flex gap-2">
+              <Button onClick={() => controls.start(state.goal)}>Try again</Button>
+              <Button onClick={controls.dismiss}>Cancel</Button>
+            </div>
+          )}
         </div>
       )}
       {state.phase === 'running' && (
         <div className="space-y-3">
+          {state.replay && <ReplayBanner label={state.replay} />}
           <div className="flex items-center gap-2">
             <RunningStatus state={state} />
             <Button onClick={controls.stop}>Stop</Button>

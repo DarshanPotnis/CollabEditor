@@ -37,7 +37,7 @@ describe('planReplay', () => {
     readFileText(changed, id)?.insert(0, '// changed\n');
     expect(planReplay(demo, startingProject(changed))).toMatchObject({
       ok: false,
-      reason: expect.stringContaining('the recording needs making again') as unknown,
+      reason: expect.stringContaining('a file was changed before the replay began') as unknown,
     });
   });
 

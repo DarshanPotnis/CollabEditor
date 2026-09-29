@@ -27,6 +27,8 @@ export type AiPanelProps = {
   edit: EditProposal;
   /** Opens the edited file, where the change waits for review. */
   onShowEdit: () => void;
+  /** A demo project: the AI teammate offers the replay ("Watch a demo"). */
+  demo: boolean;
 };
 
 type ActiveState = Exclude<AiRequestState, { phase: 'idle' | 'needs-consent' }>;
@@ -138,6 +140,7 @@ export function AiPanel({
   request,
   edit,
   onShowEdit,
+  demo,
 }: AiPanelProps): React.ReactElement {
   const ownKey = useOwnKeyChoice();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -159,7 +162,12 @@ export function AiPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
-        <AgentPanel controls={agent} follow={follow} usingOwnKey={ownKey.choice !== null} />
+        <AgentPanel
+          controls={agent}
+          follow={follow}
+          usingOwnKey={ownKey.choice !== null}
+          demo={demo}
+        />
         <hr className="border-zinc-800" />
         {state.phase === 'idle' && <EmptyState />}
         {state.phase === 'needs-consent' && (
