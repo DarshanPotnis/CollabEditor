@@ -171,3 +171,30 @@ test('the AI teammate edits the route, runs the project and calls it', async ({ 
   // stuck to the next line ("/28 packages"); npm's own "--watch" flags are not.
   expect(run?.output).not.toMatch(/\\\||\|\/|^[\\|/-]$|^[\\|/]\S|[\u2800-\u28ff]/m);
 });
+
+test('"Watch a demo" replays the recording live: its checks verified again, and no model asked', async ({
+  page,
+}) => {
+  const ai: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/ai')) ai.push(request.url());
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Watch a demo' }).click();
+  await page.waitForURL(/\/p\/[a-z0-9]+$/);
+  const panel = page.locator('section[aria-labelledby="agent-title"]');
+  await panel.getByRole('button', { name: 'Play the replay' }).click();
+
+  await expect(panel.getByRole('button', { name: 'Done' })).toBeVisible({ timeout: 240_000 });
+  await expect(panel.getByText(/^The replay stopped at step/)).toHaveCount(0);
+  await expect(
+    panel.getByRole('list', { name: 'Checks it made' }).first().getByRole('listitem'),
+  ).toHaveText([
+    '✓ DELETE /users/abc → 400',
+    '✓ DELETE /users/999 → 404',
+    '✓ DELETE /users/1 → 204',
+    '✓ GET /users → 200',
+  ]);
+  await expect(panel.getByRole('button', { name: 'Download the recording' })).toBeVisible();
+  expect(ai).toEqual([]);
+});
