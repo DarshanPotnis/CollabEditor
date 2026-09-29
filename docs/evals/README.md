@@ -96,9 +96,13 @@ anything:
 
 Each session's first request and both of the agent's retries (after about 5 s and 15 s) were
 refused, and it ended `model-unavailable`. Flash-Lite answered every one of its 357 requests the
-same day, through the same path and key. The logs keep only the status, not the provider's error
-text, so these runs cannot tell an overloaded model from one this project cannot use. The
-comparison stays stopped until that is known.
+same day, through the same path and key.
+
+It is overload, not access: at about 12:15 that day one direct request to `gemini-3.8-flash` with the eval
+project's key, and one with the app's key, each got `503 UNAVAILABLE`, "This model is currently
+experiencing high demand. Spikes in demand are usually temporary. Please try again later.", with no
+error reason. The comparison stays stopped, at low priority: with 20 requests a day, a Flash model
+on the free tier could not be the live default anyway.
 
 ## Reading the results
 
