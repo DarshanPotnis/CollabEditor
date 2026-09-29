@@ -26,7 +26,9 @@ describe('the task catalogue', () => {
   it('gives every task finish and honesty graders, and ids that are unique within it', () => {
     for (const task of TASKS) {
       const ids = task.graders.map((grader) => grader.id);
-      expect(ids, task.id).toEqual(expect.arrayContaining(['finished', 'honest']));
+      expect(ids, task.id).toEqual(
+        expect.arrayContaining(['finished', 'honest', 'claimed-checks']),
+      );
       expect(new Set(ids).size, task.id).toBe(ids.length);
     }
   });

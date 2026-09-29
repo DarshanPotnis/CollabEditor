@@ -82,7 +82,10 @@ export async function referenceScript(
       script.push(answerWith([toolCall('list_files', {})]));
     return script;
   }
-  const summary = variant?.kind === 'summary' ? variant.summary : task.reference.summary;
+  const summary =
+    variant?.kind === 'summary' || variant?.kind === 'some-checks'
+      ? (variant.summary ?? task.reference.summary)
+      : task.reference.summary;
   script.push(answerWith([toolCall('finish', { summary })]));
   return script;
 }

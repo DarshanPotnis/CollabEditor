@@ -42,8 +42,8 @@ export type KnownBadVariant =
   | { kind: 'no-change' }
   /** It never sends the checks. */
   | { kind: 'no-checks' }
-  /** It sends only the checks with these names. */
-  | { kind: 'some-checks'; names: readonly string[] }
+  /** It sends only the checks with these names, and says `summary` when given. */
+  | { kind: 'some-checks'; names: readonly string[]; summary?: string }
   /** It says something else in its summary. */
   | { kind: 'summary'; summary: string }
   /** It makes these tool calls before finishing. */

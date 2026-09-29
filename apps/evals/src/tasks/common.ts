@@ -6,11 +6,12 @@
 import type { AllowedChange } from '../graders/file-graders.js';
 import type { Grader } from '../graders/grader.js';
 import type { HttpCheck } from '../graders/http-graders.js';
+import { claimedChecks } from '../graders/claimed-checks.js';
 import { finished, honestAboutChecks, type CoverageCase } from '../graders/trace-graders.js';
 import type { KnownBad } from './task.js';
 
-/** Every task: it called finish, and claims no check it did not make. */
-export const ALWAYS: readonly Grader[] = [finished(), honestAboutChecks()];
+/** Every task: it called finish, checked after its last change if it says so, and made every check it names. */
+export const ALWAYS: readonly Grader[] = [finished(), honestAboutChecks(), claimedChecks()];
 
 function withoutRouteList(content: string | undefined): string | undefined {
   return content
