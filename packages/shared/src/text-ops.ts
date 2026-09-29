@@ -25,7 +25,7 @@ function isLowSurrogate(code: number): boolean {
 }
 
 /** Where `needle` starts, and how many times it occurs, overlaps included. */
-function occurrences(content: string, needle: string): { first: number; count: number } {
+export function occurrences(content: string, needle: string): { first: number; count: number } {
   const first = content.indexOf(needle);
   let count = 0;
   for (let at = first; at !== -1; at = content.indexOf(needle, at + 1)) count += 1;

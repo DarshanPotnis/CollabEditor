@@ -32,6 +32,7 @@ import { busyFileMessage, someoneElseEditing, type PresenceSource } from '../pre
 import type { Typist } from '../typist.js';
 import type { HostToolCall, StopSignal, ToolOutcome } from '../types.js';
 import { lookupPath, normalizePath, placementOf } from './paths.js';
+import { REPAIR_NOTES, resolveEdit } from './edit-repair.js';
 
 export const DOC_TOOL_NAMES = [
   'list_files',
@@ -226,6 +227,10 @@ export function createDocTools(context: DocToolsContext): DocTools {
     if (node.kind === 'folder') return refuse(`${node.path} is a folder, not a file.`);
     if (busyFile(tree, node)) return refuse(busyFileMessage(node.path));
     if (oldText === newText) return ok('No change: the new text is the same as the old.');
+    const resolved = resolveEdit(readFileContent(doc, node.id) ?? '', oldText, newText);
+    if (resolved.kind === 'no-match') return refuse(`${node.path}: ${resolved.message}`);
+    const texts = resolved.kind === 'repaired' ? resolved : { oldText, newText };
+    const note = resolved.kind === 'repaired' ? ` ${REPAIR_NOTES[resolved.repair]}` : '';
 
     undo.trackEdit(node.id);
     try {
@@ -233,8 +238,8 @@ export function createDocTools(context: DocToolsContext): DocTools {
         {
           doc,
           fileId: node.id,
-          oldText,
-          newText,
+          oldText: texts.oldText,
+          newText: texts.newText,
           origin,
           onProgress: (cursor) =>
             report({ tool: 'edit_file', path: node.path, fileId: node.id, cursor }),
@@ -250,11 +255,8 @@ export function createDocTools(context: DocToolsContext): DocTools {
         fileId: node.id,
         cursor: change.index + change.insert.length,
       });
-      return ok(
-        from === to
-          ? `Edited ${node.path} (changed line ${String(from)}).`
-          : `Edited ${node.path} (changed lines ${String(from)}–${String(to)}).`,
-      );
+      const lines = from === to ? `line ${String(from)}` : `lines ${String(from)}–${String(to)}`;
+      return ok(`Edited ${node.path} (changed ${lines}).${note}`);
     } catch (error) {
       if (error instanceof OpError) return refuse(`${node.path}: ${error.message}`);
       throw error;

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   agentOrigin,
   createAgentUndo,
@@ -333,5 +334,82 @@ describe('delete_file', () => {
 
     undo.undo({ ...AGENT, now: NOW });
     expect(readNode(doc, id)?.deletedAt).toBeNull();
+  });
+});
+
+describe("edit_file with read_file's formatting copied in (the successful-demo trace)", () => {
+  /** The edits the model sent in that session, in order, with what they got back. */
+  function recordedEdits(): Array<{
+    step: number;
+    input: AgentToolInput<'edit_file'>;
+    isError: boolean;
+  }> {
+    const raw = readFileSync(
+      new URL('../../fixtures/traces/successful-demo.json', import.meta.url),
+      'utf8',
+    );
+    const trace = JSON.parse(raw) as {
+      steps: Array<{
+        index: number;
+        toolCalls: Array<{
+          toolName: string;
+          input: AgentToolInput<'edit_file'>;
+          isError: boolean;
+        }>;
+      }>;
+    };
+    return trace.steps.flatMap((step) =>
+      step.toolCalls
+        .filter((call) => call.toolName === 'edit_file')
+        .map((call) => ({ step: step.index, input: call.input, isError: call.isError })),
+    );
+  }
+  const edits = recordedEdits();
+  const at = (step: number) => {
+    const found = edits.find((entry) => entry.step === step);
+    if (!found) throw new Error(`no edit at step ${String(step)}`);
+    return found;
+  };
+
+  it('is the trace it claims to be: three misses, then the edit that landed', () => {
+    expect(edits.map(({ step, isError }) => [step, isError])).toEqual([
+      [1, true],
+      [3, true],
+      [5, true],
+      [7, false],
+    ]);
+  });
+
+  it.each([3, 5])(
+    'now lands step %i, which kept the space after "N| ", and leaves the file as step 7 did',
+    async (step) => {
+      const { run, doc, idOf } = setup();
+      const { ok, output } = await run(edit(at(step).input));
+      expect(ok).toBe(true);
+      expect(output).toMatch(
+        /^Edited routes\/users\.js \(changed lines \d+–\d+\)\. oldText started with a space/,
+      );
+
+      const landed = setup();
+      await landed.run(edit(at(7).input));
+      const content = readFileContent(doc, idOf('routes/users.js')) ?? '';
+      // Same route, no stray space at the start of the line: what the model meant.
+      expect(content).toContain("\n});\n\nusersRouter.delete('/:id', (req, res) => {\n");
+      expect(content).not.toMatch(/^ usersRouter/m);
+      expect(content.replace(/\n+$/, '')).toBe(
+        (readFileContent(landed.doc, landed.idOf('routes/users.js')) ?? '').replace(/\n+$/, ''),
+      );
+    },
+  );
+
+  it('still refuses step 1, which changed the indentation, and says so with the lines', async () => {
+    const { run, doc, idOf } = setup();
+    const before = readFileContent(doc, idOf('routes/users.js'));
+    expect(await run(edit(at(1).input))).toEqual({
+      ok: false,
+      output:
+        "routes/users.js: The text to replace is not in the file. Lines 14–23 match it except for indentation: copy each line's leading spaces exactly as the file has them.",
+    });
+    expect(readFileContent(doc, idOf('routes/users.js'))).toBe(before);
   });
 });
