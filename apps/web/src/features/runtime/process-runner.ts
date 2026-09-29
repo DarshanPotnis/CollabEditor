@@ -13,8 +13,7 @@ import { readFileContent, resolveDocTree } from '@collabcode/shared';
 import type { Container, ContainerProcess } from './container.js';
 import { createFsBridge, type FsBridge, type SyncResult } from './fs-bridge/fs-bridge.js';
 import type { OutputSink } from './output-buffer.js';
-import { watchForCrashes } from './watch-signals.js';
-import { needsInstall, runPlan } from '@collabcode/agent';
+import { needsInstall, runPlan, watchForCrashes } from '@collabcode/agent';
 import {
   IDLE,
   RESTART_GRACE_MS,

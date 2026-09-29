@@ -8,3 +8,5 @@ playwright-report
 test-results
 # Recorded agent traces are kept exactly as they were downloaded.
 packages/agent/fixtures/traces
+# Eval fixtures are projects for the sandbox, kept exactly as each task needs them.
+apps/evals/fixtures

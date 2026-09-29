@@ -8,13 +8,13 @@
  * the program crashed before listening, no port ever closes, so without this
  * line the run would look like one still starting. Checked against the
  * container's Node 22 (v22.22.3, September 2026). nodemon's equivalent line
- * is recognised too.
+ * is recognised too. The browser's runner and the evals' sandbox both use it.
  *
  * Output arrives in arbitrary chunks, with colour codes, so it is read as
  * whole plain-text lines. A line that never ends is capped, so endless output
  * without line breaks cannot grow memory.
  */
-import { plainTerminalText } from '@collabcode/agent';
+import { plainTerminalText } from './terminal-text.js';
 
 const CRASH_LINES = [
   /^Failed running .+\. Waiting for file changes before restarting\.\.\.$/,

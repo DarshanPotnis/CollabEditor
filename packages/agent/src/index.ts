@@ -17,6 +17,7 @@ export * from './runtime/response-body.js';
 export * from './runtime/run-plan.js';
 export * from './runtime/run-text.js';
 export * from './runtime/terminal-text.js';
+export * from './runtime/watch-signals.js';
 export * from './scripted-model.js';
 export * from './session-changes.js';
 export * from './stop-source.js';

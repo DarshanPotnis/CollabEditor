@@ -32,6 +32,8 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/collabcode_test
+      # The evals' sandbox specs need Docker, which the runner has; never let them skip here.
+      REQUIRE_DOCKER: '1'
 
     steps:
       - uses: actions/checkout@v4

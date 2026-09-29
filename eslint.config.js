@@ -10,6 +10,8 @@ export default tseslint.config(
       '**/coverage/**',
       'playwright-report/**',
       'test-results/**',
+      // Eval fixtures are projects and programs for the sandbox, some deliberately broken or hostile.
+      'apps/evals/fixtures/**',
     ],
   },
   js.configs.recommended,
