@@ -13,6 +13,7 @@ import * as Y from 'yjs';
 import type { PeerPresence } from '../presence-rule.js';
 import { neverStopped } from '../test/support.js';
 import { instantTypist } from '../typist.js';
+import { SHORTER_TEXT_HINT } from './edit-repair.js';
 import {
   createDocTools,
   READ_MAX_LINES,
@@ -189,6 +190,27 @@ describe('edit_file', () => {
     expect(
       (await run(edit({ path: 'routes/users.js', oldText: 'usersRouter', newText: 'x' }))).output,
     ).toMatch(/appears 3 times/);
+  });
+
+  it('adds the shorter-text hint when the same edit fails the same way again', async () => {
+    const { run } = setup();
+    const copied = edit({
+      path: 'routes/users.js',
+      oldText: "usersRouter.get('/', (req, res) => {\n  res.json(everyone);\n});",
+      newText: 'x',
+    });
+    const first = await run(copied);
+    expect(first.ok).toBe(false);
+    expect(first.output).toContain('but line 11 differs.');
+    expect(first.output).not.toContain(SHORTER_TEXT_HINT);
+
+    const again = await run(copied);
+    expect(again).toEqual({ ok: false, output: `${first.output}\n${SHORTER_TEXT_HINT}` });
+
+    // A different mismatch in between starts over.
+    const other = await run(edit({ path: 'routes/users.js', oldText: 'nope', newText: 'x' }));
+    expect(other.output).not.toContain(SHORTER_TEXT_HINT);
+    expect((await run(copied)).output).not.toContain(SHORTER_TEXT_HINT);
   });
 
   describe('the presence rule', () => {

@@ -76,11 +76,55 @@ describe('resolveEdit', () => {
     });
   });
 
-  it('names where the first line is when the rest differs', () => {
+  it('names the first line that differs, as the file has it and as the text has it', () => {
     const oldText = "router.get('/', (req, res) => {\n  res.json({});";
-    expect(resolveEdit(FILE, oldText, 'x')).toMatchObject({
+    expect(resolveEdit(FILE, oldText, 'x')).toEqual({
+      kind: 'no-match',
+      message: [
+        'The text to replace is not in the file. Its first line is line 5 of the file, but line 6 differs.',
+        'The file has:  "  res.json([]);"',
+        'Your text has: "  res.json({});"',
+        'Copy the lines exactly as the file has them.',
+      ].join('\n'),
+    });
+  });
+
+  it('finds one dropped word deep in a long block, as in a recorded session', () => {
+    // gemini-3.5-flash-lite copied its own 24-line comment back five times, one word short.
+    const comments = Array.from({ length: 12 }, (_, index) => `    // thought ${String(index)}`);
+    const file = ["usersRouter.get('/', (req, res) => {", ...comments, '});'].join('\n');
+    const copied = [
+      "usersRouter.get('/', (req, res) => {",
+      ...comments.with(6, '    // thought'),
+    ].join('\n');
+    expect(resolveEdit(file, copied, 'x')).toMatchObject({
       message: expect.stringContaining(
-        'Its first line is line 5 of the file, but the lines after it differ',
+        'but line 8 differs.\nThe file has:  "    // thought 6"\nYour text has: "    // thought"',
+      ) as unknown,
+    });
+  });
+
+  it('shows a long line around where it differs, and says when the file ends first', () => {
+    const long = `const x = [${'1, '.repeat(80)}2];`;
+    const file = `start();\n${long}`;
+    const message = (oldText: string): string => {
+      const resolved = resolveEdit(file, oldText, 'x');
+      return resolved.kind === 'no-match' ? resolved.message : '';
+    };
+    const around = message(`start();\n${long.replace('2];', '3];')}`);
+    // 60 characters before the difference, where the line itself is 250.
+    expect(around).toMatch(/The file has: {2}"…(1, ){20}2\];"\nYour text has: "…(1, ){20}3\];"/);
+    expect(message(`start();\n${long}\nmore();`)).toContain(
+      'but line 3 differs.\nThe file has:  nothing: it ends at line 2\nYour text has: "more();"',
+    );
+  });
+
+  it('says so when the first line differs only in its spaces', () => {
+    expect(
+      resolveEdit(FILE, "router.get('/', (req, res) => { \n  res.json({});", 'x'),
+    ).toMatchObject({
+      message: expect.stringContaining(
+        'Its first line is line 5 of the file, but differs from it in spacing.\nThe file has:  "router.get(\'/\', (req, res) => {"',
       ) as unknown,
     });
   });

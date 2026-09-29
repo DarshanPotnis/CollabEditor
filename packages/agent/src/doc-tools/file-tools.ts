@@ -32,7 +32,7 @@ import { busyFileMessage, someoneElseEditing, type PresenceSource } from '../pre
 import type { Typist } from '../typist.js';
 import type { HostToolCall, StopSignal, ToolOutcome } from '../types.js';
 import { lookupPath, normalizePath, placementOf } from './paths.js';
-import { REPAIR_NOTES, resolveEdit } from './edit-repair.js';
+import { REPAIR_NOTES, SHORTER_TEXT_HINT, resolveEdit } from './edit-repair.js';
 
 export const DOC_TOOL_NAMES = [
   'list_files',
@@ -141,6 +141,9 @@ export function createDocTools(context: DocToolsContext): DocTools {
   const report = (activity: DocActivity): void => context.onActivity?.(activity);
   const actor = (): TreeOpContext => ({ ...context.actor, now: context.now() });
 
+  /** Each file's last mismatch refusal, to add the shorter-text hint when it comes again. */
+  const lastMismatch = new Map<string, string>();
+
   /** The first file under `node` that someone else is editing, if any. */
   const busyFile = (tree: ResolvedTree, node: ResolvedNode): ResolvedNode | undefined =>
     filesUnder(tree, node).find((file) => someoneElseEditing(presence, file.id, context.now()));
@@ -228,7 +231,13 @@ export function createDocTools(context: DocToolsContext): DocTools {
     if (busyFile(tree, node)) return refuse(busyFileMessage(node.path));
     if (oldText === newText) return ok('No change: the new text is the same as the old.');
     const resolved = resolveEdit(readFileContent(doc, node.id) ?? '', oldText, newText);
-    if (resolved.kind === 'no-match') return refuse(`${node.path}: ${resolved.message}`);
+    if (resolved.kind === 'no-match') {
+      const refusal = `${node.path}: ${resolved.message}`;
+      const again = lastMismatch.get(node.id) === refusal;
+      lastMismatch.set(node.id, refusal);
+      return refuse(again ? `${refusal}\n${SHORTER_TEXT_HINT}` : refusal);
+    }
+    lastMismatch.delete(node.id);
     const texts = resolved.kind === 'repaired' ? resolved : { oldText, newText };
     const note = resolved.kind === 'repaired' ? ` ${REPAIR_NOTES[resolved.repair]}` : '';
 

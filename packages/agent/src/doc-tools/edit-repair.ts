@@ -8,7 +8,9 @@
  * exactly one match: the whole "N| " prefix taken off every line, or the one
  * space it leaves at the start taken off. The same repair is made to newText,
  * which the model builds from the same copy. When neither fits, the refusal
- * says what is most likely wrong instead of only that the text is missing.
+ * says what is most likely wrong instead of only that the text is missing:
+ * when the copy starts where the file does, the first line that differs, both
+ * ways.
  */
 import { occurrences } from '@collabcode/shared';
 
@@ -19,6 +21,10 @@ export type ResolvedEdit =
   | { kind: 'as-sent' }
   | { kind: 'repaired'; repair: RepairKind; oldText: string; newText: string }
   | { kind: 'no-match'; message: string };
+
+/** Added to a mismatch refused a second time running: a shorter copy has fewer places to slip. */
+export const SHORTER_TEXT_HINT =
+  'This edit was refused the same way before. Copy fewer lines: only the lines you change, with one line either side, exactly as read_file shows them.';
 
 /** read_file's prefix: the number padded to the widest one, a bar, and a space (none on an empty line). */
 const NUMBERED_LINE = /^ *\d+\|(?: |$)/;
@@ -74,6 +80,48 @@ function matchIgnoringIndentation(
   return found === null ? null : { from: found + 1, to: found + wanted.length };
 }
 
+/** Characters of a long line shown around where it differs. */
+const SHOWN_CHARS = 160;
+const LEAD_CHARS = 60;
+
+/** Both lines quoted, cut to the same window around their first differing character when long. */
+function quotedPair(fileLine: string, textLine: string): [string, string] {
+  let column = 0;
+  while (column < fileLine.length && fileLine[column] === textLine[column]) column += 1;
+  const longest = Math.max(fileLine.length, textLine.length);
+  const start = longest <= SHOWN_CHARS ? 0 : Math.max(0, column - LEAD_CHARS);
+  const cut = (line: string): string =>
+    longest <= SHOWN_CHARS
+      ? line
+      : `${start > 0 ? '…' : ''}${line.slice(start, start + SHOWN_CHARS)}${start + SHOWN_CHARS < line.length ? '…' : ''}`;
+  return [JSON.stringify(cut(fileLine)), JSON.stringify(cut(textLine))];
+}
+
+/**
+ * Where a copy whose first line is at `at` (1-based) stops matching the file,
+ * with both versions of that line: a model that re-reads and copies again
+ * tends to make the same slip, which it cannot see without being shown.
+ */
+function firstDifference(
+  contentLines: readonly string[],
+  lines: readonly string[],
+  at: number,
+): string {
+  const offset = lines.findIndex((line, index) => contentLines[at - 1 + index] !== line);
+  const lineNumber = at + offset;
+  const fileLine = contentLines[lineNumber - 1];
+  const textLine = lines[offset] ?? '';
+  const where =
+    offset === 0
+      ? `Its first line is line ${String(at)} of the file, but differs from it in spacing.`
+      : `Its first line is line ${String(at)} of the file, but line ${String(lineNumber)} differs.`;
+  if (fileLine === undefined) {
+    return `${where}\nThe file has:  nothing: it ends at line ${String(contentLines.length)}\nYour text has: ${JSON.stringify(textLine)}\nCopy the lines exactly as the file has them.`;
+  }
+  const [file, text] = quotedPair(fileLine, textLine);
+  return `${where}\nThe file has:  ${file}\nYour text has: ${text}\nCopy the lines exactly as the file has them.`;
+}
+
 /** Why oldText is most likely not in the file, as advice the model can act on. */
 function missHint(content: string, oldText: string): string {
   const lines = oldText.split('\n');
@@ -90,8 +138,8 @@ function missHint(content: string, oldText: string): string {
     first === undefined
       ? []
       : contentLines.flatMap((line, index) => (line.trim() === first ? [index + 1] : []));
-  if (at.length === 1 && lines.length > 1) {
-    return `Its first line is line ${String(at[0])} of the file, but the lines after it differ: read that part of the file again and copy it exactly.`;
+  if (at[0] !== undefined && at.length === 1 && lines.length > 1) {
+    return firstDifference(contentLines, lines, at[0]);
   }
   return 'It may have changed since it was read.';
 }
