@@ -253,6 +253,7 @@ replace. Node's own `--env-file` would let a machine-wide `DATABASE_URL` win.
 | `DATABASE_URL`                  | server | Postgres connection string. Use Neon's **pooled** endpoint with `?sslmode=require`                                                |
 | `ALLOWED_ORIGINS`               | server | Comma-separated web origins allowed to call the API. No wildcard, no trailing slash                                               |
 | `PORT`                          | server | Injected by Render; defaults to 8080                                                                                              |
+| `NODE_ENV`                      | server | `production` on Render, for JSON log lines; `development` (the default) pretty-prints them                                        |
 | `LOG_LEVEL`                     | server | pino level; `info` in production                                                                                                  |
 | `CLIENT_IP_SOURCE`              | server | Where per-IP limits read the client address: `render` (default) or `direct`                                                       |
 | `GEMINI_API_KEY`                | server | Key for the shared free AI tier (Google AI Studio). Optional: unset turns the shared tier off; people can still use their own key |
@@ -299,19 +300,56 @@ WebContainer.
 
 ## Deploying
 
-**Vercel** (web): set the project's root directory to `apps/web`. Build command
-`npm run build`, output `dist`. Set `VITE_API_URL` and `VITE_COLLAB_URL` to the Render service.
-SPA rewrites come from `apps/web/vercel.json`.
+The web app runs on Vercel and the server on Render, both deployed from `main`, with the database
+on its own Neon branch. Both builds have to build workspace packages first: the server bundles
+`packages/shared` and `packages/model-gateway` from their `dist/` folders, the web app imports
+`packages/shared` and `packages/agent` the same way, and a fresh checkout has no `dist/`.
 
-**Render** (server): root directory is the repository root. Build
-`npm ci && npm run build -w @collabcode/shared && npm run build -w @collabcode/server`, start
-`npm run start -w @collabcode/server`, and run `npm run migrate -w @collabcode/server` on deploy.
-Set `DATABASE_URL`, `ALLOWED_ORIGINS` and `LOG_LEVEL`, and `GEMINI_API_KEY` for the shared AI
-tier. `CLIENT_IP_SOURCE` defaults to `render`, which is what Render needs. Create the Gemini key
-in a Google Cloud project used only for this app: the free limits are per project, not per key,
-and the AI limit defaults assume that project's page at
-[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) shows 15 requests a
-minute and 500 a day for the model.
+**Vercel** (web):
+
+| Setting         | Value                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Root Directory  | `apps/web`, with "Include source files outside of the Root Directory" on                                                    |
+| Framework       | Vite                                                                                                                        |
+| Install Command | `cd ../.. && npm ci`                                                                                                        |
+| Build Command   | `cd ../.. && npm run build -w @collabcode/shared && npm run build -w @collabcode/agent && npm run build -w @collabcode/web` |
+| Output          | `dist`                                                                                                                      |
+| Node.js         | 24.x                                                                                                                        |
+
+Set `VITE_API_URL` (`https://<your-server>`) and `VITE_COLLAB_URL` (`wss://<your-server>/collab`)
+for Production and Preview. They are compiled into the bundle, so changing one needs a new build.
+The SPA rewrites and the cross-origin isolation headers come from `apps/web/vercel.json`, which
+Vercel reads because it is in the root directory. Preview deployments build and send the headers,
+but the server refuses their API calls: their origins are not in `ALLOWED_ORIGINS`.
+
+**Render** (server), a Node web service:
+
+| Setting           | Value                                                                                                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root Directory    | empty (the repository root)                                                                                                                                                               |
+| Build Command     | `npm ci --include=dev && npm run build -w @collabcode/shared && npm run build -w @collabcode/model-gateway && npm run build -w @collabcode/server && node apps/server/dist/db/migrate.js` |
+| Start Command     | `npm run start -w @collabcode/server`                                                                                                                                                     |
+| Health Check Path | `/health`                                                                                                                                                                                 |
+
+Node's version comes from `.nvmrc`. Set `NODE_ENV=production`, `LOG_LEVEL=info`,
+`CLIENT_IP_SOURCE=render`, `DATABASE_URL`, `ALLOWED_ORIGINS`, and `GEMINI_API_KEY` for the shared
+AI tier; Render sets `PORT`. Variables set in Render's dashboard apply to the build too, and npm
+leaves out devDependencies when `NODE_ENV` is `production`, so the build needs `--include=dev` for
+its compilers.
+
+Create the Gemini key in a Google Cloud project used only for the deployed app, not the one the
+evals use. The free limits are per project, not per key, and the AI limit defaults assume that
+project's page at [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) shows 15
+requests a minute and 500 a day for the model. Leave `AI_FALLBACK_MODEL` unset unless the model
+you would name has been through the evals: an agent session that starts on the fallback stays on it
+for every step.
+
+**Neon** (database): `DATABASE_URL` is the production branch's pooled connection string. Render's
+free instances have no pre-deploy command, so the last step of the build runs the migrations
+against it ([ADR 014](docs/decisions/014-migrations-in-the-render-build.md)). It applies each
+numbered SQL file not yet recorded in `schema_migrations`, one transaction per file, and does
+nothing when none is new. A failed migration fails the build, and the previous version keeps
+serving. A migration runs before the new version replaces the old one, so it must work with both.
 
 ### Launch checklist: cross-origin isolation
 
@@ -366,7 +404,10 @@ hosting:
    `data:` lines should arrive over a second or two, not all at once. All at once still works, but
    means a proxy is buffering.
 
-3. The same request without the `origin` header is refused with 403.
+3. The same request without the `origin` header is refused with 403, and so is a project
+   creation with `-H 'origin: https://example.com'`. Only the AI routes require an origin: the
+   rest of the API refuses origins not in `ALLOWED_ORIGINS` but lets requests without one through,
+   since they are not from a browser (curl, Render's health checks).
 4. Render's logs show one `ai step` line per request, with ids, model, tokens and timings, and no
    code, prompt or key. An AI teammate session's lines also carry its session id and step.
 5. An AI teammate session on the shared tier finishes the demo task on a new Express project.

@@ -530,6 +530,9 @@ detection).
 
 Storage is deliberately the simple version: the full document, rewritten on each debounced save.
 See `docs/decisions/002-persistence.md` for the trade-off and the optimisation we did not build.
+The schema comes from numbered SQL migrations, which Render's build applies before a new version
+starts (`docs/decisions/014-migrations-in-the-render-build.md`), so a migration must work with the
+version still running.
 
 ### One HTTP server
 
