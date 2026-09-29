@@ -30,7 +30,8 @@
     "evals": "npm run build:shared && npm run evals -w @collabcode/evals --",
     "evals:selftest": "npm run build:shared && npm run selftest -w @collabcode/evals",
     "evals:readme": "npm run readme -w @collabcode/evals",
-    "evals:regrade": "npm run build:shared && npm run regrade -w @collabcode/evals --"
+    "evals:regrade": "npm run build:shared && npm run regrade -w @collabcode/evals --",
+    "evals:compare": "npm run compare -w @collabcode/evals --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

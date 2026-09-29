@@ -47,6 +47,8 @@ const metrics: TaskResult['metrics'] = {
   waitMs: 0,
   wastedSteps: 0,
   repeatedErrors: 0,
+  refusedFinishes: 0,
+  checksNotMade: 0,
 };
 
 function recorded(finishedAt: string | null = '2026-09-29T06:23:00.000Z'): RunResults {

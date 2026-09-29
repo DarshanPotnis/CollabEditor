@@ -13,6 +13,8 @@ const metrics: TaskResult['metrics'] = {
   waitMs: 0,
   wastedSteps: 0,
   repeatedErrors: 0,
+  refusedFinishes: 0,
+  checksNotMade: 0,
 };
 
 const result = (task: string, trial: number, category: TaskResult['category']): TaskResult => ({

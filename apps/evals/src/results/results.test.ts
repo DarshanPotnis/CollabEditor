@@ -62,7 +62,33 @@ describe('metricsOf', () => {
       waitMs: 5_000,
       wastedSteps: 2,
       repeatedErrors: 1,
+      refusedFinishes: 0,
+      checksNotMade: 0,
     });
+  });
+});
+
+describe('metricsOf, for agent@4', () => {
+  it('counts refused finishes and the checks a finish listed but did not make', () => {
+    const refused = { ...ok, toolName: 'finish', isError: true };
+    const trace = {
+      steps: [step({ toolCalls: [refused] }), step({ toolCalls: [{ ...ok, toolName: 'finish' }] })],
+      outcome: {
+        kind: 'finished',
+        summary: 's',
+        checks: {
+          made: [],
+          notMade: [
+            {
+              check: { kind: 'request', method: 'GET', path: '/', status: 200 },
+              reason: 'not sent',
+            },
+          ],
+        },
+      },
+      totals: { steps: 2, inputTokens: 0, outputTokens: 0, durationMs: 0 },
+    } as unknown as AgentTrace;
+    expect(metricsOf(trace)).toMatchObject({ refusedFinishes: 1, checksNotMade: 1 });
   });
 });
 
@@ -107,6 +133,8 @@ function result(
       waitMs: 0,
       wastedSteps: passed ? 0 : 2,
       repeatedErrors: 0,
+      refusedFinishes: 0,
+      checksNotMade: 0,
     },
     trace: `${task}-1.trace.json`,
   };
@@ -202,6 +230,11 @@ describe('the README table', () => {
       result('a', true, 4),
     ]);
     expect(latestRuns([old, newer, flash]).map((entry) => entry.run.id)).toEqual(['new', 'flash']);
+    const agent4 = { ...newer, run: { ...newer.run, id: 'agent4', prompt: 'agent@4' } };
+    expect(latestRuns([old, newer, agent4]).map((entry) => entry.run.id)).toEqual([
+      'new',
+      'agent4',
+    ]);
     const table = readmeTable([old, newer, flash]);
     expect(table.split('\n')).toHaveLength(4);
     expect(table).toContain(

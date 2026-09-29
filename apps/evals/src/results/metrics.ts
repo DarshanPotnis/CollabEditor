@@ -6,7 +6,10 @@
  * - wall time, and within it the model's time, the tools' and the waits';
  * - wasted steps: steps where every tool call failed (like edits whose text
  *   was not in the file) or that called no tool at all;
- * - repeated errors: steps the model was reminded not to repeat a failure.
+ * - repeated errors: steps the model was reminded not to repeat a failure;
+ * - refused finishes: finish calls the loop sent back (no summary, or checks
+ *   the session did not make), and the checks a finish listed but did not
+ *   make (agent@4 on; zero before).
  */
 import { REPEATED_ERROR_REMINDER } from '@collabcode/shared';
 import type { AgentTrace } from '@collabcode/agent';
@@ -22,6 +25,9 @@ export type TaskMetrics = {
   waitMs: number;
   wastedSteps: number;
   repeatedErrors: number;
+  /** Absent from results recorded before they were measured. */
+  refusedFinishes?: number;
+  checksNotMade?: number;
 };
 
 export function metricsOf(trace: AgentTrace): TaskMetrics {
@@ -42,5 +48,10 @@ export function metricsOf(trace: AgentTrace): TaskMetrics {
     ).length,
     repeatedErrors: trace.steps.filter((step) => step.reminder?.includes(REPEATED_ERROR_REMINDER))
       .length,
+    refusedFinishes: trace.steps
+      .flatMap((step) => step.toolCalls)
+      .filter((call) => call.toolName === 'finish' && call.isError).length,
+    checksNotMade:
+      trace.outcome?.kind === 'finished' ? (trace.outcome.checks?.notMade.length ?? 0) : 0,
   };
 }

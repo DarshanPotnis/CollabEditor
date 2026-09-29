@@ -20,6 +20,9 @@ const metricsSchema = z.object({
   waitMs: z.number(),
   wastedSteps: z.number(),
   repeatedErrors: z.number(),
+  /** Absent from results recorded before they were measured. */
+  refusedFinishes: z.number().optional(),
+  checksNotMade: z.number().optional(),
 }) satisfies z.ZodType<TaskMetrics>;
 
 export const taskResultSchema = z.object({

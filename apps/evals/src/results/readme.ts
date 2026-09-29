@@ -1,5 +1,6 @@
 /**
- * The README's eval table: the latest recorded run for each model, from
+ * The README's eval table: the latest recorded run for each model and prompt
+ * version, from
  * docs/evals/results/*.json, written between the README's evals markers
  * (npm run evals:readme). Generated, so it cannot drift from the results.
  */
@@ -17,11 +18,11 @@ export const README_END = '<!-- evals:end -->';
 
 const oneDecimal = (value: number): string => value.toFixed(1);
 
-/** The latest run for each model and task count, newest first. */
+/** The latest run for each model, prompt version and task count, newest first. */
 export function latestRuns(runs: readonly RunResults[]): RunResults[] {
   const latest = new Map<string, RunResults>();
   for (const run of runs) {
-    const key = `${run.run.model.id} ${String(run.run.tasks.length)}`;
+    const key = `${run.run.model.id} ${run.run.prompt} ${String(run.run.tasks.length)}`;
     const seen = latest.get(key);
     if (!seen || seen.run.startedAt < run.run.startedAt) latest.set(key, run);
   }
