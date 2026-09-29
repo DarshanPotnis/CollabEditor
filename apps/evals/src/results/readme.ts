@@ -1,8 +1,9 @@
 /**
- * The README's eval table: the latest recorded run for each model and prompt
- * version, from
- * docs/evals/results/*.json, written between the README's evals markers
- * (npm run evals:readme). Generated, so it cannot drift from the results.
+ * The README's eval tables, from docs/evals/results/*.json, written between
+ * the README's evals markers (npm run evals:readme). Generated, so they cannot
+ * drift from the results. Headline numbers come only from runs with several
+ * sessions per task, with how consistently each task passed; single-session
+ * iteration runs are listed apart, as what they are.
  */
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,28 +19,72 @@ export const README_END = '<!-- evals:end -->';
 
 const oneDecimal = (value: number): string => value.toFixed(1);
 
-/** The latest run for each model, prompt version and task count, newest first. */
+/** Sessions per task for a run's numbers to be headline numbers, not iteration. */
+export const HEADLINE_TRIALS = 3;
+
+/** The latest run for each model, prompt version, task count and trials, newest first. */
 export function latestRuns(runs: readonly RunResults[]): RunResults[] {
   const latest = new Map<string, RunResults>();
   for (const run of runs) {
-    const key = `${run.run.model.id} ${run.run.prompt} ${String(run.run.tasks.length)}`;
+    const key = `${run.run.model.id} ${run.run.prompt} ${String(run.run.tasks.length)} ${String(run.run.trials)}`;
     const seen = latest.get(key);
     if (!seen || seen.run.startedAt < run.run.startedAt) latest.set(key, run);
   }
   return [...latest.values()].sort((a, b) => b.run.startedAt.localeCompare(a.run.startedAt));
 }
 
+const checks = (value: number | null): string => (value === null ? '—' : oneDecimal(value));
+const report = (run: RunResults): string => `[${run.run.id}](docs/evals/results/${run.run.id}.md)`;
+
+/** Several sessions per task: the pass rate, and how consistently each task passed. */
+function headlineTable(runs: readonly RunResults[]): string[] {
+  if (runs.length === 0) {
+    return [
+      `No run with ${String(HEADLINE_TRIALS)} sessions per task is recorded yet, so there is no headline pass rate.`,
+    ];
+  }
+  return [
+    `| Model | Prompt | Graders | Sessions passed | Tasks passed every time · some · never | Checks after the last change, per session | Requests per session | Report |`,
+    '| --- | --- | --- | --: | --: | --: | --: | --- |',
+    ...runs.map((run) => {
+      const summary = summarize(run.results);
+      const { every, some, none } = summary.byTask;
+      return `| ${run.run.model.id} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.sessions)} (${String(Math.round(summary.passRate * 100))}%) | ${String(every)} · ${String(some)} · ${String(none)} | ${checks(summary.checksAfterLastChangePerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${report(run)} |`;
+    }),
+  ];
+}
+
+/** One session per task: for iterating, where a task or two either way is noise. */
+function iterationTable(runs: readonly RunResults[]): string[] {
+  return [
+    '| Model | Date | Prompt | Graders | Passed | Checks after the last change | Wasted steps | Requests | Tokens | Report |',
+    '| --- | --- | --- | --- | --: | --: | --: | --: | --: | --- |',
+    ...runs.map((run) => {
+      const summary = summarize(run.results);
+      return `| ${run.run.model.id} | ${run.run.startedAt.slice(0, 10)} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.sessions)} | ${checks(summary.checksAfterLastChangePerTask)} | ${oneDecimal(summary.wastedStepsPerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${Math.round(summary.tokensPerTask).toLocaleString('en-US')} | ${report(run)} |`;
+    }),
+  ];
+}
+
 export function readmeTable(runs: readonly RunResults[]): string {
   if (runs.length === 0) return 'No eval run is recorded yet.';
-  const rows = latestRuns(runs).map((run) => {
-    const summary = summarize(run.results);
-    return `| ${run.run.model.id} | ${run.run.startedAt.slice(0, 10)} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.tasks)} | ${oneDecimal(summary.medianSteps)} | ${oneDecimal(summary.wastedStepsPerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${Math.round(summary.tokensPerTask).toLocaleString('en-US')} | [${run.run.id}](docs/evals/results/${run.run.id}.md) |`;
-  });
-  return [
-    '| Model | Date | Prompt | Graders | Passed | Median steps | Wasted steps | Requests | Tokens | Report |',
-    '| --- | --- | --- | --- | --: | --: | --: | --: | --: | --- |',
-    ...rows,
-  ].join('\n');
+  const latest = latestRuns(runs);
+  const headline = latest.filter((run) => run.run.trials >= HEADLINE_TRIALS);
+  const iteration = latest.filter((run) => run.run.trials === 1);
+  const lines = [
+    `**Headline** (${String(HEADLINE_TRIALS)} sessions per task):`,
+    '',
+    ...headlineTable(headline),
+  ];
+  if (iteration.length > 0) {
+    lines.push(
+      '',
+      '**Iteration runs** (one session per task, so a task or two either way is noise):',
+      '',
+      ...iterationTable(iteration),
+    );
+  }
+  return lines.join('\n');
 }
 
 export function withTable(readme: string, table: string): string {

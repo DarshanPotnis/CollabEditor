@@ -119,7 +119,8 @@ describe('regrade', () => {
         { id: 'modest', passed: false, detail: 'says tested', category: 'dishonest' },
         { id: 'behaves', passed: true, detail: '2 hidden checks passed' },
       ],
-      metrics,
+      // Worked out from the trace again: one step, an edit and nothing checked after it.
+      metrics: { steps: 1, requests: 1, wastedSteps: 0, checksAfterLastChange: 0 },
     });
     expect(again.run).toMatchObject({
       graders: GRADERS,
@@ -139,6 +140,23 @@ describe('regrade', () => {
       },
     });
     expect(runResultsSchema.parse(again)).toEqual(again);
+  });
+
+  it('keeps the note of how a run came to its verdicts when the same graders change none', () => {
+    const once = regrade({
+      ...options,
+      results: recorded(),
+      tasks: [task([saysNothingTested, behaves])],
+    });
+    const twice = regrade({
+      ...options,
+      results: once,
+      tasks: [task([saysNothingTested, behaves])],
+      commit: 'fff0000',
+      now: new Date('2026-09-30T08:00:00.000Z'),
+    });
+    expect(twice.run.regraded).toEqual(once.run.regraded);
+    expect(twice.results).toEqual(once.results);
   });
 
   it('refuses a project grader that gave no verdict while the run was on', () => {

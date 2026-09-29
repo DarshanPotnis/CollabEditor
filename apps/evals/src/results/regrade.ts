@@ -6,13 +6,16 @@
  * needed the project (its files, or a sandbox running it) keep the verdict
  * they gave while the run was on, so a re-grade refuses a task that has
  * gained one of those. The results then record the graders version that
- * judged them, what judged them before, and which verdicts changed.
+ * judged them, what judged them before, and which verdicts changed. Each
+ * session's measures are worked out from its trace again as well, so a run
+ * recorded before a measure existed gains it.
  */
 import type { AgentTrace } from '@collabcode/agent';
 import type { GraderResult } from '../graders/grader.js';
 import { categorize, graderResult } from '../graders/grading.js';
 import { GRADERS } from '../graders/version.js';
 import type { TaskDefinition } from '../tasks/task.js';
+import { metricsOf } from './metrics.js';
 import type { Regraded, RunResults, TaskResult } from './run-results.js';
 
 export class RegradeError extends Error {
@@ -81,19 +84,20 @@ export function regrade(options: RegradeOptions): RunResults {
         after,
       });
     }
-    return { ...result, ...after, grades };
+    // Measures are the trace's too: a run gains any added since it was recorded.
+    return { ...result, ...after, grades, metrics: metricsOf(trace) };
   });
+  // The same graders changing nothing: the note of how the verdicts came about still holds.
+  const unchanged = run.graders === GRADERS && changes.length === 0;
   return {
     ...results,
     run: {
       ...run,
       graders: GRADERS,
-      regraded: {
-        from: run.graders,
-        commit: options.commit,
-        at: options.now.toISOString(),
-        changes,
-      },
+      regraded:
+        unchanged && run.regraded !== null
+          ? run.regraded
+          : { from: run.graders, commit: options.commit, at: options.now.toISOString(), changes },
     },
     results: graded,
   };

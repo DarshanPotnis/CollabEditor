@@ -88,8 +88,11 @@ describe('compareRuns', () => {
 
   it('puts the numbers side by side, over the tasks every run has', () => {
     expect(report).toContain('| Passed | 1 of 3 (33%) | 2 of 3 (67%) | 2 of 3 (67%) |');
-    expect(report).toContain('| Repeated errors per task | 1.3 | 0.0 | 0.0 |');
-    expect(report).toContain('| Refused finishes per task | 0.0 | 0.0 | 0.3 |');
+    expect(report).toContain(
+      '| Tasks passed every time · some · never | 1 · 0 · 2 | 2 · 0 · 1 | 2 · 0 · 1 |',
+    );
+    expect(report).toContain('| Repeated errors per session | 1.3 | 0.0 | 0.0 |');
+    expect(report).toContain('| Refused finishes per session | 0.0 | 0.0 | 0.3 |');
     expect(report).toContain('Left out, not in every run: d.');
   });
 
@@ -109,8 +112,9 @@ describe('compareRuns', () => {
     const { refusedFinishes: _a, checksNotMade: _b, ...older } = result('a', null).metrics;
     const unmeasured = run('old-eeeeeee', 'agent@3', [{ ...result('a', null), metrics: older }]);
     const lines = compareRuns([unmeasured, next]);
-    expect(lines).toContain('| Refused finishes per task | — | 0.0 |');
+    expect(lines).toContain('| Refused finishes per session | — | 0.0 |');
     expect(lines).toContain('| Checks listed but not made | — | 0 |');
+    expect(lines).toContain('| Checks after the last change per session | — | — |');
   });
 
   it('refuses runs judged by different graders, and fewer than two', () => {

@@ -102,21 +102,38 @@ export function compareRuns(runs: readonly RunResults[]): string {
       'Passed',
       ...summaries.map(
         (summary) =>
-          `${String(summary.passed)} of ${String(summary.tasks)} (${String(Math.round(summary.passRate * 100))}%)`,
+          `${String(summary.passed)} of ${String(summary.sessions)} (${String(Math.round(summary.passRate * 100))}%)`,
+      ),
+    ]),
+    row([
+      'Tasks passed every time · some · never',
+      ...summaries.map(
+        ({ byTask }) => `${String(byTask.every)} · ${String(byTask.some)} · ${String(byTask.none)}`,
+      ),
+    ]),
+    row([
+      'Checks after the last change per session',
+      ...summaries.map((summary) =>
+        summary.checksAfterLastChangePerTask === null
+          ? '—'
+          : oneDecimal(summary.checksAfterLastChangePerTask),
       ),
     ]),
     row(['Median steps', ...summaries.map((summary) => oneDecimal(summary.medianSteps))]),
     row([
-      'Wasted steps per task',
+      'Wasted steps per session',
       ...summaries.map((summary) => oneDecimal(summary.wastedStepsPerTask)),
     ]),
-    row(['Repeated errors per task', ...perTask('repeatedErrors')]),
-    row(['Refused finishes per task', ...perTask('refusedFinishes')]),
+    row(['Repeated errors per session', ...perTask('repeatedErrors')]),
+    row(['Refused finishes per session', ...perTask('refusedFinishes')]),
     row(['Checks listed but not made', ...notMade]),
-    row(['Requests per task', ...summaries.map((summary) => oneDecimal(summary.requestsPerTask))]),
-    row(['Tokens per task', ...summaries.map((summary) => thousands(summary.tokensPerTask))]),
     row([
-      'Seconds per task',
+      'Requests per session',
+      ...summaries.map((summary) => oneDecimal(summary.requestsPerTask)),
+    ]),
+    row(['Tokens per session', ...summaries.map((summary) => thousands(summary.tokensPerTask))]),
+    row([
+      'Seconds per session',
       ...summaries.map((summary) => oneDecimal(summary.wallSecondsPerTask)),
     ]),
   );

@@ -3,7 +3,13 @@
  * failed, and the failure categories. Written next to the results JSON in
  * docs/evals/results, and to CI's job summary.
  */
-import { summarize, type Regraded, type RunResults, type TaskResult } from './run-results.js';
+import {
+  summarize,
+  type Regraded,
+  type RunResults,
+  type RunSummary,
+  type TaskResult,
+} from './run-results.js';
 
 const percent = (value: number): string => `${String(Math.round(value * 100))}%`;
 const oneDecimal = (value: number): string => value.toFixed(1);
@@ -38,6 +44,30 @@ function regradedNote(results: RunResults, regraded: Regraded): string[] {
   ];
 }
 
+/** With several trials: how many sessions passed, and on how many tasks every, some or none did. */
+function passedLine(summary: RunSummary, trials: number): string {
+  if (trials === 1) {
+    return `**${String(summary.passed)} of ${String(summary.sessions)} passed (${percent(summary.passRate)})**`;
+  }
+  const { tasks, every, some, none } = summary.byTask;
+  return `**${String(summary.passed)} of ${String(summary.sessions)} sessions passed (${percent(summary.passRate)})** · every session passed on ${String(every)} of ${String(tasks)} tasks, some on ${String(some)}, none on ${String(none)}`;
+}
+
+/** Each task's sessions: how many passed, and the failures' categories. */
+function consistencyTable(results: readonly TaskResult[]): string[] {
+  const tasks = [...new Set(results.map((result) => result.task))];
+  return [
+    '',
+    '| Task | Passed | Failures |',
+    '| --- | --: | --- |',
+    ...tasks.map((task) => {
+      const sessions = results.filter((result) => result.task === task);
+      const failed = sessions.filter((result) => !result.passed);
+      return `| ${cell(sessions[0]?.title ?? task)} | ${String(sessions.length - failed.length)} of ${String(sessions.length)} | ${failed.map((result) => result.category ?? '').join(', ')} |`;
+    }),
+  ];
+}
+
 export function reportMarkdown(results: RunResults): string {
   const { run } = results;
   const summary = summarize(results.results);
@@ -46,10 +76,11 @@ export function reportMarkdown(results: RunResults): string {
     '',
     `${run.model.provider}/${run.model.id} · ${run.prompt} · ${run.graders} · ${run.tier} tier (up to ${run.tier === 'shared' ? '15' : '25'} steps) · commit ${run.commit} · ${run.startedAt.slice(0, 10)}${run.local ? ' · run locally' : ''}`,
     '',
-    `**${String(summary.passed)} of ${String(summary.tasks)} passed (${percent(summary.passRate)})** · median ${oneDecimal(summary.medianSteps)} steps · ${oneDecimal(summary.wastedStepsPerTask)} wasted steps, ${oneDecimal(summary.requestsPerTask)} requests, ${thousands(summary.tokensPerTask)} tokens and ${oneDecimal(summary.wallSecondsPerTask)} s per task`,
+    `${passedLine(summary, run.trials)} · median ${oneDecimal(summary.medianSteps)} steps · ${oneDecimal(summary.wastedStepsPerTask)} wasted steps, ${oneDecimal(summary.requestsPerTask)} requests, ${thousands(summary.tokensPerTask)} tokens and ${oneDecimal(summary.wallSecondsPerTask)} s per task`,
   ];
   if (run.stoppedEarly !== null) lines.push('', `Stopped early: ${run.stoppedEarly}`);
   if (run.regraded !== null) lines.push(...regradedNote(results, run.regraded));
+  if (run.trials > 1) lines.push(...consistencyTable(results.results));
   lines.push(
     '',
     '| Task | Result | Steps | Wasted | Requests | Tokens | Time | Why it failed |',

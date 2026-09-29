@@ -64,7 +64,36 @@ describe('metricsOf', () => {
       repeatedErrors: 1,
       refusedFinishes: 0,
       checksNotMade: 0,
+      checksAfterLastChange: 0,
     });
+  });
+});
+
+describe('metricsOf, checks after the last change', () => {
+  it('counts answered requests and commands that ran, after the last change only', () => {
+    const call = (toolName: string, isError: boolean, output = '') => ({
+      ...ok,
+      toolName,
+      isError,
+      output,
+    });
+    const trace = {
+      steps: [
+        step({ toolCalls: [call('http_request', false, 'HTTP 200 OK, 3 ms')] }),
+        step({ toolCalls: [call('edit_file', false)] }),
+        step({ toolCalls: [call('edit_file', true)] }),
+        step({
+          toolCalls: [
+            call('http_request', false, 'HTTP 404 Not Found, 3 ms'),
+            call('http_request', true, 'The request failed: ECONNREFUSED'),
+            call('run_command', true, 'npm test exited with code 1 after 1.0 s.\nfail'),
+            call('run_command', true, 'Start the project with run_project first.'),
+          ],
+        }),
+      ],
+      totals: { steps: 4, inputTokens: 0, outputTokens: 0, durationMs: 0 },
+    } as unknown as AgentTrace;
+    expect(metricsOf(trace).checksAfterLastChange).toBe(2);
   });
 });
 
@@ -168,9 +197,32 @@ describe('a run summary and its report', () => {
     result('c', true, 7),
   ];
 
+  it('counts tasks passed in every session, some, or none, over several trials', () => {
+    const trial = (entry: TaskResult, n: number): TaskResult => ({ ...entry, trial: n });
+    const three = [1, 2, 3].flatMap((n) => [
+      trial(result('a', true, 4), n),
+      trial(n === 2 ? result('b', false, 4, 'unverified') : result('b', true, 4), n),
+      trial(result('c', false, 4, 'ran-out'), n),
+    ]);
+    expect(summarize(three)).toMatchObject({
+      sessions: 9,
+      passed: 5,
+      byTask: { tasks: 3, every: 1, some: 1, none: 1 },
+    });
+    const report = reportMarkdown({
+      ...run('r3', 'gemini-3.5-flash-lite', '2026-09-30T10:00:00.000Z', three),
+      run: { ...run('r3', 'm', '2026-09-30T10:00:00.000Z', three).run, trials: 3 },
+    });
+    expect(report).toContain(
+      '**5 of 9 sessions passed (56%)** · every session passed on 1 of 3 tasks, some on 1, none on 1',
+    );
+    expect(report).toContain('| Task b | 2 of 3 | unverified |');
+    expect(report).toContain('| Task c | 0 of 3 | ran-out, ran-out, ran-out |');
+  });
+
   it('summarizes pass rate, median steps and costs per task', () => {
     expect(summarize(results)).toMatchObject({
-      tasks: 3,
+      sessions: 3,
       passed: 2,
       medianSteps: 7,
       requestsPerTask: 8,
@@ -236,14 +288,29 @@ describe('the README table', () => {
       'agent4',
     ]);
     const table = readmeTable([old, newer, flash]);
-    expect(table.split('\n')).toHaveLength(4);
+    // No run with three sessions per task: no headline, and the single runs as what they are.
+    expect(table).toContain('there is no headline pass rate');
+    expect(table).toContain('**Iteration runs** (one session per task');
     expect(table).toContain(
-      '| gemini-3.5-flash-lite | 2026-09-30 | agent@3 | graders@1 | 1 of 1 |',
+      '| gemini-3.5-flash-lite | 2026-09-30 | agent@3 | graders@1 | 1 of 1 | — |',
     );
     const readme = `# App\n\n${README_START}\nstale\n${README_END}\n\nMore.`;
     expect(withTable(readme, table)).toBe(
       `# App\n\n${README_START}\n\n${table}\n\n${README_END}\n\nMore.`,
     );
     expect(readmeTable([])).toBe('No eval run is recorded yet.');
+  });
+
+  it('takes its headline from runs of three sessions per task, with how consistently each task passed', () => {
+    const sessions = [1, 2, 3].flatMap((trial) => [
+      { ...result('a', true, 4), trial },
+      { ...(trial === 3 ? result('b', false, 4, 'unverified') : result('b', true, 4)), trial },
+    ]);
+    const three = run('three', 'gemini-3.5-flash-lite', '2026-10-01T10:00:00.000Z', sessions);
+    const table = readmeTable([{ ...three, run: { ...three.run, trials: 3, tasks: ['a', 'b'] } }]);
+    expect(table).toContain(
+      '| gemini-3.5-flash-lite | agent@3 | graders@1 | 5 of 6 (83%) | 1 · 1 · 0 | — |',
+    );
+    expect(table).not.toContain('Iteration runs');
   });
 });

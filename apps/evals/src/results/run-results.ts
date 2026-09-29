@@ -23,6 +23,7 @@ const metricsSchema = z.object({
   /** Absent from results recorded before they were measured. */
   refusedFinishes: z.number().optional(),
   checksNotMade: z.number().optional(),
+  checksAfterLastChange: z.number().optional(),
 }) satisfies z.ZodType<TaskMetrics>;
 
 export const taskResultSchema = z.object({
@@ -97,9 +98,14 @@ export const runResultsSchema = z.object({
 export type RunResults = z.infer<typeof runResultsSchema>;
 
 export type RunSummary = {
-  tasks: number;
+  /** One per task per trial. */
+  sessions: number;
   passed: number;
   passRate: number;
+  /** Tasks passed in every one of their sessions, in some, and in none. */
+  byTask: { tasks: number; every: number; some: number; none: number };
+  /** Null when a session was recorded before this was measured. */
+  checksAfterLastChangePerTask: number | null;
   medianSteps: number;
   wastedStepsPerTask: number;
   requestsPerTask: number;
@@ -127,10 +133,25 @@ export function summarize(results: readonly TaskResult[]): RunSummary {
       categories[result.category] = (categories[result.category] ?? 0) + 1;
   }
   const passed = results.filter((result) => result.passed).length;
+  const passes = new Map<string, boolean[]>();
+  for (const result of results) {
+    passes.set(result.task, [...(passes.get(result.task) ?? []), result.passed]);
+  }
+  const perTask = [...passes.values()];
+  const checks = results.map((result) => result.metrics.checksAfterLastChange);
   return {
-    tasks: results.length,
+    sessions: results.length,
     passed,
     passRate: results.length === 0 ? 0 : passed / results.length,
+    byTask: {
+      tasks: perTask.length,
+      every: perTask.filter((each) => each.every(Boolean)).length,
+      some: perTask.filter((each) => each.some(Boolean) && !each.every(Boolean)).length,
+      none: perTask.filter((each) => !each.some(Boolean)).length,
+    },
+    checksAfterLastChangePerTask: checks.every((value) => value !== undefined)
+      ? mean(checks)
+      : null,
     medianSteps: median(results.map((result) => result.metrics.steps)),
     wastedStepsPerTask: mean(results.map((result) => result.metrics.wastedSteps)),
     requestsPerTask: mean(results.map((result) => result.metrics.requests)),

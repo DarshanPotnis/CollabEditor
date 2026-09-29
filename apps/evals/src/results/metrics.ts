@@ -9,7 +9,9 @@
  * - repeated errors: steps the model was reminded not to repeat a failure;
  * - refused finishes: finish calls the loop sent back (no summary, or checks
  *   the session did not make), and the checks a finish listed but did not
- *   make (agent@4 on; zero before).
+ *   make (agent@4 on; zero before);
+ * - checks after the last change: answered requests, and commands that ran
+ *   to an exit code, after the session's last change to the project.
  */
 import { REPEATED_ERROR_REMINDER } from '@collabcode/shared';
 import type { AgentTrace } from '@collabcode/agent';
@@ -28,7 +30,31 @@ export type TaskMetrics = {
   /** Absent from results recorded before they were measured. */
   refusedFinishes?: number;
   checksNotMade?: number;
+  checksAfterLastChange?: number;
 };
+
+type Call = AgentTrace['steps'][number]['toolCalls'][number];
+
+const FILE_CHANGING_TOOLS: ReadonlySet<string> = new Set([
+  'edit_file',
+  'create_file',
+  'rename_file',
+  'delete_file',
+]);
+
+/** A check that happened: a request that got an answer, or a command that exited, passing or not. */
+function isCheck(call: Call): boolean {
+  if (call.toolName === 'http_request') return !call.isError;
+  if (call.toolName === 'run_command') return / exited with code -?\d+ after /.test(call.output);
+  return false;
+}
+
+function checksAfterLastChange(calls: readonly Call[]): number {
+  const last = calls.findLastIndex(
+    (call) => FILE_CHANGING_TOOLS.has(call.toolName) && !call.isError,
+  );
+  return calls.slice(last + 1).filter(isCheck).length;
+}
 
 export function metricsOf(trace: AgentTrace): TaskMetrics {
   const sum = (values: number[]): number => values.reduce((total, value) => total + value, 0);
@@ -53,5 +79,6 @@ export function metricsOf(trace: AgentTrace): TaskMetrics {
       .filter((call) => call.toolName === 'finish' && call.isError).length,
     checksNotMade:
       trace.outcome?.kind === 'finished' ? (trace.outcome.checks?.notMade.length ?? 0) : 0,
+    checksAfterLastChange: checksAfterLastChange(trace.steps.flatMap((step) => step.toolCalls)),
   };
 }
