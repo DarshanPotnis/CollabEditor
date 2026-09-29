@@ -4,9 +4,9 @@
  * keeps to the first and the ledger to the second, so an eval run never
  * spends more than the project has.
  *
- * PROVISIONAL until confirmed from AI Studio's rate-limit page for the eval
- * project (docs/evals/README.md says how). They are deliberately low until
- * then; a run can also set them with --rpm and --rpd.
+ * From AI Studio's rate-limit page for the eval project, collabcode-evals, in
+ * September 2026 (docs/evals/README.md says how to read them). A run can
+ * set others with --rpm and --rpd.
  */
 export type ModelLimits = {
   /** Requests a minute. */
@@ -16,7 +16,7 @@ export type ModelLimits = {
 };
 
 export const MODEL_LIMITS: Readonly<Record<string, ModelLimits>> = {
-  'gemini-3.5-flash-lite': { rpm: 10, rpd: 200 },
+  'gemini-3.5-flash-lite': { rpm: 15, rpd: 500 },
   'gemini-3.8-flash': { rpm: 5, rpd: 20 },
 };
 
