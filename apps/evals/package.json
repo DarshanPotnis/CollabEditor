@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "selftest": "vitest run --config vitest.selftest.config.ts"
   },
   "dependencies": {
     "@collabcode/agent": "*",

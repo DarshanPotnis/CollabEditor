@@ -15,6 +15,15 @@ export const COLLABORATOR_ORIGIN = 'eval-collaborator';
 export const COLLABORATOR_MARK = '// collaborator notes: ';
 const TYPES_EVERY_MS = 2_000;
 
+/** A file's content without the collaborator's lines: what the agent is judged on. */
+export function withoutCollaboratorLines(content: string): string {
+  return content
+    .split('\n')
+    .filter((line) => !line.startsWith(COLLABORATOR_MARK))
+    .join('\n')
+    .replace(/\n$/, '');
+}
+
 export type SimulatedCollaborator = {
   /** How the agent's presence rule sees them, now. */
   peer: () => PeerPresence;

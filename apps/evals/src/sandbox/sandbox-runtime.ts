@@ -42,6 +42,8 @@ import {
   stillStarting,
   watchForCrashes,
   withOutput,
+  type ApiRequest,
+  type ApiResult,
   type CommandEnd,
   type RunView,
   type RuntimeToolCall,
@@ -76,9 +78,30 @@ export type SandboxRuntimeOptions = {
 };
 
 export type SandboxRuntime = RuntimeTools & {
+  /** The port the project serves on, or null when it is not serving. */
+  port: () => number | null;
   /** Stops the project's server, for the end of a session. */
   dispose: () => Promise<void>;
 };
+
+/**
+ * Sends one request to a server in the container, from inside it, with the
+ * browser's request helper; its result is read from the helper's own output,
+ * framed with a nonce, so the server's output cannot pass for it.
+ */
+export async function requestInSandbox(
+  container: SessionContainer,
+  port: number,
+  request: ApiRequest,
+  signal?: AbortSignal,
+): Promise<ApiResult> {
+  const nonce = createNonce();
+  const result = await container.exec(
+    ['node', '-e', REQUEST_SCRIPT, encodeRequest(request), nonce, String(port)],
+    { timeoutMs: REQUEST_BACKSTOP_MS, ...(signal ? { signal } : {}) },
+  );
+  return parseHelperOutput(result.stdout, nonce);
+}
 
 type ServerState =
   | { phase: 'idle' }
@@ -285,19 +308,19 @@ export function createSandboxRuntime(options: SandboxRuntimeOptions): SandboxRun
         ? describeRun(view(), recent)
         : refuse(RUN_MESSAGES.callRunFirst);
     }
-    const nonce = createNonce();
-    const request = encodeRequest({
-      method,
-      path,
-      headers: (headers ?? []).map(({ name, value }): [string, string] => [name, value]),
-      body: body ?? null,
-    });
-    const result = await container.exec(
-      ['node', '-e', REQUEST_SCRIPT, request, nonce, String(state.port)],
-      { timeoutMs: REQUEST_BACKSTOP_MS, signal },
+    const result = await requestInSandbox(
+      container,
+      state.port,
+      {
+        method,
+        path,
+        headers: (headers ?? []).map(({ name, value }): [string, string] => [name, value]),
+        body: body ?? null,
+      },
+      signal,
     );
     if (signal.aborted) return STOPPED;
-    return describeHttpResult(parseHelperOutput(result.stdout, nonce), recent);
+    return describeHttpResult(result, recent);
   };
 
   const runCommand = async (
@@ -368,6 +391,7 @@ export function createSandboxRuntime(options: SandboxRuntimeOptions): SandboxRun
         dispose();
       }
     },
+    port: () => (state.phase === 'serving' ? state.port : null),
     dispose: stopServer,
   };
 }
