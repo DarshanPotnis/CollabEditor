@@ -8,7 +8,7 @@ import { createSqlClient } from './db/client.js';
 import { createPostgresProjectsRepo } from './db/projects-repo.js';
 import { createApp } from './http/app.js';
 import { createCollabServer } from './collab/server.js';
-import { createAiSdkGateway } from './ai/ai-sdk-gateway.js';
+import { createAiSdkGateway } from '@collabcode/model-gateway';
 
 /** How long shutdown may take before we stop waiting. Render allows ~30s. */
 const SHUTDOWN_TIMEOUT_MS = 15_000;

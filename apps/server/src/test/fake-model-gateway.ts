@@ -10,7 +10,7 @@ import {
   type ModelCallFailure,
   type ModelEvent,
   type ModelGateway,
-} from '../ai/model-gateway.js';
+} from '@collabcode/model-gateway';
 
 export type FakeReply =
   | {

@@ -5,7 +5,7 @@
  * e2e/agent.spec.ts repeat the marker strings; keep them in step.
  */
 import { conversationSteps, fencedBlocks } from '@collabcode/shared';
-import type { ModelCall } from '../ai/model-gateway.js';
+import type { ModelCall } from '@collabcode/model-gateway';
 import { toolCallReply, type FakeReply } from './fake-model-gateway.js';
 
 /** An own key the fake provider refuses, the way a real one refuses a bad key. */

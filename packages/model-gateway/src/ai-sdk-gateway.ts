@@ -16,7 +16,6 @@
  * with the model's whole message for the browser to send back next step.
  */
 import { streamText } from 'ai';
-import type { Logger } from '../lib/logger.js';
 import { fromSdkResponse, toSdkTools, toolUseMessages } from './ai-sdk-messages.js';
 import { createLanguageModel, type ModelInstance } from './language-models.js';
 import {
@@ -27,8 +26,11 @@ import {
 } from './model-gateway.js';
 import { toModelCallError } from './provider-errors.js';
 
+/** What the gateway logs with: the SDK's warnings, never a prompt, an answer or a key. A pino logger fits. */
+export type GatewayLogger = { warn: (details: object, message: string) => void };
+
 export type AiSdkGatewayDeps = {
-  logger: Logger;
+  logger: GatewayLogger;
   /** Tests replace this with the SDK's mock model. */
   createModel?: (target: ModelTarget) => ModelInstance;
 };
@@ -38,7 +40,7 @@ export type AiSdkGatewayDeps = {
  * Send them through pino instead, as types only: some warnings quote settings,
  * and none of them are worth the risk of logging content.
  */
-function routeSdkWarnings(logger: Logger): void {
+function routeSdkWarnings(logger: GatewayLogger): void {
   globalThis.AI_SDK_LOG_WARNINGS = ({ warnings, provider, model }) => {
     logger.warn({ provider, model, warnings: warnings.map((w) => w.type) }, 'ai sdk warnings');
   };

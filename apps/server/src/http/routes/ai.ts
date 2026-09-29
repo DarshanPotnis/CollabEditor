@@ -21,8 +21,8 @@ import {
   PROMPTS,
   aiKeySchema,
   aiStepRequestSchema,
-  AGENT_STEP_LIMITS,
   conversationSteps,
+  stepsLeftFor,
   type AgentTier,
   type ByokChoice,
 } from '@collabcode/shared';
@@ -32,7 +32,7 @@ import { admitAgentStep } from '../../ai/agent-admission.js';
 import { createDailyLimiter, type DailyLimits } from '../../ai/daily-limits.js';
 import { describeFailure, sharedTierBusy } from '../../ai/failure-messages.js';
 import { createMinuteLimit } from '../../ai/minute-limit.js';
-import type { ModelGateway, ModelTarget } from '../../ai/model-gateway.js';
+import type { ModelGateway, ModelTarget } from '@collabcode/model-gateway';
 import { sharedModelsFor, type SharedModels } from '../../ai/shared-models.js';
 import type { ProjectsRepo } from '../../db/projects-repo.js';
 import { streamAnswer, type ModelTargets } from '../ai-stream.js';
@@ -255,7 +255,7 @@ export function createAiRouter({
           toolUse: toolUse && {
             use: toolUse,
             conversation,
-            stepsLeft: AGENT_STEP_LIMITS[tier] - stepsTaken,
+            stepsLeft: stepsLeftFor(tier, conversation),
           },
         },
         targets,

@@ -4,7 +4,7 @@ import { APICallError, streamText } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
-import type { Logger } from '../lib/logger.js';
+import type { Logger } from 'pino';
 import { createAiSdkGateway } from './ai-sdk-gateway.js';
 import { ModelCallError, type ModelCall, type ModelEvent } from './model-gateway.js';
 

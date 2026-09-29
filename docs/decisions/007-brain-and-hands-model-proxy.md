@@ -34,7 +34,8 @@ places each model call and keeps nothing between calls.
   A fingerprint test fails CI if a prompt changes without a version bump, so `id@version` always
   means the same prompt in the app and in evals.
 - **Provider layer: the Vercel AI SDK (`ai` 7), server-side only, behind our own
-  `ModelGateway`.** Only `ai-sdk-gateway.ts` imports the SDK. Four guardrails:
+  `ModelGateway`.** Only `ai-sdk-gateway.ts` imports the SDK. (Since AI-4 it lives in
+  `packages/model-gateway`, so the evals send a model exactly what the server does.) Four guardrails:
   - provider instances are always passed, because a plain string model id silently routes through
     Vercel's gateway;
   - telemetry is off on every call, because the SDK otherwise publishes to a Node diagnostics

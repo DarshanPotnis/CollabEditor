@@ -5,7 +5,7 @@
  * theirs, and a busy shared tier is a reason to suggest their own key.
  */
 import { AI_PROVIDER_LABELS, type AiProvider, type ApiErrorCode } from '@collabcode/shared';
-import type { ModelCallFailure } from './model-gateway.js';
+import type { ModelCallFailure } from '@collabcode/model-gateway';
 
 /**
  * Why a stream ended early, as far as the route can tell. 'no-answer' is a

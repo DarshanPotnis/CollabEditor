@@ -83,19 +83,19 @@ source of truth for architecture, data model, phase scope and definitions of don
 
 Run from the repository root.
 
-| Command                                  | What it does                                                         |
-| ---------------------------------------- | -------------------------------------------------------------------- |
-| `npm install`                            | Installs every workspace                                             |
-| `npm run dev`                            | Shared package in watch mode, server on :8080, web on :5173          |
-| `npm run dev:server` / `npm run dev:web` | One of them on its own                                               |
-| `npm run build`                          | Builds shared and agent, then server (tsup), then web (vite)         |
-| `npm run build:shared`                   | `packages/shared`, then `packages/agent`. Lint and typecheck need it |
-| `npm test`                               | Unit + integration (Vitest). Needs no database                       |
-| `npm run typecheck`                      | Every workspace, plus the root and e2e configs                       |
-| `npm run lint`                           | ESLint, type-aware                                                   |
-| `npm run format`                         | Prettier                                                             |
-| `npm run e2e`                            | Playwright. Builds the web app and starts an in-memory server itself |
-| `npm run migrate -w @collabcode/server`  | Applies SQL migrations to `DATABASE_URL`                             |
+| Command                                  | What it does                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| `npm install`                            | Installs every workspace                                                |
+| `npm run dev`                            | Shared package in watch mode, server on :8080, web on :5173             |
+| `npm run dev:server` / `npm run dev:web` | One of them on its own                                                  |
+| `npm run build`                          | Builds the packages, then server (tsup), then web (vite)                |
+| `npm run build:shared`                   | `packages/shared`, `agent`, `model-gateway`. Lint and typecheck need it |
+| `npm test`                               | Unit + integration (Vitest). Needs no database                          |
+| `npm run typecheck`                      | Every workspace, plus the root and e2e configs                          |
+| `npm run lint`                           | ESLint, type-aware                                                      |
+| `npm run format`                         | Prettier                                                                |
+| `npm run e2e`                            | Playwright. Builds the web app and starts an in-memory server itself    |
+| `npm run migrate -w @collabcode/server`  | Applies SQL migrations to `DATABASE_URL`                                |
 
 Notes:
 

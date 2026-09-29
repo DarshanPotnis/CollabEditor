@@ -7,6 +7,6 @@ export default defineConfig({
   target: 'node22',
   sourcemap: true,
   clean: true,
-  // packages/shared is not published, so it is bundled into the output.
-  noExternal: ['@collabcode/shared'],
+  // The workspace packages are not published, so they are bundled into the output.
+  noExternal: ['@collabcode/shared', '@collabcode/model-gateway'],
 });

@@ -12,10 +12,11 @@
   ],
   "scripts": {
     "build": "npm run build:shared && npm run build -w @collabcode/server && npm run build -w @collabcode/web",
-    "build:shared": "npm run build -w @collabcode/shared && npm run build -w @collabcode/agent",
-    "dev": "npm run build:shared && concurrently -n shared,agent,server,web -c gray,cyan,blue,magenta \"npm:dev:shared\" \"npm:dev:agent\" \"npm:dev:server\" \"npm:dev:web\"",
+    "build:shared": "npm run build -w @collabcode/shared && npm run build -w @collabcode/agent && npm run build -w @collabcode/model-gateway",
+    "dev": "npm run build:shared && concurrently -n shared,agent,gateway,server,web -c gray,cyan,yellow,blue,magenta \"npm:dev:shared\" \"npm:dev:agent\" \"npm:dev:gateway\" \"npm:dev:server\" \"npm:dev:web\"",
     "dev:shared": "npm run dev -w @collabcode/shared",
     "dev:agent": "npm run dev -w @collabcode/agent",
+    "dev:gateway": "npm run dev -w @collabcode/model-gateway",
     "dev:server": "npm run dev -w @collabcode/server",
     "dev:web": "npm run dev -w @collabcode/web",
     "test": "npm run build:shared && vitest run",

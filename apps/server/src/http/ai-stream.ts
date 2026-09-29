@@ -20,7 +20,7 @@ import {
   type ModelGateway,
   type ModelTarget,
   type ModelUsage,
-} from '../ai/model-gateway.js';
+} from '@collabcode/model-gateway';
 import { SSE_HEADERS, encodeSseEvent } from '../ai/sse.js';
 import { sendApiError } from './errors.js';
 
