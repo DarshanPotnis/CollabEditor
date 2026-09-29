@@ -8,7 +8,8 @@
     "test": "vitest run",
     "selftest": "vitest run --config vitest.selftest.config.ts",
     "evals": "tsx src/cli.ts",
-    "readme": "tsx src/readme-cli.ts"
+    "readme": "tsx src/readme-cli.ts",
+    "regrade": "tsx src/regrade-cli.ts"
   },
   "dependencies": {
     "@collabcode/agent": "*",

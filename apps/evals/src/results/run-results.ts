@@ -1,6 +1,6 @@
 /**
  * An eval run's results, as written to docs/evals/results/*.json: what ran
- * (model, prompt version, tier, commit), each task's verdict with every
+ * (model, prompt version, graders version, tier, commit), each task's verdict with every
  * grader's reason and its metrics, and a summary. Traces are not in here:
  * they stay in apps/evals/runs (git-ignored) and CI artifacts, and results
  * name them. Nothing here ever holds the key.
@@ -43,6 +43,30 @@ export const taskResultSchema = z.object({
 });
 export type TaskResult = z.infer<typeof taskResultSchema>;
 
+const verdictSchema = z.object({
+  passed: z.boolean(),
+  category: z.enum(FAILURE_CATEGORIES).nullable(),
+});
+
+/** A run graded again from its traces, with later graders (results/regrade.ts). */
+export const regradedSchema = z.object({
+  /** The graders that judged it before. */
+  from: z.string(),
+  /** The commit whose graders judged it now. */
+  commit: z.string(),
+  at: z.string(),
+  /** The sessions whose verdict changed. */
+  changes: z.array(
+    z.object({
+      task: z.string(),
+      trial: z.number().int().positive(),
+      before: verdictSchema,
+      after: verdictSchema,
+    }),
+  ),
+});
+export type Regraded = z.infer<typeof regradedSchema>;
+
 export const runResultsSchema = z.object({
   format: z.literal('collabcode-eval-results'),
   version: z.literal(1),
@@ -53,6 +77,10 @@ export const runResultsSchema = z.object({
     commit: z.string(),
     model: z.object({ provider: z.string(), id: z.string() }),
     prompt: z.string(),
+    /** What judged it (graders/version.ts). Results from before this was recorded had the first. */
+    graders: z.string().default('graders@1'),
+    /** Set when the run was graded again, after it ran. */
+    regraded: regradedSchema.nullable().default(null),
     tier: z.enum(['shared', 'ownKey']),
     trials: z.number().int().positive(),
     tasks: z.array(z.string()),

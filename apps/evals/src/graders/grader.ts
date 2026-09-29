@@ -5,7 +5,7 @@
  * judges anything: that would cost quota and not be deterministic.
  *
  * A failing grader says why in one line, and which failure category the
- * session falls into (results/categories.ts).
+ * session falls into (FAILURE_CATEGORIES below).
  */
 import type { AgentTrace, ApiRequest, ApiResult } from '@collabcode/agent';
 
@@ -55,13 +55,25 @@ export type GradeContext = {
   sandboxWith: (files: ReadonlyMap<string, string>) => Promise<GradingSandbox>;
 };
 
-export type Grader = {
+type GraderBase = {
   id: string;
   /** The category of a failure, unless the verdict says otherwise. */
   category: FailureCategory;
-  /** Most graders only read; the ones that run the project are asynchronous. */
+};
+
+/** Judges the trace alone, so a saved trace can be graded again (results/regrade.ts). */
+export type TraceGrader = GraderBase & {
+  reads: 'trace';
+  grade: (context: Pick<GradeContext, 'trace'>) => Verdict;
+};
+
+/** Needs the project's files, or a sandbox running it: only while the run is on. */
+export type ProjectGrader = GraderBase & {
+  reads: 'project';
   grade: (context: GradeContext) => Verdict | Promise<Verdict>;
 };
+
+export type Grader = TraceGrader | ProjectGrader;
 
 export type GraderResult = {
   id: string;

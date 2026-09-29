@@ -1,7 +1,8 @@
 /**
  * npm run evals: a real-model eval run (docs/evals/README.md).
  *
- *   1. where it may run (CI by default) and with which tasks;
+ *   1. where it may run (CI by default) and with which tasks; a resumed run
+ *      must carry on as it began (harness/resume-check.ts);
  *   2. the key, into memory: from a one-time file in CI, apps/evals/.env
  *      locally, and never while a key is in this process's environment;
  *   3. the sandbox image, the eval project's limits, the request ledger;
@@ -13,16 +14,17 @@
  * A failing task is a result, not an error: the command fails only when it
  * cannot run.
  */
-import { execFile } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 import { createAiSdkGateway } from '@collabcode/model-gateway';
 import { AGENT_STEP_LIMITS, PROMPTS } from '@collabcode/shared';
 import { CliError, HELP, parseCliOptions, realRunGate, selectTasks } from './cli-options.js';
 import { nodeClock } from './harness/node-clock.js';
-import { RESULTS_FILE, runSuite } from './harness/run-suite.js';
+import { currentCommit } from './harness/git-commit.js';
+import { resumeProblem } from './harness/resume-check.js';
+import { RESULTS_FILE, RUNS_DIR, runSuite } from './harness/run-suite.js';
+import { GRADERS } from './graders/version.js';
 import { createGatewayModelClient } from './model/gateway-model-client.js';
 import { limitsFor } from './model/model-limits.js';
 import { createPacer } from './model/pacer.js';
@@ -31,24 +33,15 @@ import { RESULTS_DIR } from './results/readme.js';
 import { reportMarkdown } from './results/report.js';
 import { runResultsSchema, type RunResults } from './results/run-results.js';
 import { bakedDependencies, ensureSandboxImage } from './sandbox/image.js';
-import { dockerEnv } from './sandbox/docker.js';
 import { EvalKeyError, loadEvalKey } from './secrets/eval-key.js';
 
 const ENV_FILE = fileURLToPath(new URL('../.env', import.meta.url));
-const RUNS_DIR = fileURLToPath(new URL('../runs/', import.meta.url));
 /** Retries a session may add to its steps, in the budget it needs before it starts. */
 const RETRY_ALLOWANCE = 5;
 
 const out = (line: string): void => {
   process.stdout.write(`${line}\n`);
 };
-
-async function commit(): Promise<string> {
-  const { stdout } = await promisify(execFile)('git', ['rev-parse', '--short', 'HEAD'], {
-    env: dockerEnv(),
-  });
-  return stdout.trim();
-}
 
 async function resumed(runId: string): Promise<RunResults> {
   const raw: unknown = JSON.parse(await readFile(join(RUNS_DIR, runId, RESULTS_FILE), 'utf8'));
@@ -64,6 +57,19 @@ async function main(): Promise<void> {
   const gate = realRunGate(options, process.env);
   if (gate.warning !== null) process.stderr.write(`Warning: ${gate.warning}\n`);
   const tasks = selectTasks(options.tasks);
+  const sha = await currentCommit();
+  const previous = options.resume === undefined ? null : await resumed(options.resume);
+  if (previous !== null) {
+    const problem = resumeProblem(previous.run, {
+      commit: sha,
+      model: options.model,
+      graders: GRADERS,
+      tier: options.tier,
+      tasks: tasks.map((task) => task.id),
+      trials: options.trials,
+    });
+    if (problem !== null) throw new CliError(problem);
+  }
 
   const key = await loadEvalKey(
     options.keyFile === undefined
@@ -95,7 +101,6 @@ async function main(): Promise<void> {
     dailyLimit: limits.rpd,
   });
 
-  const sha = await commit();
   const runId = options.resume ?? `${pacificDay(nodeClock.now())}-${options.model}-${sha}`;
   const sessionBudget = AGENT_STEP_LIMITS[options.tier] + RETRY_ALLOWANCE;
   out(
@@ -116,7 +121,7 @@ async function main(): Promise<void> {
     commit: sha,
     local: gate.local,
     runDir: join(RUNS_DIR, runId),
-    resume: options.resume === undefined ? null : await resumed(options.resume),
+    resume: previous,
     mayStart: () => {
       const used = ledger.used(options.model);
       return limits.rpd - used >= sessionBudget

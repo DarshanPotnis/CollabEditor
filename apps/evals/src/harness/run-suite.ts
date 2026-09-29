@@ -11,8 +11,10 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Clock, ModelClient } from '@collabcode/agent';
 import type { AgentTier } from '@collabcode/shared';
+import { GRADERS } from '../graders/version.js';
 import { metricsOf } from '../results/metrics.js';
 import type { RunResults, TaskResult } from '../results/run-results.js';
 import type { TaskDefinition } from '../tasks/task.js';
@@ -41,6 +43,8 @@ export type SuiteOptions = {
 };
 
 export const RESULTS_FILE = 'results.json';
+/** apps/evals/runs: each run's traces and results so far, git-ignored. */
+export const RUNS_DIR = fileURLToPath(new URL('../../runs/', import.meta.url));
 
 export async function runSuite(options: SuiteOptions): Promise<RunResults> {
   const { tasks, trials, runDir, log } = options;
@@ -54,6 +58,8 @@ export async function runSuite(options: SuiteOptions): Promise<RunResults> {
     commit: options.commit,
     model: options.model,
     prompt: options.prompt,
+    graders: GRADERS,
+    regraded: null,
     tier: options.tier,
     trials,
     tasks: tasks.map((task) => task.id),

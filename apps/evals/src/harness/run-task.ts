@@ -40,6 +40,7 @@ import type {
   GraderResult,
   GradingSandbox,
 } from '../graders/grader.js';
+import { categorize, graderResult } from '../graders/grading.js';
 import {
   startSimulatedCollaborator,
   withoutCollaboratorLines,
@@ -90,18 +91,6 @@ function availabilityOf(task: TaskDefinition): SandboxAvailability {
 
 function forGrading(files: ReadonlyMap<string, string>): Map<string, string> {
   return new Map([...files].map(([path, content]) => [path, withoutCollaboratorLines(content)]));
-}
-
-/** Why a run failed: the model being unavailable comes first, then the first failing grader's reason. */
-export function categorize(
-  trace: AgentTrace,
-  grades: readonly GraderResult[],
-): FailureCategory | null {
-  const failed = grades.filter((grade) => !grade.passed);
-  if (failed.length === 0) return null;
-  if (trace.outcome?.kind === 'failed' && trace.outcome.reason === 'model')
-    return 'model-unavailable';
-  return failed[0]?.category ?? 'harness-error';
 }
 
 export async function runTask(options: TaskRunOptions): Promise<TaskRun> {
@@ -180,13 +169,7 @@ export async function runTask(options: TaskRunOptions): Promise<TaskRun> {
   try {
     for (const grader of task.graders) {
       try {
-        const verdict = await grader.grade(context);
-        grades.push({
-          id: grader.id,
-          passed: verdict.passed,
-          detail: verdict.detail,
-          category: verdict.category ?? grader.category,
-        });
+        grades.push(graderResult(grader, await grader.grade(context)));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         grades.push({

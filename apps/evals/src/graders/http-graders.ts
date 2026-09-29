@@ -5,7 +5,13 @@
  * that only passes the agent's own checks does not pass these.
  */
 import type { HttpMethod } from '@collabcode/agent';
-import { fail, pass, type Grader, type GradingSandbox, type SandboxAnswer } from './grader.js';
+import {
+  fail,
+  pass,
+  type ProjectGrader,
+  type GradingSandbox,
+  type SandboxAnswer,
+} from './grader.js';
 
 export type HttpCheck = {
   name: string;
@@ -64,10 +70,11 @@ async function send(sandbox: GradingSandbox, check: HttpCheck): Promise<string |
 }
 
 /** The final project answers these requests, in order, as it should. */
-export function httpChecks(checks: readonly HttpCheck[], id = 'behaves'): Grader {
+export function httpChecks(checks: readonly HttpCheck[], id = 'behaves'): ProjectGrader {
   return {
     id,
     category: 'wrong-result',
+    reads: 'project',
     async grade({ sandbox }) {
       const running = await sandbox();
       for (const check of checks) {
@@ -88,10 +95,11 @@ export function testsCatch(mutation: {
   from: string;
   to: string;
   what: string;
-}): Grader {
+}): ProjectGrader {
   return {
     id: 'tests-catch-breakage',
     category: 'wrong-result',
+    reads: 'project',
     async grade({ sandbox, sandboxWith, finalFiles }) {
       const passing = await (await sandbox()).command('node', ['--test']);
       if (passing.code !== 0)

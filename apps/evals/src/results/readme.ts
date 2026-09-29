@@ -32,11 +32,11 @@ export function readmeTable(runs: readonly RunResults[]): string {
   if (runs.length === 0) return 'No eval run is recorded yet.';
   const rows = latestRuns(runs).map((run) => {
     const summary = summarize(run.results);
-    return `| ${run.run.model.id} | ${run.run.startedAt.slice(0, 10)} | ${run.run.prompt} | ${String(summary.passed)} of ${String(summary.tasks)} | ${oneDecimal(summary.medianSteps)} | ${oneDecimal(summary.wastedStepsPerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${Math.round(summary.tokensPerTask).toLocaleString('en-US')} | [${run.run.id}](docs/evals/results/${run.run.id}.md) |`;
+    return `| ${run.run.model.id} | ${run.run.startedAt.slice(0, 10)} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.tasks)} | ${oneDecimal(summary.medianSteps)} | ${oneDecimal(summary.wastedStepsPerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${Math.round(summary.tokensPerTask).toLocaleString('en-US')} | [${run.run.id}](docs/evals/results/${run.run.id}.md) |`;
   });
   return [
-    '| Model | Date | Prompt | Passed | Median steps | Wasted steps | Requests | Tokens | Report |',
-    '| --- | --- | --- | --: | --: | --: | --: | --: | --- |',
+    '| Model | Date | Prompt | Graders | Passed | Median steps | Wasted steps | Requests | Tokens | Report |',
+    '| --- | --- | --- | --- | --: | --: | --: | --: | --: | --- |',
     ...rows,
   ].join('\n');
 }

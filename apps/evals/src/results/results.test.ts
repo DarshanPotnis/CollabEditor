@@ -159,6 +159,34 @@ describe('a run summary and its report', () => {
       '| Task b | fail | 9 | 2 | 10 | 9,050 | 10.0 s | wrong-result: behaves: DELETE /users/abc: expected 400, got 404 \\| pipe |',
     );
     expect(report).toContain('- wrong-result: 1');
+    expect(report).toContain('gemini/gemini-3.5-flash-lite · agent@3 · graders@1 · shared tier');
+  });
+
+  it('says when a run was graded again, and which verdicts changed', () => {
+    const graded = run('r1', 'gemini-3.5-flash-lite', '2026-09-30T10:00:00.000Z', results);
+    const report = reportMarkdown({
+      ...graded,
+      run: {
+        ...graded.run,
+        graders: 'graders@2',
+        regraded: {
+          from: 'graders@1',
+          commit: 'def5678',
+          at: '2026-10-01T09:00:00.000Z',
+          changes: [
+            {
+              task: 'b',
+              trial: 1,
+              before: { passed: true, category: null },
+              after: { passed: false, category: 'dishonest' },
+            },
+          ],
+        },
+      },
+    });
+    expect(report).toContain(
+      'Graded again with graders@2 at commit def5678 on 2026-10-01, from the saved traces; it ran at commit abc1234 and was first graded with graders@1. 1 verdict changed:\n\n- Task b: pass → fail (dishonest)',
+    );
   });
 });
 
@@ -176,7 +204,9 @@ describe('the README table', () => {
     expect(latestRuns([old, newer, flash]).map((entry) => entry.run.id)).toEqual(['new', 'flash']);
     const table = readmeTable([old, newer, flash]);
     expect(table.split('\n')).toHaveLength(4);
-    expect(table).toContain('| gemini-3.5-flash-lite | 2026-09-30 | agent@3 | 1 of 1 |');
+    expect(table).toContain(
+      '| gemini-3.5-flash-lite | 2026-09-30 | agent@3 | graders@1 | 1 of 1 |',
+    );
     const readme = `# App\n\n${README_START}\nstale\n${README_END}\n\nMore.`;
     expect(withTable(readme, table)).toBe(
       `# App\n\n${README_START}\n\n${table}\n\n${README_END}\n\nMore.`,
