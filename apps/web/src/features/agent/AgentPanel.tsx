@@ -262,6 +262,7 @@ function EndedView({
 }): React.ReactElement {
   const { outcome, totals, undo } = state;
   const [viewingRecording, setViewingRecording] = useState(false);
+  const [showingWhatItDid, setShowingWhatItDid] = useState(false);
   const tokens = (totals.inputTokens + totals.outputTokens).toLocaleString('en-US');
   return (
     <div className="space-y-3">
@@ -353,15 +354,18 @@ function EndedView({
         <Button onClick={controls.dismiss}>Done</Button>
       </div>
       {viewingRecording && controls.recording && <RecordingView recording={controls.recording} />}
-      <details>
+      <details onToggle={(event) => setShowingWhatItDid(event.currentTarget.open)}>
         <summary className="cursor-pointer text-xs text-zinc-500">What it did</summary>
-        <div className="mt-2">
-          {state.trace === null ? (
-            <LogView log={state.log} />
-          ) : (
-            <TraceTimeline timeline={traceTimeline(state.trace)} />
-          )}
-        </div>
+        {/* Built only when opened: a timeline is long, and repeats the summary. */}
+        {showingWhatItDid && (
+          <div className="mt-2">
+            {state.trace === null ? (
+              <LogView log={state.log} />
+            ) : (
+              <TraceTimeline timeline={traceTimeline(state.trace)} />
+            )}
+          </div>
+        )}
       </details>
     </div>
   );
