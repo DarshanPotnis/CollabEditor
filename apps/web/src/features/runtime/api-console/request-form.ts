@@ -2,7 +2,7 @@
  * Turning what someone typed into the API console into a request, with a
  * message they can act on for anything that would not work.
  */
-import { type ApiRequest, type HttpMethod } from './request-codec.js';
+import { type ApiRequest, type HttpMethod } from '@collabcode/agent';
 
 export type RequestForm = {
   method: HttpMethod;

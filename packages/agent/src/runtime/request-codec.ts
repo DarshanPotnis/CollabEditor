@@ -1,5 +1,7 @@
 /**
- * How API console requests go into the container and responses come back.
+ * How requests go into the sandbox and responses come back, for the API
+ * console and the agent's http_request alike, in the browser's WebContainer
+ * and in the evals' Docker sandbox.
  *
  * The page runs a short helper process per request (request-script.ts) and
  * reads the result from **that process's own output**, never from the
@@ -16,6 +18,7 @@
  * travels as bytes, so binary responses arrive intact.
  */
 import { z } from 'zod';
+import { web } from './web-globals.js';
 
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -41,18 +44,18 @@ export function responsePrefix(nonce: string): string {
 }
 
 export function createNonce(): string {
-  return crypto.randomUUID().replaceAll('-', '');
+  return web.crypto.randomUUID().replaceAll('-', '');
 }
 
 function toBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
+  const bytes = new web.TextEncoder().encode(text);
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
+  return web.btoa(binary);
 }
 
 function fromBase64(base64: string): Uint8Array {
-  const binary = atob(base64);
+  const binary = web.atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
@@ -138,7 +141,7 @@ export function parseHelperOutput(output: string, nonce: string): ApiResult {
 
   let raw: unknown;
   try {
-    raw = JSON.parse(new TextDecoder().decode(fromBase64(encoded)));
+    raw = JSON.parse(new web.TextDecoder().decode(fromBase64(encoded)));
   } catch {
     // Anything undecodable is exactly the case this function exists to reject.
     return { kind: 'invalid-output', message: 'The response could not be decoded.' };

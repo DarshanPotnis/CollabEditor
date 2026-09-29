@@ -255,7 +255,7 @@ with, and Safari does not implement `credentialless` at all.
 ### The API console, the shell and the preview
 
 - **API console.** Each request starts a helper with `node -e` inside the container
-  (`api-console/request-script.ts`), which calls `http://localhost:<port>`, so CORS never applies.
+  (`packages/agent/src/runtime/request-script.ts`, shared with the agent and the evals), which calls `http://localhost:<port>`, so CORS never applies.
   It reads at most 2 MB of the body, never follows redirects and gives up after 30 s. The answer is
   read **only from the helper's own process output**, never the server's, as one line: a
   per-request random nonce, then the whole response (status, headers, body bytes, timing) as
@@ -332,7 +332,7 @@ the running project, is in the browser.
   since it was chosen (a collaborator's edit is never overwritten) or if the file would pass its
   size limit.
 - **Explain this error** appears in the Run view when a run crashed or failed. It sends the end of
-  the output as the plain text a person saw (`lib/terminal-text.ts`) and the file the latest stack
+  the output as the plain text a person saw (`packages/agent/src/runtime/terminal-text.ts`) and the file the latest stack
   trace points at, found by the longest ending of the container path that is a project file.
   CommonJS line numbers are exact, so the lines around the crash are sent. WebContainer shifts
   ES-module line numbers by an amount that depends on the module, so an ES module (a `file://`

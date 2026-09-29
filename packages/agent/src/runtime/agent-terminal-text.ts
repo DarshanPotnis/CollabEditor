@@ -11,7 +11,7 @@
  * spinner character with such a cursor move on at least one side; a real "-"
  * or "|" line in a program's output has none, and is kept.
  */
-import { plainTerminalText } from '../../lib/terminal-text.js';
+import { plainTerminalText } from './terminal-text.js';
 
 const FRAME = '[-\\\\|/\u2800-\u28ff]';
 const TO_FIRST_COLUMN = '\x1b\\[[01]?G(?:\x1b\\[[0-2]?K)?';

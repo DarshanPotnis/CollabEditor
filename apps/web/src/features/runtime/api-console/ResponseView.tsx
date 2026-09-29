@@ -3,8 +3,8 @@
  * React escapes it, and nothing is ever treated as HTML.
  */
 import type { ConsoleResult } from '../useRuntime.js';
-import { MAX_BODY_BYTES } from './request-codec.js';
-import { formatBody, formatBytes, statusTone, type StatusTone } from './response-format.js';
+import { MAX_BODY_BYTES, formatBody } from '@collabcode/agent';
+import { formatBytes, statusTone, type StatusTone } from './response-format.js';
 
 const TONE: Record<StatusTone, string> = {
   success: 'bg-emerald-900/60 text-emerald-200',

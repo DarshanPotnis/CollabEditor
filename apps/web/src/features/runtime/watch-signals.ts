@@ -14,7 +14,7 @@
  * whole plain-text lines. A line that never ends is capped, so endless output
  * without line breaks cannot grow memory.
  */
-import { plainTerminalText } from '../../lib/terminal-text.js';
+import { plainTerminalText } from '@collabcode/agent';
 
 const CRASH_LINES = [
   /^Failed running .+\. Waiting for file changes before restarting\.\.\.$/,

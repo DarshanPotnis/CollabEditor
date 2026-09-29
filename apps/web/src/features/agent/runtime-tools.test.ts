@@ -1,18 +1,19 @@
-import { createStopSource, type RuntimeToolCall } from '@collabcode/agent';
+import {
+  COMMAND_TIMEOUT_MS,
+  RUN_MESSAGES,
+  createStopSource,
+  sandboxUnavailable,
+  type ApiRequest,
+  type ApiResult,
+  type RuntimeToolCall,
+} from '@collabcode/agent';
 import { initProjectDoc, readFileText, resolveDocTree } from '@collabcode/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { FakeContainer } from '../../test/fake-container.js';
-import type { ApiRequest, ApiResult } from '../runtime/api-console/request-codec.js';
 import { createOutputBuffer } from '../runtime/output-buffer.js';
 import { SETTLE_WRITE_MS, createRunner, type Runner } from '../runtime/process-runner.js';
-import {
-  COMMAND_TIMEOUT_MS,
-  OUTPUT_GRACE_MS,
-  SYNC_DELAYED,
-  createRuntimeTools,
-  sandboxUnavailable,
-} from './runtime-tools.js';
+import { OUTPUT_GRACE_MS, createRuntimeTools } from './runtime-tools.js';
 
 const runners: Runner[] = [];
 beforeEach(() => vi.useFakeTimers());
@@ -164,7 +165,7 @@ describe('the settle barrier', () => {
     const { call, notices, requests } = setup({ docSynced: false });
     expect(await call({ name: 'http_request', input: { method: 'GET', path: '/' } })).toEqual({
       ok: false,
-      output: SYNC_DELAYED,
+      output: RUN_MESSAGES.syncDelayed,
     });
     expect(notices).toEqual(['Sync with the running project is delayed.']);
     expect(requests).toHaveLength(0);
@@ -177,7 +178,7 @@ describe('the settle barrier', () => {
     edit('routes/users.js');
     const result = call({ name: 'http_request', input: { method: 'GET', path: '/users' } });
     await vi.advanceTimersByTimeAsync(SETTLE_WRITE_MS);
-    expect(await result).toEqual({ ok: false, output: SYNC_DELAYED });
+    expect(await result).toEqual({ ok: false, output: RUN_MESSAGES.syncDelayed });
     expect(notices).toHaveLength(1);
   });
 

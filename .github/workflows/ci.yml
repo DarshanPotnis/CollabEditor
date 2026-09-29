@@ -53,8 +53,9 @@ jobs:
       - run: npm run build
 
   helper-node22:
-    # The API console's request helper runs inside the WebContainer, whose
-    # Node is 22, not the Node 24 everything else here uses. Run its
+    # The request helper (packages/agent/src/runtime/request-script.ts) runs
+    # inside the WebContainer and the evals' sandbox, both Node 22, not the
+    # Node 24 everything else here uses. Run its
     # integration test (real Node, real HTTP server) on Node 22 as well, so a
     # newer-Node feature cannot slip into the helper unnoticed.
     name: API console helper on Node 22
@@ -70,7 +71,7 @@ jobs:
 
       - run: npm ci
       - run: npm run build:shared
-      - run: npx vitest run --project web request-script
+      - run: npx vitest run --project agent request-script
 
   e2e:
     name: end-to-end

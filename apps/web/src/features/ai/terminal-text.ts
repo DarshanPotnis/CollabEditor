@@ -4,7 +4,7 @@
  * where a crash is reported.
  */
 import { AI_INPUT_LIMITS } from '@collabcode/shared';
-import { plainTerminalText } from '../../lib/terminal-text.js';
+import { plainTerminalText } from '@collabcode/agent';
 
 /** The end of the output as plain text, at most `maxChars`, starting on a whole line. */
 export function terminalTail(

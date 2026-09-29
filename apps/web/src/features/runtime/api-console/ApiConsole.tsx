@@ -5,7 +5,7 @@
  */
 import { useId, useState } from 'react';
 import type { ConsoleResult } from '../useRuntime.js';
-import { HTTP_METHODS, type ApiRequest, type HttpMethod } from './request-codec.js';
+import { HTTP_METHODS, type ApiRequest, type HttpMethod } from '@collabcode/agent';
 import { buildRequest, type RequestForm } from './request-form.js';
 import { ResponseView } from './ResponseView.js';
 

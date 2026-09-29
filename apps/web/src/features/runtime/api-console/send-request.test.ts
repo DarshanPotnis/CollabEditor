@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeContainer, type FakeProcess } from '../../../test/fake-container.js';
-import { responsePrefix } from './request-codec.js';
+import { responsePrefix } from '@collabcode/agent';
 import { sendRequest } from './send-request.js';
 
 function frame(value: unknown, nonce: string): string {

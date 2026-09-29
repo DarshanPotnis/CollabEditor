@@ -5,14 +5,14 @@
  */
 import type { Container, ContainerProcess } from '../container.js';
 import {
+  REQUEST_SCRIPT,
   REQUEST_TIMEOUT_MS,
   createNonce,
   encodeRequest,
   parseHelperOutput,
   type ApiRequest,
   type ApiResult,
-} from './request-codec.js';
-import { REQUEST_SCRIPT } from './request-script.js';
+} from '@collabcode/agent';
 
 /** Enough for a full-size response in base64 plus anything Node prints. */
 const MAX_OUTPUT_CHARS = 4 * 1024 * 1024;

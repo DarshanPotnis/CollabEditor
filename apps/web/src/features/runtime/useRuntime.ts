@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectSession } from '../../collab/useProject.js';
 import { createOutputBuffer, type OutputBuffer } from './output-buffer.js';
-import type { ApiRequest, ApiResult } from './api-console/request-codec.js';
+import type { ApiRequest, ApiResult } from '@collabcode/agent';
 import { sendRequest } from './api-console/send-request.js';
 import { ServerUnavailableError, createRunner, type Runner } from './process-runner.js';
 import { IDLE, type RunState } from './run-state.js';
