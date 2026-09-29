@@ -117,6 +117,20 @@ describe('compareRuns', () => {
     expect(lines).toContain('| Checks after the last change per session | — | — |');
   });
 
+  it('leaves a session the model never answered out of every run, and says so', () => {
+    const busy = run('busy-fffffff', 'agent@3', [
+      result('a', null),
+      result('b', 'model-unavailable', 1),
+      result('c', null),
+    ]);
+    const lines = compareRuns([busy, next]);
+    expect(lines).toContain(
+      'Left out of every run, as the model never answered in one: Task b, trial 1 (in A).',
+    );
+    // Over tasks a and c only, on both sides.
+    expect(lines).toContain('| Passed | 2 of 2 (100%) | 1 of 2 (50%) |');
+  });
+
   it('refuses runs judged by different graders, and fewer than two', () => {
     const older = run('old-ddddddd', 'agent@3', [result('a', null)], 'graders@1');
     expect(() => compareRuns([older, next])).toThrow(CompareError);

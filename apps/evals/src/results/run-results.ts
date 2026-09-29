@@ -106,6 +106,8 @@ export type RunSummary = {
   byTask: { tasks: number; every: number; some: number; none: number };
   /** Null when a session was recorded before this was measured. */
   checksAfterLastChangePerTask: number | null;
+  /** Sessions the model never answered: left out of everything above, as not the agent's failure. */
+  unavailable: Array<{ task: string; trial: number }>;
   medianSteps: number;
   wastedStepsPerTask: number;
   requestsPerTask: number;
@@ -126,7 +128,11 @@ function median(values: number[]): number {
 const mean = (values: number[]): number =>
   values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
 
-export function summarize(results: readonly TaskResult[]): RunSummary {
+/** A session the model never answered measured nothing about the agent. */
+export const unanswered = (result: TaskResult): boolean => result.category === 'model-unavailable';
+
+export function summarize(all: readonly TaskResult[]): RunSummary {
+  const results = all.filter((result) => !unanswered(result));
   const categories: RunSummary['categories'] = {};
   for (const result of results) {
     if (result.category !== null)
@@ -160,5 +166,8 @@ export function summarize(results: readonly TaskResult[]): RunSummary {
     ),
     wallSecondsPerTask: mean(results.map((result) => result.metrics.wallMs / 1000)),
     categories,
+    unavailable: all
+      .filter(unanswered)
+      .map((result) => ({ task: result.task, trial: result.trial })),
   };
 }

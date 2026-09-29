@@ -5,6 +5,7 @@
  */
 import {
   summarize,
+  unanswered,
   type Regraded,
   type RunResults,
   type RunSummary,
@@ -79,8 +80,21 @@ export function reportMarkdown(results: RunResults): string {
     `${passedLine(summary, run.trials)} · median ${oneDecimal(summary.medianSteps)} steps · ${oneDecimal(summary.wastedStepsPerTask)} wasted steps, ${oneDecimal(summary.requestsPerTask)} requests, ${thousands(summary.tokensPerTask)} tokens and ${oneDecimal(summary.wallSecondsPerTask)} s per task`,
   ];
   if (run.stoppedEarly !== null) lines.push('', `Stopped early: ${run.stoppedEarly}`);
+  if (summary.unavailable.length > 0) {
+    const title = (task: string): string =>
+      results.results.find((result) => result.task === task)?.title ?? task;
+    const named = summary.unavailable.map(
+      ({ task, trial }) => `${title(task)}${run.trials > 1 ? ` (trial ${String(trial)})` : ''}`,
+    );
+    lines.push(
+      '',
+      `Left out, the model never answered (not the agent's failure): ${named.join('; ')}.`,
+    );
+  }
   if (run.regraded !== null) lines.push(...regradedNote(results, run.regraded));
-  if (run.trials > 1) lines.push(...consistencyTable(results.results));
+  if (run.trials > 1) {
+    lines.push(...consistencyTable(results.results.filter((result) => !unanswered(result))));
+  }
   lines.push(
     '',
     '| Task | Result | Steps | Wasted | Requests | Tokens | Time | Why it failed |',

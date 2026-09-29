@@ -49,7 +49,9 @@ function headlineTable(runs: readonly RunResults[]): string[] {
     ...runs.map((run) => {
       const summary = summarize(run.results);
       const { every, some, none } = summary.byTask;
-      return `| ${run.run.model.id} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.sessions)} (${String(Math.round(summary.passRate * 100))}%) | ${String(every)} · ${String(some)} · ${String(none)} | ${checks(summary.checksAfterLastChangePerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${report(run)} |`;
+      const left = summary.unavailable.length;
+      const leftOut = left === 0 ? '' : `, ${String(left)} left out (model never answered)`;
+      return `| ${run.run.model.id} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.sessions)} (${String(Math.round(summary.passRate * 100))}%)${leftOut} | ${String(every)} · ${String(some)} · ${String(none)} | ${checks(summary.checksAfterLastChangePerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${report(run)} |`;
     }),
   ];
 }

@@ -9,7 +9,7 @@
  * noise, which the report says.
  */
 import { FAILURE_CATEGORIES } from '../graders/grader.js';
-import { summarize, type RunResults, type TaskResult } from './run-results.js';
+import { summarize, unanswered, type RunResults, type TaskResult } from './run-results.js';
 
 export class CompareError extends Error {
   constructor(message: string) {
@@ -58,7 +58,21 @@ export function compareRuns(runs: readonly RunResults[]): string {
   }
   const letters = runs.map((_, index) => LETTERS[index] ?? '');
   const { tasks, leftOut } = sharedTasks(runs);
-  const scoped = runs.map((run) => run.results.filter((result) => tasks.includes(result.task)));
+  // A session the model never answered measured nothing: it leaves every run, not just its own.
+  const unansweredSessions = runs.flatMap((run, index) =>
+    run.results
+      .filter((result) => unanswered(result) && tasks.includes(result.task))
+      .map((result) => ({ ...result, letter: letters[index] ?? '' })),
+  );
+  const excluded = new Set(
+    unansweredSessions.map((result) => `${result.task}#${String(result.trial)}`),
+  );
+  const scoped = runs.map((run) =>
+    run.results.filter(
+      (result) =>
+        tasks.includes(result.task) && !excluded.has(`${result.task}#${String(result.trial)}`),
+    ),
+  );
   const summaries = scoped.map((results) => summarize(results));
   /** Per task, or a dash for a run recorded before it was measured. */
   const perTask = (key: 'repeatedErrors' | 'refusedFinishes') =>
@@ -76,7 +90,11 @@ export function compareRuns(runs: readonly RunResults[]): string {
   const lines = [
     `# ${runs.map((run) => run.run.prompt).join(' vs ')}: ${String(tasks.length)} tasks`,
     '',
-    `Judged by ${graders[0] ?? ''}. One session per task: a difference of a task or two can be noise.`,
+    `Judged by ${graders[0] ?? ''}. ${
+      Math.min(...runs.map((run) => run.run.trials)) === 1
+        ? 'One session per task: a difference of a task or two can be noise.'
+        : `${String(Math.min(...runs.map((run) => run.run.trials)))} or more sessions per task.`
+    }`,
     '',
     row(['Run', 'Id', 'Model', 'Prompt', 'Graders', 'Commit', 'Date']),
     row(['---', '---', '---', '---', '---', '---', '---']),
@@ -93,6 +111,14 @@ export function compareRuns(runs: readonly RunResults[]): string {
     ),
   ];
   if (leftOut.length > 0) lines.push('', `Left out, not in every run: ${leftOut.join(', ')}.`);
+  if (unansweredSessions.length > 0) {
+    lines.push(
+      '',
+      `Left out of every run, as the model never answered in one: ${unansweredSessions
+        .map((result) => `${result.title}, trial ${String(result.trial)} (in ${result.letter})`)
+        .join('; ')}.`,
+    );
+  }
 
   lines.push(
     '',

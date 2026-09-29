@@ -220,6 +220,28 @@ describe('a run summary and its report', () => {
     expect(report).toContain('| Task c | 0 of 3 | ran-out, ran-out, ran-out |');
   });
 
+  it('leaves out sessions the model never answered, and names them apart', () => {
+    const sessions = [1, 2, 3].flatMap((n) => [
+      { ...result('a', true, 4), trial: n },
+      {
+        ...(n === 2 ? result('b', false, 1, 'model-unavailable') : result('b', true, 4)),
+        trial: n,
+      },
+    ]);
+    expect(summarize(sessions)).toMatchObject({
+      sessions: 5,
+      passed: 5,
+      byTask: { tasks: 2, every: 2, some: 0, none: 0 },
+      unavailable: [{ task: 'b', trial: 2 }],
+      categories: {},
+    });
+    const three = run('r4', 'gemini-3.5-flash-lite', '2026-10-01T10:00:00.000Z', sessions);
+    const report = reportMarkdown({ ...three, run: { ...three.run, trials: 3 } });
+    expect(report).toContain(
+      "Left out, the model never answered (not the agent's failure): Task b (trial 2).",
+    );
+  });
+
   it('summarizes pass rate, median steps and costs per task', () => {
     expect(summarize(results)).toMatchObject({
       sessions: 3,
@@ -312,5 +334,13 @@ describe('the README table', () => {
       '| gemini-3.5-flash-lite | agent@3 | graders@1 | 5 of 6 (83%) | 1 · 1 · 0 | — |',
     );
     expect(table).not.toContain('Iteration runs');
+    const busy = [
+      ...sessions.slice(0, 5),
+      { ...result('b', false, 1, 'model-unavailable'), trial: 3 },
+    ];
+    const withBusy = run('busy', 'gemini-3.5-flash-lite', '2026-10-02T10:00:00.000Z', busy);
+    expect(
+      readmeTable([{ ...withBusy, run: { ...withBusy.run, trials: 3, tasks: ['a', 'b'] } }]),
+    ).toContain('| 5 of 5 (100%), 1 left out (model never answered) | 2 · 0 · 0 |');
   });
 });
