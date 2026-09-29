@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@collabcode/agent';
+import type { AgentEvent, AgentTrace } from '@collabcode/agent';
 import { describe, expect, it } from 'vitest';
 import {
   IDLE_AGENT_SESSION,
@@ -191,6 +191,56 @@ describe('agentSessionReducer', () => {
       agent({ type: 'finished', outcome: { kind: 'stopped' }, totals, changes }),
     );
     expect(agentSessionReducer(ended, agent({ type: 'text', step: 1, delta: 'late' }))).toBe(ended);
+  });
+});
+
+describe('a replay, and the session’s trace', () => {
+  const label = {
+    recordedAt: 1_790_000_000_000,
+    prompt: 'agent@5',
+    model: 'gemini-3.5-flash-lite',
+  };
+  const divergence = {
+    step: 2,
+    toolName: 'edit_file',
+    recorded: 'edited lines 12–16',
+    now: 'error: Someone else is editing routes/users.js right now',
+  };
+
+  it('starts a replay with no privacy notice, since nothing goes to a model, and keeps its label', () => {
+    const state = running(
+      play(
+        { type: 'replay-requested', goal: 'Add a DELETE route', replay: label },
+        { type: 'started', maxSteps: 15, modelName: 'Gemini', agentClientId: 7 },
+      ),
+    );
+    expect(state).toMatchObject({ goal: 'Add a DELETE route', replay: label, divergence: null });
+  });
+
+  it('keeps the first divergence of a replay, into its ending', () => {
+    const ended = play(
+      { type: 'replay-requested', goal: 'Add a DELETE route', replay: label },
+      { type: 'started', maxSteps: 15, modelName: 'Gemini', agentClientId: 7 },
+      { type: 'replay-diverged', divergence },
+      { type: 'replay-diverged', divergence: { ...divergence, step: 3 } },
+      agent({ type: 'finished', outcome: { kind: 'stopped' }, totals, changes }),
+    );
+    expect(ended).toMatchObject({ phase: 'ended', replay: label, divergence });
+  });
+
+  it('takes the session’s trace once it is in, for the timeline', () => {
+    const ended = play(
+      ...begin,
+      agent({
+        type: 'finished',
+        outcome: { kind: 'finished', summary: 'Done.', checks: null },
+        totals,
+        changes,
+      }),
+    );
+    expect(ended).toMatchObject({ phase: 'ended', trace: null, replay: null });
+    const trace = { sessionId: 's' } as unknown as AgentTrace;
+    expect(agentSessionReducer(ended, { type: 'recorded', trace })).toMatchObject({ trace });
   });
 });
 

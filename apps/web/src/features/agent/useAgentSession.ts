@@ -129,10 +129,10 @@ export function useAgentSession({
             agentClientId: agent.clientId,
           });
           agent.run().then(
-            () => {
-              if (live.current === agent && agent.undoPreview().empty) {
-                dispatch({ type: 'nothing-to-undo' });
-              }
+            (result) => {
+              if (live.current !== agent) return;
+              dispatch({ type: 'recorded', trace: result.trace });
+              if (agent.undoPreview().empty) dispatch({ type: 'nothing-to-undo' });
             },
             (error: unknown) => {
               reportInternalError(error);

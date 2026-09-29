@@ -1,7 +1,7 @@
 /**
- * The AI teammate in the AI panel: a goal to start it with, a live log of what
- * it does while it runs, and afterwards what it did, with Undo AI changes and
- * Download trace. Everything the model wrote is shown as text (AiText), never
+ * The AI teammate in the AI panel: a goal to start it with (or a trace to
+ * open), a live log of what it does while it runs, and afterwards what it did
+ * as a timeline, with Undo AI changes and Download trace. Everything the model wrote is shown as text (AiText), never
  * as HTML.
  */
 import type { SessionChanges, VerifiedChecks } from '@collabcode/agent';
@@ -20,6 +20,9 @@ import {
   type AgentSessionState,
   type LogEntry,
 } from './agent-session-state.js';
+import { TraceFileViewer } from './TraceFileViewer.js';
+import { traceTimeline } from './trace-timeline.js';
+import { TraceTimeline } from './TraceTimeline.js';
 import type { AgentSessionControls } from './useAgentSession.js';
 import type { FollowAgent } from './useFollowAgent.js';
 
@@ -319,7 +322,11 @@ function EndedView({
       <details>
         <summary className="cursor-pointer text-xs text-zinc-500">What it did</summary>
         <div className="mt-2">
-          <LogView log={state.log} />
+          {state.trace === null ? (
+            <LogView log={state.log} />
+          ) : (
+            <TraceTimeline timeline={traceTimeline(state.trace)} />
+          )}
         </div>
       </details>
     </div>
@@ -356,7 +363,12 @@ export function AgentPanel({
         <Bot className="size-3.5" aria-hidden />
         AI teammate
       </h2>
-      {state.phase === 'idle' && <GoalForm usingOwnKey={usingOwnKey} onStart={controls.start} />}
+      {state.phase === 'idle' && (
+        <>
+          <GoalForm usingOwnKey={usingOwnKey} onStart={controls.start} />
+          <TraceFileViewer />
+        </>
+      )}
       {state.phase === 'needs-consent' && (
         <PrivacyNotice onAccept={controls.acceptPrivacyNotice} onCancel={controls.dismiss} />
       )}

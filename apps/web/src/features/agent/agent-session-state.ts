@@ -3,7 +3,14 @@
  * reports (the core's AgentEvents) and what the person does. Kept apart from
  * React so every state is easy to reach in a test.
  */
-import type { AgentEvent, AgentOutcome, AgentTotals, SessionChanges } from '@collabcode/agent';
+import type {
+  AgentEvent,
+  AgentOutcome,
+  AgentTotals,
+  AgentTrace,
+  ReplayDivergence,
+  SessionChanges,
+} from '@collabcode/agent';
 import { toolStatus } from './agent-status.js';
 
 /** A tool's output shown in the log is capped; the trace keeps all of it. */
@@ -31,18 +38,25 @@ export type UndoView =
 /** A wait before the next try, and when (epoch ms) that try goes out. */
 export type Waiting = { reason: 'busy' | 'rate-limited'; until: number };
 
+/** A replay's own description ("Watch a demo"): the session it plays was recorded when, with what. */
+export type ReplayLabel = { recordedAt: number; prompt: string | null; model: string | null };
+
 type Common = {
   goal: string;
   log: LogEntry[];
   notice: string | null;
   remainingToday: number | null;
+  /** Set when this is a replay of a recorded session, not a live one. */
+  replay: ReplayLabel | null;
+  /** Where a replay stopped matching its recording, if it did. */
+  divergence: ReplayDivergence | null;
 };
 
 export type AgentSessionState =
   | { phase: 'idle' }
   | { phase: 'needs-consent'; goal: string }
-  | { phase: 'starting'; goal: string }
-  | { phase: 'start-failed'; goal: string; message: string }
+  | { phase: 'starting'; goal: string; replay: ReplayLabel | null }
+  | { phase: 'start-failed'; goal: string; message: string; replay: ReplayLabel | null }
   | (Common & {
       phase: 'running';
       step: number;
@@ -60,16 +74,22 @@ export type AgentSessionState =
       /** What it changed, from its trace, for an ending without the model's summary. */
       changes: SessionChanges;
       undo: UndoView;
+      /** The session's trace, once it is in, for the timeline. */
+      trace: AgentTrace | null;
     });
 
 export type AgentSessionEvent =
   | { type: 'request'; goal: string; consented: boolean }
+  /** A replay sends nothing to a model, so it needs no consent. */
+  | { type: 'replay-requested'; goal: string; replay: ReplayLabel }
   | { type: 'consented' }
   | { type: 'started'; maxSteps: number; modelName: string; agentClientId: number }
   | { type: 'start-failed'; message: string }
   /** `at` is when it arrived, which a wait's countdown starts from. */
   | { type: 'agent'; event: AgentEvent; at: number }
   | { type: 'notice'; message: string }
+  | { type: 'replay-diverged'; divergence: ReplayDivergence }
+  | { type: 'recorded'; trace: AgentTrace }
   | { type: 'nothing-to-undo' }
   | { type: 'undo-asked'; changedPaths: string[] }
   | { type: 'undo-cancelled' }
@@ -140,10 +160,13 @@ function running(
         ),
         notice: state.notice,
         remainingToday: state.remainingToday,
+        replay: state.replay,
+        divergence: state.divergence,
         outcome: event.outcome,
         totals: event.totals,
         changes: event.changes,
         undo: { kind: 'available' },
+        trace: null,
       };
   }
 }
@@ -156,10 +179,15 @@ export function agentSessionReducer(
     case 'request':
       if (state.phase === 'running' || state.phase === 'starting') return state;
       return event.consented
-        ? { phase: 'starting', goal: event.goal }
+        ? { phase: 'starting', goal: event.goal, replay: null }
         : { phase: 'needs-consent', goal: event.goal };
+    case 'replay-requested':
+      if (state.phase === 'running' || state.phase === 'starting') return state;
+      return { phase: 'starting', goal: event.goal, replay: event.replay };
     case 'consented':
-      return state.phase === 'needs-consent' ? { phase: 'starting', goal: state.goal } : state;
+      return state.phase === 'needs-consent'
+        ? { phase: 'starting', goal: state.goal, replay: null }
+        : state;
     case 'started':
       return state.phase === 'starting'
         ? {
@@ -168,6 +196,8 @@ export function agentSessionReducer(
             log: [],
             notice: null,
             remainingToday: null,
+            replay: state.replay,
+            divergence: null,
             step: 0,
             maxSteps: event.maxSteps,
             waiting: null,
@@ -177,7 +207,7 @@ export function agentSessionReducer(
         : state;
     case 'start-failed':
       return state.phase === 'starting'
-        ? { phase: 'start-failed', goal: state.goal, message: event.message }
+        ? { phase: 'start-failed', goal: state.goal, message: event.message, replay: state.replay }
         : state;
     case 'agent':
       return state.phase === 'running' ? running(state, event.event, event.at) : state;
@@ -185,6 +215,12 @@ export function agentSessionReducer(
       return state.phase === 'running' || state.phase === 'ended'
         ? { ...state, notice: event.message }
         : state;
+    case 'replay-diverged':
+      return (state.phase === 'running' || state.phase === 'ended') && state.divergence === null
+        ? { ...state, divergence: event.divergence }
+        : state;
+    case 'recorded':
+      return state.phase === 'ended' ? { ...state, trace: event.trace } : state;
     case 'nothing-to-undo':
       return state.phase === 'ended' ? { ...state, undo: { kind: 'nothing' } } : state;
     case 'undo-asked':
