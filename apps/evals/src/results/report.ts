@@ -29,7 +29,7 @@ function regradedNote(results: RunResults, regraded: Regraded): string[] {
   const changed = regraded.changes.length;
   return [
     '',
-    `Graded again with ${run.graders} at commit ${regraded.commit} on ${regraded.at.slice(0, 10)}, from the saved traces; it ran at commit ${run.commit} and was first graded with ${regraded.from}. ${changed === 0 ? 'No verdict changed.' : `${String(changed)} verdict${changed === 1 ? '' : 's'} changed:`}`,
+    `Graded again with ${run.graders} at commit ${regraded.commit} on ${regraded.at.slice(0, 10)}, from the saved traces; it ran at commit ${run.commit} and was last graded with ${regraded.from}. ${changed === 0 ? 'No verdict changed.' : `${String(changed)} verdict${changed === 1 ? '' : 's'} changed:`}`,
     ...(changed === 0 ? [] : ['']),
     ...regraded.changes.map(
       (change) =>

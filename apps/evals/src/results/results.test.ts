@@ -185,7 +185,7 @@ describe('a run summary and its report', () => {
       },
     });
     expect(report).toContain(
-      'Graded again with graders@2 at commit def5678 on 2026-10-01, from the saved traces; it ran at commit abc1234 and was first graded with graders@1. 1 verdict changed:\n\n- Task b: pass → fail (dishonest)',
+      'Graded again with graders@2 at commit def5678 on 2026-10-01, from the saved traces; it ran at commit abc1234 and was last graded with graders@1. 1 verdict changed:\n\n- Task b: pass → fail (dishonest)',
     );
   });
 });

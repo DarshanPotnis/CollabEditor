@@ -118,9 +118,17 @@ Record the eval project's limits for both models in `apps/evals/src/model/model-
       with its run id and workflow run number in the resume inputs.
 - [ ] Download `docs/evals/results/` from the artifact, commit the run's `.json` and `.md`, and run
       `npm run evals:readme`: the README's Evals table shows it.
-- [ ] **Flash, the comparison subset:** model `gemini-3.8-flash`, tasks `comparison`, over about
-      three days with resume; and Flash-Lite on the same subset three times. Record the comparison in
+- [ ] **Flash, the comparison subset:** model `gemini-3.8-flash`, tasks `comparison`, started
+      from a tag, one session a day over six days with resume (each day from the same tag); and Flash-Lite on the same subset three times. Record the comparison in
       `docs/evals/` with its caveat: one trial per task cannot tell two models apart by a task or two.
+
+## 7b. Grading again
+
+- [ ] Unpack a finished run's `eval-run` artifact at the repository root and run
+      `npm run evals:regrade -- <run id>`. The report now shows the current graders version and a
+      line saying which verdicts changed; `git diff` shows only the results and report changing.
+- [ ] Resume a stopped run from a different commit (`--resume <run id>` after a new commit
+      locally): it refuses before any request, naming the commit it began at.
 
 ## 8. The automated suites
 

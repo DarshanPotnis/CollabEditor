@@ -546,8 +546,8 @@ Goal: measure the agent before improving it. Built as described in `docs/evals/R
 - **Quota:** the evals' own Google Cloud project; a pacer and a daily ledger keep to its limits,
   and a run stops before a session it cannot pay for and resumes the next day.
 - **Choosing the default model:** the full suite on `gemini-3.5-flash-lite`; the six-task
-  comparison subset on a Flash model (about 20 requests a day) over three days, and on Flash-Lite
-  three times. Indicative, not significant: `AI_DEFAULT_MODEL` changes only for a clear gap.
+  comparison subset on a Flash model (about 20 requests a day) over six days, one session a day
+  from the same tag (a session may take all 20), and on Flash-Lite three times. Indicative, not significant: `AI_DEFAULT_MODEL` changes only for a clear gap.
 - Definition of done: the graders' self-test and the replays pass in CI, and a baseline eval run
   is recorded in `docs/evals/`.
 - ADR 010: the evals, their sandbox and key handling, grading, and why real-model evals stay out

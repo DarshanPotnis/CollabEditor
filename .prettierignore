@@ -10,3 +10,5 @@ test-results
 packages/agent/fixtures/traces
 # Eval fixtures are projects for the sandbox, kept exactly as each task needs them.
 apps/evals/fixtures
+# Eval results are written by the eval runner and evals:regrade, and kept as written.
+docs/evals/results

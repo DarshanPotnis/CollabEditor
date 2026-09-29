@@ -175,11 +175,15 @@ sandbox, and automatic graders check the result, not the agent's word for it. Th
 tested too: every task's reference solution must pass them and deliberately bad sessions must
 fail them. How it works and how to run it: [docs/evals](docs/evals/README.md).
 
+<!-- prettier-ignore-start -->
 <!-- evals:start -->
 
-No eval run is recorded yet.
+| Model | Date | Prompt | Graders | Passed | Median steps | Wasted steps | Requests | Tokens | Report |
+| --- | --- | --- | --- | --: | --: | --: | --: | --: | --- |
+| gemini-3.5-flash-lite | 2026-09-29 | agent@3 | graders@2 | 15 of 21 | 4.0 | 0.8 | 5.7 | 26,577 | [2026-09-28-gemini-3.5-flash-lite-22fd2b3](docs/evals/results/2026-09-28-gemini-3.5-flash-lite-22fd2b3.md) |
 
 <!-- evals:end -->
+<!-- prettier-ignore-end -->
 
 ## Running it locally
 
