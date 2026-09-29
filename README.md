@@ -180,7 +180,8 @@ fail them. How it works and how to run it: [docs/evals](docs/evals/README.md).
 
 | Model | Date | Prompt | Graders | Passed | Median steps | Wasted steps | Requests | Tokens | Report |
 | --- | --- | --- | --- | --: | --: | --: | --: | --: | --- |
-| gemini-3.5-flash-lite | 2026-09-29 | agent@3 | graders@2 | 15 of 21 | 4.0 | 0.8 | 5.7 | 26,577 | [2026-09-28-gemini-3.5-flash-lite-22fd2b3](docs/evals/results/2026-09-28-gemini-3.5-flash-lite-22fd2b3.md) |
+| gemini-3.5-flash-lite | 2026-09-29 | agent@4 | graders@3 | 19 of 21 | 5.0 | 0.9 | 5.6 | 25,778 | [2026-09-29-gemini-3.5-flash-lite-f04d870](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-f04d870.md) |
+| gemini-3.5-flash-lite | 2026-09-29 | agent@3 | graders@3 | 18 of 21 | 5.0 | 0.5 | 6.0 | 23,943 | [2026-09-29-gemini-3.5-flash-lite-a7f0a02](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-a7f0a02.md) |
 
 <!-- evals:end -->
 <!-- prettier-ignore-end -->

@@ -69,3 +69,23 @@ second agent@3 run on the same day for noise.
   them produce an empty list.
 - A model that never lists its checks is not refused: an empty list claims nothing. Whether the
   checks were made is still graded by `verified`.
+
+## Measured (2026-09-29)
+
+Flash-Lite, all 21 tasks, one session each, judged by graders@3
+([comparison](../evals/comparisons/2026-09-29-agent-3-vs-agent-4.md)): the agent@3 baseline 15, a
+second agent@3 run the same day 18, agent@4 19. Every point of the bar set before the run holds
+(unverified at most 1, dishonest 0, filter-by-role finishes, requests per task not up, no new
+wrong-result or unsafe), but agent@4's lead over the same-day agent@3 run is one task, well inside
+the three tasks between the two agent@3 runs: the pass rate does not show agent@4 is better.
+
+What did change, and is not noise:
+
+- **Checking.** Requests after the last change: 61 across the run, against 41 and 32 for agent@3.
+  19 of 21 sessions listed their checks; every check listed in a finish that was accepted had been
+  made.
+- **A new wasted step.** 9 sessions listed `npm run dev → exit code 0` as a command check: the dev
+  server `run_project` starts, not a `run_command`. Each finish was refused once, then accepted
+  without it: 9 of agent@4's 18 wasted steps.
+- **The edit refusal went untested.** No session copied a block wrong past its first line, so the
+  first-differing-line refusal and the shorter-copy hint never fired.
