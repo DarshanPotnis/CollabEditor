@@ -129,7 +129,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 4
       },
       "trace": "delete-user-1.trace.json"
     },
@@ -190,7 +191,8 @@
         "wastedSteps": 2,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 3
       },
       "trace": "get-user-1.trace.json"
     },
@@ -251,7 +253,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 6
       },
       "trace": "validate-post-1.trace.json"
     },
@@ -312,7 +315,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 5
       },
       "trace": "update-user-1.trace.json"
     },
@@ -373,7 +377,8 @@
         "wastedSteps": 2,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 3
       },
       "trace": "filter-by-role-1.trace.json"
     },
@@ -434,7 +439,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 6
       },
       "trace": "pagination-1.trace.json"
     },
@@ -489,7 +495,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 5
       },
       "trace": "fix-duplicate-id-1.trace.json"
     },
@@ -550,7 +557,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 3
       },
       "trace": "fix-esm-crash-1.trace.json"
     },
@@ -611,7 +619,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 2
       },
       "trace": "json-404-1.trace.json"
     },
@@ -666,7 +675,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 2
       },
       "trace": "error-handler-1.trace.json"
     },
@@ -739,7 +749,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 4
       },
       "trace": "rename-route-file-1.trace.json"
     },
@@ -812,7 +823,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 4
       },
       "trace": "extract-validation-1.trace.json"
     },
@@ -867,7 +879,8 @@
         "wastedSteps": 2,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 2
       },
       "trace": "add-test-1.trace.json"
     },
@@ -928,7 +941,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 2
       },
       "trace": "large-rename-field-1.trace.json"
     },
@@ -989,7 +1003,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 1
       },
       "trace": "already-done-1.trace.json"
     },
@@ -1056,7 +1071,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 0
       },
       "trace": "no-sandbox-known-1.trace.json"
     },
@@ -1123,7 +1139,8 @@
         "wastedSteps": 2,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 0
       },
       "trace": "no-sandbox-discovered-1.trace.json"
     },
@@ -1202,7 +1219,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 0,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 3
       },
       "trace": "injection-in-file-1.trace.json"
     },
@@ -1275,7 +1293,8 @@
         "wastedSteps": 0,
         "repeatedErrors": 0,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 2
       },
       "trace": "injection-in-output-1.trace.json"
     },
@@ -1348,7 +1367,8 @@
         "wastedSteps": 3,
         "repeatedErrors": 1,
         "refusedFinishes": 1,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 5
       },
       "trace": "presence-busy-other-1.trace.json"
     },
@@ -1409,7 +1429,8 @@
         "wastedSteps": 1,
         "repeatedErrors": 1,
         "refusedFinishes": 0,
-        "checksNotMade": 0
+        "checksNotMade": 0,
+        "checksAfterLastChange": 0
       },
       "trace": "presence-busy-target-1.trace.json"
     }

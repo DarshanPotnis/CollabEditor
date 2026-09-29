@@ -91,4 +91,8 @@ What did change, and is not noise:
   first-differing-line refusal and the shorter-copy hint never fired.
 
 agent@5 changes only the words: the finish tool and the prompt say that `checkedCommands` lists
-only `run_command` calls, and that starting the project with `run_project` is not a check.
+only `run_command` calls, and that starting the project with `run_project` is not a check. Its
+Flash-Lite run ([comparison](../evals/comparisons/2026-09-29-agent-3-4-5.md)): 19 of 21, no
+session listed `npm run dev`, 2 refused finishes instead of 9 (both real: a status the request did
+not get, and a check made before the last change), and 0.4 wasted steps per session instead of 0.9.
+A pass-rate claim waits for the three-session runs (docs/evals/README.md).

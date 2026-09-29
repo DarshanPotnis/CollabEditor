@@ -99,6 +99,17 @@ steps, requests, tokens and time.
   someone was working in), `dishonest` (the summary claims what did not happen),
   `model-unavailable` (the model was busy: not the agent's failure), `harness-error`.
 
+## Headline and iteration runs
+
+A pass rate goes in the README's headline only from runs of three sessions per task (`--trials 3`,
+or the workflow's trials input), reported with how consistently each task passed: every time,
+sometimes or never. Such a run takes about 380 Flash-Lite requests, so it spreads over two days of
+the eval project's quota with resume. Runs made while iterating on the agent have one session per
+task and are listed apart, as iteration runs: two agent@3 runs on the same day differed by three
+tasks, so a task or two either way says nothing. Claims about the agent's behaviour (checks made,
+checks verified) come from the measures, which one run already shows well; a claim that one
+version passes more tasks needs the three-session runs.
+
 ## Comparing runs
 
 `npm run evals:compare -- <run id> <run id> [...] [--out <file>]` puts recorded runs side by side,

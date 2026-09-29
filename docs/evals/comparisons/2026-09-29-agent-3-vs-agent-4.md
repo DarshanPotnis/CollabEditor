@@ -11,14 +11,16 @@ Judged by graders@3. One session per task: a difference of a task or two can be 
 |  | A | B | C |
 | --- | --: | --: | --: |
 | Passed | 15 of 21 (71%) | 18 of 21 (86%) | 19 of 21 (90%) |
+| Tasks passed every time · some · never | 15 · 0 · 6 | 18 · 0 · 3 | 19 · 0 · 2 |
+| Checks after the last change per session | 1.6 | 2.0 | 3.0 |
 | Median steps | 4.0 | 5.0 | 5.0 |
-| Wasted steps per task | 0.8 | 0.5 | 0.9 |
-| Repeated errors per task | 0.2 | 0.1 | 0.1 |
-| Refused finishes per task | — | — | 0.4 |
-| Checks listed but not made | — | — | 0 |
-| Requests per task | 5.7 | 6.0 | 5.6 |
-| Tokens per task | 26,577 | 23,943 | 25,778 |
-| Seconds per task | 24.1 | 24.5 | 21.1 |
+| Wasted steps per session | 0.8 | 0.5 | 0.9 |
+| Repeated errors per session | 0.2 | 0.1 | 0.1 |
+| Refused finishes per session | 0.0 | 0.0 | 0.4 |
+| Checks listed but not made | 0 | 0 | 0 |
+| Requests per session | 5.7 | 6.0 | 5.6 |
+| Tokens per session | 26,577 | 23,943 | 25,778 |
+| Seconds per session | 24.1 | 24.5 | 21.1 |
 
 Failures by category:
 

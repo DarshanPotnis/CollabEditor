@@ -175,13 +175,35 @@ sandbox, and automatic graders check the result, not the agent's word for it. Th
 tested too: every task's reference solution must pass them and deliberately bad sessions must
 fail them. How it works and how to run it: [docs/evals](docs/evals/README.md).
 
+What the evals show so far, on `gemini-3.5-flash-lite`:
+
+- **It checks what it changed.** Since agent@4 the agent is told to check every behaviour it
+  added, each error case and one thing that worked before. After its last change it made 2.8 and
+  3.0 checks per session (agent@5, agent@4), against 1.6 and 2.0 in two agent@3 runs.
+- **Its list of checks is verified, not taken on trust.** `finish` lists the requests and commands
+  the agent says it checked, and the agent core holds each against what the session actually did
+  ([ADR 012](docs/decisions/012-agent-4-verified-finish.md)). In the agent@4 and agent@5 runs (42
+  sessions), no accepted `finish` listed a check that was not made. The core refused 11 finishes
+  that did, and each of those sessions then made the check or left it out.
+- **A better pass rate is not shown yet.** The runs below have one session per task, and two
+  agent@3 runs on the same day differed by three tasks. The headline will come from three sessions
+  per task for agent@3 and the current agent, and a pass-rate difference is claimed only if those
+  runs support it.
+
 <!-- prettier-ignore-start -->
 <!-- evals:start -->
 
-| Model | Date | Prompt | Graders | Passed | Median steps | Wasted steps | Requests | Tokens | Report |
+**Headline** (3 sessions per task):
+
+No run with 3 sessions per task is recorded yet, so there is no headline pass rate.
+
+**Iteration runs** (one session per task, so a task or two either way is noise):
+
+| Model | Date | Prompt | Graders | Passed | Checks after the last change | Wasted steps | Requests | Tokens | Report |
 | --- | --- | --- | --- | --: | --: | --: | --: | --: | --- |
-| gemini-3.5-flash-lite | 2026-09-29 | agent@4 | graders@3 | 19 of 21 | 5.0 | 0.9 | 5.6 | 25,778 | [2026-09-29-gemini-3.5-flash-lite-f04d870](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-f04d870.md) |
-| gemini-3.5-flash-lite | 2026-09-29 | agent@3 | graders@3 | 18 of 21 | 5.0 | 0.5 | 6.0 | 23,943 | [2026-09-29-gemini-3.5-flash-lite-a7f0a02](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-a7f0a02.md) |
+| gemini-3.5-flash-lite | 2026-09-29 | agent@5 | graders@3 | 19 of 21 | 2.8 | 0.4 | 5.4 | 25,092 | [2026-09-29-gemini-3.5-flash-lite-edca946](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-edca946.md) |
+| gemini-3.5-flash-lite | 2026-09-29 | agent@4 | graders@3 | 19 of 21 | 3.0 | 0.9 | 5.6 | 25,778 | [2026-09-29-gemini-3.5-flash-lite-f04d870](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-f04d870.md) |
+| gemini-3.5-flash-lite | 2026-09-29 | agent@3 | graders@3 | 18 of 21 | 2.0 | 0.5 | 6.0 | 23,943 | [2026-09-29-gemini-3.5-flash-lite-a7f0a02](docs/evals/results/2026-09-29-gemini-3.5-flash-lite-a7f0a02.md) |
 
 <!-- evals:end -->
 <!-- prettier-ignore-end -->
