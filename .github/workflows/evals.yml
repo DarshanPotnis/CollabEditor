@@ -1,0 +1,114 @@
+name: Evals
+
+# Real-model evals (docs/evals/README.md). They spend the eval project's free quota and are
+# not deterministic, so they run only when someone starts them from the Actions tab: never on
+# a push, a pull request or a schedule. Only people with write access to this repository can
+# start a workflow_dispatch run here. Pull requests, from forks or not, cannot trigger it, and
+# a fork's copy of this file runs in the fork, where the guard below skips it and the secret
+# does not exist.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model id
+        type: string
+        default: gemini-3.5-flash-lite
+      tasks:
+        description: all, comparison, or task ids separated by commas
+        type: string
+        default: all
+      trials:
+        description: Sessions per task
+        type: string
+        default: '1'
+      resume_run:
+        description: To carry on a run that stopped early, its eval run id (optional)
+        type: string
+        default: ''
+      resume_from:
+        description: ...and the number of the workflow run that holds it (optional)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    if: github.repository == 'DarshanPotnis/CollabEditor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      # Only to download a previous run's artifact when resuming.
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:shared
+
+      - name: Bring back the run being resumed, with its day's request count
+        if: ${{ inputs.resume_from != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-run
+          # The artifact holds apps/evals/runs, apps/evals/.usage.json and docs/evals/results,
+          # relative to the repository root.
+          path: .
+          run-id: ${{ inputs.resume_from }}
+          github-token: ${{ github.token }}
+
+      # The key goes into a file readable only by this user, in a step of its own, so it is
+      # never in the environment of the eval run, whose process environment other processes
+      # of the same user could read. The run reads the file into memory and deletes it.
+      - name: Hand the eval key over in a one-time file
+        env:
+          EVAL_KEY: ${{ secrets.EVAL_GEMINI_API_KEY }}
+        run: |
+          if [ -z "$EVAL_KEY" ]; then
+            echo "The EVAL_GEMINI_API_KEY repository secret is not set." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$EVAL_KEY" > "$RUNNER_TEMP/eval-key"
+
+      - name: Run the evals
+        env:
+          MODEL: ${{ inputs.model }}
+          TASKS: ${{ inputs.tasks }}
+          TRIALS: ${{ inputs.trials }}
+          RESUME: ${{ inputs.resume_run }}
+        run: >-
+          npm run evals --
+          --model "$MODEL" --tasks "$TASKS" --trials "$TRIALS"
+          ${RESUME:+--resume "$RESUME"}
+          --key-file "$RUNNER_TEMP/eval-key"
+
+      - name: Make sure the key file is gone
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/eval-key"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: eval-run
+          path: |
+            apps/evals/runs/
+            apps/evals/.usage.json
+            docs/evals/results/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

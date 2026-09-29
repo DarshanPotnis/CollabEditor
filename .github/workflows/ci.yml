@@ -101,3 +101,24 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  evals:
+    # No model and no key: every eval task's reference session and known-bad
+    # sessions through the real harness and Docker sandbox (the graders' own
+    # test), the recorded AI-2 sessions replayed, and the whole-run key canary.
+    # Real-model evals are the Evals workflow, started by hand.
+    name: evals (graders, replays, key canary)
+    runs-on: ubuntu-latest
+    env:
+      REQUIRE_DOCKER: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run evals:selftest
