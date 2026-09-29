@@ -76,7 +76,7 @@ const EXPECTED: Record<PromptId, { version: number; fingerprint: string }> = {
   'explain-selection': { version: 1, fingerprint: '3dda3dea2c866373' },
   'edit-selection': { version: 1, fingerprint: '12d771944879e728' },
   'explain-error': { version: 2, fingerprint: '4ed6c3d63748c820' },
-  agent: { version: 3, fingerprint: '6b33941995ac0561' },
+  agent: { version: 4, fingerprint: '35556476befb7454' },
 };
 
 function fingerprint(id: PromptId): string {

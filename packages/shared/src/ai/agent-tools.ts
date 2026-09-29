@@ -28,6 +28,8 @@ export const AGENT_TOOL_LIMITS = {
   requestBodyChars: 64_000,
   urlPathChars: 2_048,
   summaryChars: 4_000,
+  /** Each of finish's lists of checks. */
+  finishChecks: 30,
 } as const;
 
 /** HTTP methods http_request may send to the project's own server. */
@@ -164,8 +166,37 @@ export const AGENT_TOOLS = {
   },
   finish: {
     description:
-      'End the session. The summary is shown to the person who asked: what you changed, how you checked it, and anything left to do.',
-    input: z.object({ summary: z.string().trim().min(1).max(AGENT_TOOL_LIMITS.summaryChars) }),
+      'End the session. The summary is shown to the person who asked: what you changed and anything left to do, or that you could not check it. checkedRequests and checkedCommands list the checks you made after your last change, each exactly as you made it and with what it got. The person sees them; a finish that lists a check this session did not make is refused.',
+    input: z.object({
+      summary: z.string().trim().min(1).max(AGENT_TOOL_LIMITS.summaryChars),
+      checkedRequests: z
+        .array(
+          z.object({
+            method: z.enum(AGENT_HTTP_METHODS),
+            path: z
+              .string()
+              .min(1)
+              .max(AGENT_TOOL_LIMITS.urlPathChars)
+              .describe('As you sent it, such as "/users/abc"'),
+            status: z.number().int().min(100).max(599).describe('The status it got'),
+          }),
+        )
+        .max(AGENT_TOOL_LIMITS.finishChecks)
+        .optional(),
+      checkedCommands: z
+        .array(
+          z.object({
+            command: z
+              .string()
+              .min(1)
+              .max(AGENT_TOOL_LIMITS.commandArgChars)
+              .describe('As you ran it, such as "npm test"'),
+            exitCode: z.number().int().describe('The exit code it got'),
+          }),
+        )
+        .max(AGENT_TOOL_LIMITS.finishChecks)
+        .optional(),
+    }),
   },
 } as const satisfies ToolSet;
 

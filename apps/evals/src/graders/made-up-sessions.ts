@@ -23,13 +23,17 @@ export const request = (method: string, path: string, status: number, body?: unk
     `HTTP ${String(status)} OK, 3 ms`,
   );
 
-export const finishedWith = (summary: string): AgentOutcome => ({ kind: 'finished', summary });
+export const finishedWith = (summary: string): AgentOutcome => ({
+  kind: 'finished',
+  summary,
+  checks: null,
+});
 
 /** A session of one step per call, ending as `outcome`. */
 export function traceOf(calls: TraceToolCall[], outcome: AgentOutcome): AgentTrace {
   return {
     format: 'collabcode-agent-trace',
-    version: 3,
+    version: 4,
     sessionId: 's',
     startedAt: 0,
     project: { template: 'express-api', filesFingerprint: 'fp' },

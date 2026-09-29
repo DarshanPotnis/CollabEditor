@@ -152,7 +152,12 @@ describe('agentSessionReducer', () => {
   it('confirms an undo only when asked, and records the result', () => {
     const ended = play(
       ...begin,
-      agent({ type: 'finished', outcome: { kind: 'finished', summary: 'Done.' }, totals, changes }),
+      agent({
+        type: 'finished',
+        outcome: { kind: 'finished', summary: 'Done.', checks: null },
+        totals,
+        changes,
+      }),
     );
     const asking = agentSessionReducer(ended, {
       type: 'undo-asked',
@@ -191,9 +196,9 @@ describe('agentSessionReducer', () => {
 
 describe('outcomeText', () => {
   it('shows the summary, or why the session ended', () => {
-    expect(outcomeText({ kind: 'finished', summary: 'Added DELETE /users/:id.' })).toBe(
-      'Added DELETE /users/:id.',
-    );
+    expect(
+      outcomeText({ kind: 'finished', summary: 'Added DELETE /users/:id.', checks: null }),
+    ).toBe('Added DELETE /users/:id.');
     expect(outcomeText({ kind: 'limit', limit: 'steps', message: 'Used all 15 steps.' })).toBe(
       'Used all 15 steps.',
     );

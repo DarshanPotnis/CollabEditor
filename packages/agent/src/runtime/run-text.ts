@@ -131,6 +131,12 @@ export function describeHttpResult(result: ApiResult, recent: () => string): Too
   }
 }
 
+/** The status in http_request's answer (describeHttpResult), or null when it got none. */
+export function answeredStatus(output: string): number | null {
+  const status = /^HTTP (\d{3}) /.exec(output)?.[1];
+  return status === undefined ? null : Number(status);
+}
+
 /** How a command ended. */
 export type CommandEnd =
   { kind: 'exited'; code: number; seconds: number } | { kind: 'timeout' } | { kind: 'stopped' };
@@ -156,4 +162,12 @@ export function describeCommand(
       return end.code === 0 ? ok(summary) : refuse(summary);
     }
   }
+}
+
+/** The exit code in run_command's answer for this command line (describeCommand), or null when it did not run to one. */
+export function exitCodeOf(output: string, commandLine: string): number | null {
+  const prefix = `${commandLine} exited with code `;
+  if (!output.startsWith(prefix)) return null;
+  const code = /^-?\d+/.exec(output.slice(prefix.length))?.[0];
+  return code === undefined ? null : Number(code);
 }

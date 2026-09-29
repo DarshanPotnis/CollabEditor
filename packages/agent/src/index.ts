@@ -6,6 +6,7 @@ export * from './doc-tools/paths.js';
 export * from './events.js';
 export * from './fake-clock.js';
 export * from './fingerprint.js';
+export * from './finish-checks.js';
 export * from './limits.js';
 export * from './loop.js';
 export * from './model-retry.js';

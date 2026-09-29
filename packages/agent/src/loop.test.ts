@@ -14,6 +14,8 @@ const inputs = { goal: 'Add a DELETE /users/:id route', files: ['routes/users.js
 const finish = (summary = 'Added the route and checked it.') =>
   answerWith([toolCall('finish', { summary })]);
 
+const NO_CHECKS = { made: [], notMade: [] };
+
 type SessionOptions = { tools?: ToolHost; limits?: AgentLimits } & Partial<AgentRunOptions>;
 
 function session(script: readonly ScriptEntry[], options: SessionOptions = {}) {
@@ -51,7 +53,11 @@ describe('a session', () => {
     ]);
     const { outcome, conversation, trace } = await result();
 
-    expect(outcome).toEqual({ kind: 'finished', summary: 'Added the route and checked it.' });
+    expect(outcome).toEqual({
+      kind: 'finished',
+      summary: 'Added the route and checked it.',
+      checks: NO_CHECKS,
+    });
     expect(hostOf(tools).calls).toEqual([
       { name: 'read_file', input: { path: 'routes/users.js' } },
       { name: 'edit_file', input: { path: 'routes/users.js', oldText: 'a', newText: 'b' } },
@@ -317,7 +323,7 @@ describe('malformed model output', () => {
       finish('Done.'),
     ]);
     const { outcome, conversation } = await result();
-    expect(outcome).toEqual({ kind: 'finished', summary: 'Done.' });
+    expect(outcome).toEqual({ kind: 'finished', summary: 'Done.', checks: NO_CHECKS });
     expect(conversation[1]).toMatchObject({ results: [{ isError: true, toolName: 'finish' }] });
   });
 
@@ -346,8 +352,99 @@ describe('malformed model output', () => {
       ]),
     ]);
     const { outcome } = await result();
-    expect(outcome).toEqual({ kind: 'finished', summary: 'Edited a.js.' });
+    expect(outcome).toEqual({ kind: 'finished', summary: 'Edited a.js.', checks: NO_CHECKS });
     expect(hostOf(tools).calls.map((call) => call.name)).toEqual(['edit_file']);
+  });
+});
+
+describe("finish's checks", () => {
+  /** A host whose server answers DELETE /users/1 with 204 and anything else with 400. */
+  const serving = () =>
+    recordingHost((call) => {
+      if (call.name !== 'http_request') return { ok: true, output: `${call.name} done` };
+      const deleted = call.input.path === '/users/1';
+      return {
+        ok: true,
+        output: deleted ? 'HTTP 204 No Content, 3 ms\n\n' : 'HTTP 400 Bad Request, 3 ms\n\n{}',
+      };
+    });
+  const edit = toolCall('edit_file', { path: 'routes/users.js', oldText: 'a', newText: 'b' });
+  const send = (path: string) => toolCall('http_request', { method: 'DELETE', path });
+  const listing = (...paths: Array<[string, number]>) =>
+    answerWith([
+      toolCall('finish', {
+        summary: 'Added DELETE /users/:id.',
+        checkedRequests: paths.map(([path, status]) => ({ method: 'DELETE', path, status })),
+      }),
+    ]);
+  const deleted = { kind: 'request', method: 'DELETE', path: '/users/1', status: 204 } as const;
+  const invalid = { kind: 'request', method: 'DELETE', path: '/users/abc', status: 400 } as const;
+
+  it('accepts the checks the session made after its last change, and keeps them in the outcome', async () => {
+    const { result } = session([answerWith([edit, send('/users/1')]), listing(['/users/1', 204])], {
+      tools: serving(),
+    });
+    const { outcome } = await result();
+    expect(outcome).toEqual({
+      kind: 'finished',
+      summary: 'Added DELETE /users/:id.',
+      checks: { made: [deleted], notMade: [] },
+    });
+  });
+
+  it('refuses a finish listing a check it did not make, once, then keeps that one apart', async () => {
+    const { result, model } = session(
+      [
+        answerWith([edit, send('/users/1')]),
+        listing(['/users/1', 204], ['/users/abc', 400]),
+        listing(['/users/1', 204], ['/users/abc', 400]),
+      ],
+      { tools: serving() },
+    );
+    const { outcome, conversation, trace } = await result();
+    expect(conversation[3]).toEqual({
+      role: 'tool',
+      results: [
+        expect.objectContaining({
+          toolName: 'finish',
+          isError: true,
+          output: expect.stringContaining('- DELETE /users/abc → 400: not sent') as unknown,
+        }),
+      ],
+    });
+    expect(outcome).toEqual({
+      kind: 'finished',
+      summary: 'Added DELETE /users/:id.',
+      checks: { made: [deleted], notMade: [{ check: invalid, reason: 'not sent' }] },
+    });
+    expect(model.requests).toHaveLength(3);
+    expect(trace.outcome).toEqual(outcome);
+  });
+
+  it('lets the model make the check it was refused for, and then counts it', async () => {
+    const { result } = session(
+      [
+        answerWith([edit, send('/users/1')]),
+        listing(['/users/1', 204], ['/users/abc', 400]),
+        answerWith([send('/users/abc')]),
+        listing(['/users/1', 204], ['/users/abc', 400]),
+      ],
+      { tools: serving() },
+    );
+    const { outcome } = await result();
+    expect(outcome).toMatchObject({ checks: { made: [deleted, invalid], notMade: [] } });
+  });
+
+  it('never refuses on the last step, where a refusal would lose the summary', async () => {
+    const { result } = session(
+      [answerWith([edit, send('/users/1')]), listing(['/users/abc', 400])],
+      { tools: serving(), limits: { ...AGENT_LIMITS.shared, maxSteps: 2 } },
+    );
+    const { outcome } = await result();
+    expect(outcome).toMatchObject({
+      kind: 'finished',
+      checks: { made: [], notMade: [{ check: invalid, reason: 'not sent' }] },
+    });
   });
 });
 

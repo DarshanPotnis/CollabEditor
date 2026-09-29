@@ -22,7 +22,7 @@ export const REPEATED_ERROR_REMINDER =
 
 export function stepsLeftReminder(stepsLeft: number): string {
   if (stepsLeft <= 1) {
-    return 'This is the last step of the session. Call finish now with your summary: what you changed, how you checked it or that you could not, and anything left to do.';
+    return 'This is the last step of the session. Call finish now, with your summary (what you changed and anything left to do, or that you could not check it) and the checks you made.';
   }
   return `You have ${String(stepsLeft)} steps left in this session, this one included. Wrap up: finish the change if it is not done, and call finish with your summary before the steps run out. A session that runs out of steps ends without your summary.`;
 }

@@ -72,7 +72,7 @@ describe('the "model busy mid-session" trace', () => {
   const trace = fixture('model-busy-mid-session.json');
 
   it('is read, upgraded from format 1 with what it did not record left null', () => {
-    expect(trace.version).toBe(3);
+    expect(trace.version).toBe(4);
     expect(trace.steps.every((step) => step.reminder === null)).toBe(true);
     expect(trace.steps).toHaveLength(6);
     expect(trace.steps.flatMap((step) => step.waits).every((wait) => wait.attemptMs === null)).toBe(
@@ -142,7 +142,7 @@ describe('the "runtime unavailable; agent loops" trace', () => {
   it('records the case: no sandbox, the same refusal six times, and no finish', () => {
     expect(trace).toMatchObject({
       // Recorded in format 2, before steps kept their reminders.
-      version: 3,
+      version: 4,
       tier: 'shared',
       project: { template: 'express-api' },
       prompt: { id: 'agent', version: 2 },
@@ -213,11 +213,12 @@ describe('the "successful demo" trace', () => {
 
   it('records a session that kept to the goal, checked it, and finished', () => {
     expect(trace).toMatchObject({
-      version: 3,
+      // Recorded in format 3, before a finish listed its checks.
+      version: 4,
       tier: 'shared',
       project: { template: 'express-api' },
       prompt: { id: 'agent', version: 3 },
-      outcome: { kind: 'finished' },
+      outcome: { kind: 'finished', checks: null },
     });
     expect(sessionChanges(trace)).toEqual({
       created: [],
@@ -260,7 +261,8 @@ describe('the "successful demo" trace', () => {
         .filter((call) => call.toolName !== 'finish')
         .map((call) => ({ name: call.toolName, input: call.input })),
     );
-    expect(result.outcome).toEqual(trace.outcome);
+    // Its finish listed no checks; today's loop records that as an empty list.
+    expect(result.outcome).toEqual({ ...trace.outcome, checks: { made: [], notMade: [] } });
     expect(result.trace.steps.map((step) => step.reminder)).toEqual(
       trace.steps.map((step) => step.reminder),
     );
@@ -271,7 +273,7 @@ describe('the "successful demo" trace', () => {
 
   it('replays as a demo would, never waiting', async () => {
     const { result, elapsedMs } = await replay(trace, false);
-    expect(result.outcome).toEqual(trace.outcome);
+    expect(result.outcome).toEqual({ ...trace.outcome, checks: { made: [], notMade: [] } });
     expect(result.trace.steps.flatMap((step) => step.waits)).toEqual([]);
     expect(elapsedMs).toBe(0);
   });

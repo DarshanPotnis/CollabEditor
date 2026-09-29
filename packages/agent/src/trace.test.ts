@@ -6,7 +6,7 @@ import { runAgent } from './loop.js';
 import { answerWith, createScriptedModel, scriptFromTrace, toolCall } from './scripted-model.js';
 import { createStopSource } from './stop-source.js';
 import { drive, recordingHost } from './test/support.js';
-import { TRACE_FORMAT, parseTrace } from './trace.js';
+import { TRACE_FORMAT, TRACE_VERSION, parseTrace } from './trace.js';
 import { ModelStepError, type ModelClient } from './types.js';
 
 const KEY_CANARY = 'sk-trace-canary-5d1e';
@@ -50,14 +50,14 @@ describe('the trace', () => {
 
     expect(trace).toMatchObject({
       format: TRACE_FORMAT,
-      version: 3,
+      version: TRACE_VERSION,
       sessionId: 'session-7',
       startedAt: 1_700_000_000_000,
       project: { template: 'express-api', filesFingerprint: 'fp-123' },
       inputs: { goal: 'Fix the crash', files: ['index.js'], moreFiles: 2 },
       prompt: { id: 'agent', version: PROMPTS.agent.version },
       tier: 'ownKey',
-      outcome: { kind: 'finished', summary: 'Nothing to fix.' },
+      outcome: { kind: 'finished', summary: 'Nothing to fix.', checks: { made: [], notMade: [] } },
       totals: { steps: 3 },
     });
     expect(trace.steps).toHaveLength(3);
@@ -86,7 +86,7 @@ describe('the trace', () => {
 
   it('refuses something that is not a trace of this version', async () => {
     const { result } = await recordedSession(createScriptedModel(script));
-    expect(parseTrace({ ...result.trace, version: 4 })).toBeNull();
+    expect(parseTrace({ ...result.trace, version: TRACE_VERSION + 1 })).toBeNull();
     expect(parseTrace({ ...result.trace, format: 'other' })).toBeNull();
     expect(parseTrace('not a trace')).toBeNull();
   });
@@ -96,6 +96,7 @@ describe('the trace', () => {
     const v1 = {
       ...result.trace,
       version: 1,
+      outcome: { kind: 'finished', summary: 'Nothing to fix.' },
       steps: result.trace.steps.map(({ reminder: _unrecorded, ...step }) => ({
         ...step,
         waits: step.waits.map(({ reason, waitMs }) => ({ reason, waitMs })),
@@ -110,7 +111,12 @@ describe('the trace', () => {
       })),
     };
     const upgraded = parseTrace(JSON.parse(JSON.stringify(v1)));
-    expect(upgraded?.version).toBe(3);
+    expect(upgraded?.version).toBe(TRACE_VERSION);
+    expect(upgraded?.outcome).toEqual({
+      kind: 'finished',
+      summary: 'Nothing to fix.',
+      checks: null,
+    });
     expect(upgraded?.steps[0]?.waits).toEqual([{ reason: 'busy', waitMs: 5_000, attemptMs: null }]);
     expect(upgraded?.steps[0]?.model).toMatchObject({ durationMs: 137_000, rawFinishReason: null });
     expect(upgraded?.steps.map((step) => step.reminder)).toEqual([null, null, null]);
@@ -122,12 +128,25 @@ describe('the trace', () => {
       ...result.trace,
       version: 2,
       steps: result.trace.steps.map(({ reminder: _unrecorded, ...step }) => step),
+      outcome: { kind: 'finished', summary: 'Nothing to fix.' },
     };
     const upgraded = parseTrace(JSON.parse(JSON.stringify(v2)));
     expect(upgraded).toEqual({
       ...result.trace,
       steps: result.trace.steps.map((step) => ({ ...step, reminder: null })),
+      outcome: { kind: 'finished', summary: 'Nothing to fix.', checks: null },
     });
+  });
+
+  it('reads a version 3 trace, whose finish listed no checks', async () => {
+    const { result } = await recordedSession(createScriptedModel(script));
+    const v3 = { ...result.trace, version: 3, outcome: { kind: 'finished', summary: 'Done.' } };
+    expect(parseTrace(JSON.parse(JSON.stringify(v3)))).toEqual({
+      ...result.trace,
+      outcome: { kind: 'finished', summary: 'Done.', checks: null },
+    });
+    const stopped = { ...result.trace, version: 3, outcome: { kind: 'stopped' } };
+    expect(parseTrace(stopped)?.outcome).toEqual({ kind: 'stopped' });
   });
 
   it('records what each step was reminded of, and a page that could not run code', async () => {

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { ApiResult } from './request-codec.js';
 import {
   RUN_MESSAGES,
+  answeredStatus,
   describeCommand,
   describeHttpResult,
+  exitCodeOf,
   describeRun,
   lastLines,
   sandboxUnavailable,
@@ -95,6 +97,17 @@ describe('run-text: the words every host gives the model', () => {
       ok: false,
       output: RUN_MESSAGES.stopped,
     });
+  });
+
+  it('reads back the status and exit code it wrote, for checking what finish lists', () => {
+    expect(answeredStatus(describeHttpResult(response(404, '{}'), none).output)).toBe(404);
+    expect(answeredStatus('The request failed: ECONNREFUSED')).toBeNull();
+    const failed = describeCommand('npm', ['test'], { kind: 'exited', code: 1, seconds: 2 }, '');
+    expect(exitCodeOf(failed.output, 'npm test')).toBe(1);
+    expect(exitCodeOf(failed.output, 'npm')).toBeNull();
+    expect(
+      exitCodeOf(describeCommand('npm', [], { kind: 'timeout' }, '').output, 'npm'),
+    ).toBeNull();
   });
 
   it('says the sandbox is unavailable the same way every time, and what to do instead', () => {

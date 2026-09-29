@@ -127,7 +127,11 @@ describe('the browser model client', () => {
     const server = fakeServer([stream(finishEvent(read)), stream(finishEvent(done))]);
     const { outcome } = await session(server.fetch, null);
 
-    expect(outcome).toEqual({ kind: 'finished', summary: 'Done.' });
+    expect(outcome).toEqual({
+      kind: 'finished',
+      summary: 'Done.',
+      checks: { made: [], notMade: [] },
+    });
     const [first, second] = server.sent.map(
       (entry) => JSON.parse(entry.body) as Record<string, unknown>,
     );

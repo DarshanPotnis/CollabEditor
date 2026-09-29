@@ -6,6 +6,10 @@
  *     2. carry out each tool call it made, through the ToolHost
  *     3. add the model's message and the results to the conversation
  *
+ * finish is the loop's own: the checks it lists are held against the calls
+ * the session made (finish-checks.ts), and a finish listing one it did not
+ * make is refused once, unless it is the last step.
+ *
  * It knows nothing about browsers, sockets or processes: the ModelClient and
  * the ToolHost do, so the same loop runs in the app and in the evals. It never
  * throws for anything the model does; every way a session ends is an outcome,
@@ -21,6 +25,7 @@ import {
   type ToolResult,
 } from '@collabcode/shared';
 import { fitConversation } from './conversation-fit.js';
+import { listedChecks, notMadeRefusal, verifyChecks } from './finish-checks.js';
 import { sessionChanges } from './session-changes.js';
 import { dispatchToolCall } from './dispatch.js';
 import type { AgentEvent } from './events.js';
@@ -122,6 +127,8 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
 
   let nudgedLastStep = false;
   let invalidSteps = 0;
+  /** A finish listing checks it did not make has been refused once already. */
+  let refusedChecks = false;
 
   for (let step = 1; step <= limits.maxSteps; step += 1) {
     if (session.signal.aborted) return end(interrupted());
@@ -226,7 +233,12 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
       let result: ToolResult;
       if (call.toolName === 'finish') {
         const finish = AGENT_TOOLS.finish.input.safeParse(call.input);
-        if (finish.success) {
+        const checks = finish.success
+          ? verifyChecks(listedChecks(finish.data), trace.toolCalls())
+          : null;
+        // Refused once for checks it did not make, never on the last step: that would lose the summary.
+        const refuse = checks !== null && checks.notMade.length > 0 && !refusedChecks;
+        if (finish.success && checks !== null && !(refuse && step < limits.maxSteps)) {
           trace.recordToolCall({
             toolCallId: call.toolCallId,
             toolName: call.toolName,
@@ -236,13 +248,17 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
             startedAtMs: toolStarted - startedAt,
             durationMs: 0,
           });
-          return end({ kind: 'finished', summary: finish.data.summary });
+          return end({ kind: 'finished', summary: finish.data.summary, checks });
         }
+        if (checks !== null) refusedChecks = true;
         result = {
           toolCallId: call.toolCallId,
           toolName: call.toolName,
           isError: true,
-          output: 'finish needs a summary for the person: what you changed and how you checked it.',
+          output:
+            checks === null
+              ? 'finish needs a summary for the person: what you changed, and anything left to do.'
+              : notMadeRefusal(checks.notMade),
         };
       } else if (index >= limits.maxToolCallsPerStep) {
         result = {

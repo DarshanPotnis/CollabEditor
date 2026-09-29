@@ -75,4 +75,21 @@ describe('tool inputs', () => {
     });
     expect(input.safeParse({ summary: '   ' }).success).toBe(false);
   });
+
+  it('finish may list the requests and commands it checked, each with what it got', () => {
+    const input = AGENT_TOOLS.finish.input;
+    const checked = {
+      summary: 'Added it.',
+      checkedRequests: [{ method: 'DELETE', path: '/users/abc', status: 400 }],
+      checkedCommands: [{ command: 'npm test', exitCode: 0 }],
+    };
+    expect(input.parse(checked)).toEqual(checked);
+    expect(
+      input.safeParse({ ...checked, checkedRequests: [{ method: 'GET', path: '/', status: 42 }] })
+        .success,
+    ).toBe(false);
+    expect(
+      input.safeParse({ summary: 's', checkedRequests: [{ method: 'GET', path: '/' }] }).success,
+    ).toBe(false);
+  });
 });

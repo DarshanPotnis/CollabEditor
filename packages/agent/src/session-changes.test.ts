@@ -21,7 +21,7 @@ function call(toolName: string, input: object, isError = false): TraceToolCall {
 function traceOf(calls: TraceToolCall[]): AgentTrace {
   return {
     format: 'collabcode-agent-trace',
-    version: 3,
+    version: 4,
     sessionId: 's',
     startedAt: 0,
     project: { template: null, filesFingerprint: 'fp' },

@@ -14,6 +14,8 @@
  * with what they did not record left null, so recorded sessions stay usable as
  * fixtures:
  *
+ * - version 4 records, for a finished session, the checks its finish listed:
+ *   those the session made, and those it did not (finish-checks.ts);
  * - version 3 records the reminder each step carried (agent-reminders.ts) and
  *   whether the page could run code;
  * - version 2 times each model attempt on its own and keeps the provider's raw
@@ -28,15 +30,15 @@ import {
   type AgentTier,
 } from '@collabcode/shared';
 import { z } from 'zod';
+import { verifiedChecksSchema } from './finish-checks.js';
 import type { AgentLimits } from './limits.js';
 import type { RetryWait } from './model-retry.js';
 import type { AgentInputs, ModelStep } from './types.js';
 
 export const TRACE_FORMAT = 'collabcode-agent-trace';
-export const TRACE_VERSION = 3;
+export const TRACE_VERSION = 4;
 
-export const agentOutcomeSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('finished'), summary: z.string() }),
+const endedOtherwise = [
   z.object({ kind: z.literal('stopped') }),
   z.object({
     kind: z.literal('limit'),
@@ -48,8 +50,24 @@ export const agentOutcomeSchema = z.discriminatedUnion('kind', [
     reason: z.enum(['model', 'invalid-calls', 'no-tool-call', 'crashed']),
     message: z.string(),
   }),
+] as const;
+
+export const agentOutcomeSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('finished'),
+    summary: z.string(),
+    /** Null in a trace from before version 4. */
+    checks: verifiedChecksSchema.nullable(),
+  }),
+  ...endedOtherwise,
 ]);
 export type AgentOutcome = z.infer<typeof agentOutcomeSchema>;
+
+/** Before version 4, a finish listed no checks. */
+const agentOutcomeV3Schema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('finished'), summary: z.string() }),
+  ...endedOtherwise,
+]);
 
 const tokenCount = z.number().int().nonnegative().nullable();
 
@@ -134,8 +152,15 @@ export const agentTraceSchema = z.object({
 });
 export type AgentTrace = z.infer<typeof agentTraceSchema>;
 
+/** Version 3: no checks in a finished outcome. */
+const traceV3Schema = agentTraceSchema.extend({
+  version: z.literal(3),
+  outcome: agentOutcomeV3Schema.nullable(),
+});
+type TraceV3 = z.infer<typeof traceV3Schema>;
+
 /** Version 2: no reminders. */
-const traceV2Schema = agentTraceSchema.extend({
+const traceV2Schema = traceV3Schema.extend({
   version: z.literal(2),
   steps: z.array(traceStepSchema.omit({ reminder: true })),
 });
@@ -164,11 +189,20 @@ function fromV1(trace: z.infer<typeof traceV1Schema>): TraceV2 {
   };
 }
 
-function fromV2(trace: TraceV2): AgentTrace {
+function fromV2(trace: TraceV2): TraceV3 {
+  return {
+    ...trace,
+    version: 3,
+    steps: trace.steps.map((step) => ({ ...step, reminder: null })),
+  };
+}
+
+function fromV3(trace: TraceV3): AgentTrace {
   return {
     ...trace,
     version: TRACE_VERSION,
-    steps: trace.steps.map((step) => ({ ...step, reminder: null })),
+    outcome:
+      trace.outcome?.kind === 'finished' ? { ...trace.outcome, checks: null } : trace.outcome,
   };
 }
 
@@ -176,10 +210,12 @@ function fromV2(trace: TraceV2): AgentTrace {
 export function parseTrace(raw: unknown): AgentTrace | null {
   const current = agentTraceSchema.safeParse(raw);
   if (current.success) return current.data;
+  const v3 = traceV3Schema.safeParse(raw);
+  if (v3.success) return fromV3(v3.data);
   const v2 = traceV2Schema.safeParse(raw);
-  if (v2.success) return fromV2(v2.data);
+  if (v2.success) return fromV3(fromV2(v2.data));
   const v1 = traceV1Schema.safeParse(raw);
-  return v1.success ? fromV2(fromV1(v1.data)) : null;
+  return v1.success ? fromV3(fromV2(fromV1(v1.data))) : null;
 }
 
 export type TraceStart = {
@@ -197,6 +233,8 @@ export type TraceRecorder = {
   recordModel: (step: ModelStep, durationMs: number) => void;
   recordNudge: () => void;
   recordToolCall: (call: TraceToolCall) => void;
+  /** Every tool call so far, in order. */
+  toolCalls: () => TraceToolCall[];
   finish: (outcome: AgentOutcome, totals: AgentTotals) => void;
   /** A copy, safe to serialise and keep. */
   snapshot: () => AgentTrace;
@@ -259,6 +297,9 @@ export function createTraceRecorder(start: TraceStart): TraceRecorder {
     },
     recordToolCall(call) {
       current()?.toolCalls.push(call);
+    },
+    toolCalls() {
+      return trace.steps.flatMap((step) => step.toolCalls);
     },
     finish(outcome, totals) {
       trace.outcome = outcome;

@@ -4,7 +4,7 @@
  * Download trace. Everything the model wrote is shown as text (AiText), never
  * as HTML.
  */
-import type { SessionChanges } from '@collabcode/agent';
+import type { SessionChanges, VerifiedChecks } from '@collabcode/agent';
 import { AGENT_STEP_LIMITS } from '@collabcode/shared';
 import { Bot, Check, Eye, LoaderCircle, X } from 'lucide-react';
 import { useState } from 'react';
@@ -13,6 +13,7 @@ import { AiText } from '../ai/AiText.js';
 import { PrivacyNotice } from '../ai/PrivacyNotice.js';
 import { loadLiveTyping, saveLiveTyping } from './agent-preferences.js';
 import { changesText } from './changes-text.js';
+import { checksLines } from './checks-text.js';
 import {
   outcomeText,
   runningStatus,
@@ -204,6 +205,35 @@ function ChangesSoFar({ changes }: { changes: SessionChanges }): React.ReactElem
   );
 }
 
+/** The checks a finish listed: those it made, confirmed from what it ran, and any it did not make. */
+function CheckList({ checks }: { checks: VerifiedChecks }): React.ReactElement {
+  const { made, notMade } = checksLines(checks);
+  if (made.length + notMade.length === 0) {
+    return <p className="text-xs text-zinc-500">It listed no checks.</p>;
+  }
+  return (
+    <div className="space-y-1 text-xs">
+      {made.length > 0 && (
+        <ul aria-label="Checks it made" className="space-y-0.5 text-zinc-300">
+          {made.map((line) => (
+            <li key={line}>✓ {line}</li>
+          ))}
+        </ul>
+      )}
+      {notMade.length > 0 && (
+        <div className="text-amber-200">
+          <p>Listed, but not made:</p>
+          <ul aria-label="Checks it listed but did not make" className="list-disc pl-4">
+            {notMade.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EndedView({
   state,
   controls,
@@ -228,6 +258,9 @@ function EndedView({
           <p>{outcomeText(outcome)}</p>
         )}
       </div>
+      {outcome.kind === 'finished' && outcome.checks !== null && (
+        <CheckList checks={outcome.checks} />
+      )}
       <p className="text-xs text-zinc-500">
         {totals.steps} {totals.steps === 1 ? 'step' : 'steps'} · {tokens} tokens ·{' '}
         {duration(totals.durationMs)}
