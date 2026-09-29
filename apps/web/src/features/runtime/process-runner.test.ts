@@ -252,6 +252,21 @@ describe('process runner', () => {
       expect(runner.state().phase).toBe('starting');
     });
 
+    it('says the program crashed when the crash line comes after the grace period', async () => {
+      const { container, runner } = setup();
+      await runner.run();
+      container.emitPort(3000, 'open');
+      const dev = container.last('npm run dev');
+
+      // Under load, node --watch can report the crash after the server has been gone 3 s.
+      container.emitPort(3000, 'close');
+      await settle(RESTART_GRACE_MS);
+      expect(runner.state()).toMatchObject({ phase: 'crashed', reason: 'stopped-listening' });
+      dev.print(`${WATCH_CRASH_LINE}\r\n`);
+      await settle(0);
+      expect(runner.state()).toMatchObject({ phase: 'crashed', reason: 'watch-failed' });
+    });
+
     it('ignores a crash line from a dev process it has replaced', async () => {
       const { container, runner } = setup();
       await runner.run();

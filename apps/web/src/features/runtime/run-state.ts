@@ -19,6 +19,8 @@
  * the dev script (`node --watch`) says the program crashed and it is waiting
  * for changes (watch-signals.ts). That last one is the only sign of a program
  * that crashes before it ever listens, since the dev process keeps running.
+ * It can also come after the grace period, when a restarted program is slow
+ * to crash; it then names the crash that "stopped listening" only guessed.
  * From there the next synced file restarts the run (shouldAutoRestart).
  * "Failed" is for problems a file change cannot fix by itself: booting, a
  * missing script, a failed install.
@@ -93,7 +95,10 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         ? { phase: 'crashed', script: state.script, reason: 'stopped-listening' }
         : state;
     case 'watch-failed':
-      return state.phase === 'starting' || state.phase === 'serving' || state.phase === 'restarting'
+      return state.phase === 'starting' ||
+        state.phase === 'serving' ||
+        state.phase === 'restarting' ||
+        (state.phase === 'crashed' && state.reason === 'stopped-listening')
         ? { phase: 'crashed', script: state.script, reason: 'watch-failed' }
         : state;
     case 'dev-exited':

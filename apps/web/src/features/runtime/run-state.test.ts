@@ -79,6 +79,19 @@ describe('runReducer', () => {
       expect(runReducer(restarting, { type: 'watch-failed' })).toEqual(crashed);
     });
 
+    it('names the crash when the report comes after the grace period ran out', () => {
+      const stopped = after(
+        [{ type: 'port-closed', port: 3000 }, { type: 'restart-grace-expired' }],
+        serving,
+      );
+      expect(runReducer(stopped, { type: 'watch-failed' })).toEqual(crashed);
+    });
+
+    it('keeps the exit code of a dev process that exited', () => {
+      const exited = runReducer(serving, { type: 'dev-exited', exitCode: 1 });
+      expect(runReducer(exited, { type: 'watch-failed' })).toBe(exited);
+    });
+
     it('changes nothing when no dev script is running', () => {
       for (const state of [IDLE, { phase: 'stopped' } as const, crashed]) {
         expect(runReducer(state, { type: 'watch-failed' })).toBe(state);

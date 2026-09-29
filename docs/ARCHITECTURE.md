@@ -222,7 +222,9 @@ their cost, licence, browser support and sandbox; ADR 005 covers the file sync.
   is a restart; one that stays closed for 3 s, a dev process that exits, or the watcher printing
   that the program crashed (`watch-signals.ts`) is a crash. That last one is the only sign of a
   program that crashes before it ever listens: under `node --watch` the dev process keeps running
-  and no port ever closes. **A crashed
+  and no port ever closes. When the watcher's report comes after the 3 s have run out (a restarted
+  program slow to crash, a busy machine), it turns "the server stopped" into "the program
+  crashed". **A crashed
   run restarts itself when the bridge next writes a file**, which covers what `node --watch` cannot:
   after a crash it watches only the files it had loaded, so a restored file would otherwise go
   unnoticed. Every run has a generation; output and exits from a replaced process are dropped, so
