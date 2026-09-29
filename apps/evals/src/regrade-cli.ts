@@ -57,9 +57,11 @@ async function main(): Promise<void> {
   });
   await writeFile(resultsPath, `${JSON.stringify(graded, null, 2)}\n`);
   await writeFile(join(RESULTS_DIR, `${runId}.md`), reportMarkdown(graded));
-  const changed = graded.run.regraded?.changes.length ?? 0;
+  // A kept note is the earlier grading's: this one changed no verdict.
+  const kept = graded.run.regraded === recorded.run.regraded;
+  const changed = kept ? 0 : (graded.run.regraded?.changes.length ?? 0);
   process.stdout.write(
-    `Graded ${runId} again with ${graded.run.graders} (it had ${recorded.run.graders}): ${String(changed)} verdict${changed === 1 ? '' : 's'} changed. Rewrote docs/evals/results/${runId}.json and .md.\n`,
+    `Graded ${runId} again with ${graded.run.graders} (it had ${recorded.run.graders}): ${String(changed)} verdict${changed === 1 ? '' : 's'} changed, and its measures were worked out again. Rewrote docs/evals/results/${runId}.json and .md.\n`,
   );
 }
 
