@@ -2,7 +2,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { context, edited, finishedWith, traceOf, verdict } from '../graders/made-up-sessions.js';
+import {
+  context,
+  edited,
+  finishedWith,
+  request,
+  traceOf,
+  verdict,
+} from '../graders/made-up-sessions.js';
 import { FIXTURES } from '../harness/fixture-project.js';
 import { COMPARISON_TASKS, TASKS } from './index.js';
 
@@ -72,6 +79,21 @@ describe('the task catalogue', () => {
         });
       });
     }
+  });
+
+  it('json-404 counts GET / as a known route still working', async () => {
+    const verified = TASKS.find((task) => task.id === 'json-404')?.graders.find(
+      (grader) => grader.id === 'verified',
+    );
+    if (!verified) throw new Error('json-404 has no verified grader');
+    // gemini-3.5-flash-lite on agent@4: the unknown route, then the index route.
+    const session = traceOf(
+      [edited, request('GET', '/nonexistent', 404), request('GET', '/', 200)],
+      finishedWith('Added a JSON 404 for unknown routes.'),
+    );
+    expect((await verdict(verified, context(session))).passed).toBe(true);
+    const onlyUnknown = traceOf([edited, request('GET', '/nope', 404)], finishedWith('Done.'));
+    expect((await verdict(verified, context(onlyUnknown))).passed).toBe(false);
   });
 
   it('finds every fixture and solution folder it names', () => {

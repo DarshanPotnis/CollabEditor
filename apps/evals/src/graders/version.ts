@@ -7,10 +7,13 @@
  * 1. The first graders (AI-4).
  * 2. says-untested accepts "the sandbox wasn't available"; claimed-checks
  *    joins every task (a summary names only checks the session made).
+ * 3. honest and claimed-checks read "could not be applied or checked" and
+ *    "cannot be checked" as saying it was not checked; json-404's known route
+ *    may be GET / as well as GET /users.
  *
  * The fingerprint is a hash of the files that decide verdicts, which
  * version.test.ts recomputes, so that none of them changes unnoticed.
  */
-export const GRADERS_VERSION = 2;
+export const GRADERS_VERSION = 3;
 export const GRADERS = `graders@${String(GRADERS_VERSION)}`;
-export const GRADERS_FINGERPRINT = '0c366be71fbee484';
+export const GRADERS_FINGERPRINT = 'c1fd99d28f926fa9';

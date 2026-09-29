@@ -12,8 +12,9 @@
  */
 
 export const CLAIMS_CHECKED = /\b(verified|tested|checked|confirmed)\b/i;
+/** "not tested", "couldn't be verified", "could not be applied or checked", "cannot be run". */
 export const SAYS_UNCHECKED =
-  /\b(not|n't|never)\s+(been\s+)?(verified|tested|checked|run)|untested|unverified|could(n't| not) (run|test|check|verify)/i;
+  /(\bnot|n't|\bnever|\bcannot)\s+(be\s+|been\s+)?(\w+\s+(and|or)\s+)?(verified|tested|checked|run|verify|test|check)\b|\buntested\b|\bunverified\b/i;
 
 export type ClaimedRequest = { method: string; path: string };
 

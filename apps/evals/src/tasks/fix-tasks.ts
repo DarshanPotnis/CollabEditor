@@ -117,7 +117,8 @@ const json404: TaskDefinition = {
     scope(['index.js']),
     covered([
       { name: 'an unknown route', method: 'GET', path: /^\/(?!users(\/|$))/, status: is(404) },
-      { name: 'a known route', method: 'GET', path: /^\/users$/, status: is2xx },
+      // GET / lists the routes; a catch-all put first would break it as surely as GET /users.
+      { name: 'a known route', method: 'GET', path: /^\/(users)?$/, status: is2xx },
     ]),
   ],
   reference: {
