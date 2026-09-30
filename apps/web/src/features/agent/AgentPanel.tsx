@@ -422,7 +422,7 @@ export function AgentPanel({
       </h2>
       {state.phase === 'idle' &&
         (demo ? (
-          <DemoIntro onPlay={controls.startReplay} />
+          <DemoIntro onPlay={controls.startReplay} ready={controls.replayReady} />
         ) : (
           <>
             <GoalForm usingOwnKey={usingOwnKey} onStart={controls.start} />

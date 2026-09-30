@@ -12,6 +12,7 @@ import { sendApiError } from './errors.js';
 import { requestLogging } from './request-logging.js';
 import { createAiRouter, type AiRouterDeps } from './routes/ai.js';
 import { createHealthRouter } from './routes/health.js';
+import { createProxyHeadersRouter } from './routes/proxy-headers.js';
 import { createProjectsRouter } from './routes/projects.js';
 
 /** Projects one IP may create per minute in production. */
@@ -85,6 +86,7 @@ export function createApp({
   app.use(express.json({ limit: '16kb' }));
 
   app.use(createHealthRouter(startedAt));
+  app.use(createProxyHeadersRouter());
   app.use(
     '/api',
     createProjectsRouter({

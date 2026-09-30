@@ -13,8 +13,11 @@ import { replayBanner } from './replay-labels.js';
 
 export function DemoIntro({
   onPlay,
+  ready,
 }: {
   onPlay: (recording: AgentTrace) => void;
+  /** False until the project has loaded; a replay started sooner would be refused. */
+  ready: boolean;
 }): React.ReactElement {
   const [recording, setRecording] = useState<AgentTrace | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +76,11 @@ export function DemoIntro({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
+          disabled={!ready}
           onClick={() => onPlay(recording)}
-          className="rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-500"
+          className="rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-500 disabled:cursor-wait disabled:opacity-60 disabled:hover:bg-violet-600"
         >
-          Play the replay
+          {ready ? 'Play the replay' : 'Connecting…'}
         </button>
         <button
           type="button"

@@ -26,11 +26,19 @@ export type ProjectSession = {
 export type UseProjectResult = {
   session: ProjectSession | null;
   connection: ConnectionState;
+  /**
+   * Whether the document has had its first sync from the server. The session
+   * exists before that, with an empty document, so anything that reads the
+   * project's content once (such as a replay's check) must wait for this. It
+   * stays true through reconnects: the document keeps what it had.
+   */
+  hasSynced: boolean;
 };
 
 export function useProject(projectId: string): UseProjectResult {
   const [session, setSession] = useState<ProjectSession | null>(null);
   const [connection, setConnection] = useState<ConnectionState>(INITIAL_CONNECTION_STATE);
+  const [hasSynced, setHasSynced] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -44,7 +52,9 @@ export function useProject(projectId: string): UseProjectResult {
       name: projectId,
       document: doc,
       onSynced: ({ state }) => {
-        if (state) dispatch({ type: 'synced' });
+        if (!state) return;
+        dispatch({ type: 'synced' });
+        if (live) setHasSynced(true);
       },
       onDisconnect: ({ event }) => dispatch({ type: 'disconnected', code: event.code }),
       onAuthenticationFailed: ({ reason }) => dispatch({ type: 'refused', reason }),
@@ -61,6 +71,7 @@ export function useProject(projectId: string): UseProjectResult {
 
     setSession({ doc, provider });
     setConnection(INITIAL_CONNECTION_STATE);
+    setHasSynced(false);
 
     return () => {
       live = false;
@@ -73,5 +84,5 @@ export function useProject(projectId: string): UseProjectResult {
     };
   }, [projectId]);
 
-  return { session, connection };
+  return { session, connection, hasSynced };
 }
