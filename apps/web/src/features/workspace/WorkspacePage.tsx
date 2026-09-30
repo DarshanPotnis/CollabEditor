@@ -56,7 +56,7 @@ function Workspace({
   project: ProjectSummary;
   demo: boolean;
 }): React.ReactElement {
-  const { session, connection } = useProject(project.id);
+  const { session, connection, hasSynced } = useProject(project.id);
   const [identity, setIdentity] = useState(() => loadIdentity(browserStorage()));
   const toasts = useToasts();
   const [filesView, setFilesView] = useState<FilesView>('files');
@@ -97,7 +97,13 @@ function Workspace({
     () => ({ userId: identity.id, name: identity.name }),
     [identity.id, identity.name],
   );
-  const agent = useAgentSession({ projectId: project.id, session, host: agentHost, runtime });
+  const agent = useAgentSession({
+    projectId: project.id,
+    session,
+    hasSynced,
+    host: agentHost,
+    runtime,
+  });
   const actions = useTreeActions(session, identity, toasts, {
     onCreatedFile: tabs.open,
     onShowDeleted: showDeleted,

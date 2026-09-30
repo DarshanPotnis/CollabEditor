@@ -7,7 +7,7 @@
  * so that is in the opt-in WebContainer suite (runtime.spec.ts).
  */
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import { waitForEditor } from './support.js';
 
 const RECORDINGS = fileURLToPath(new URL('../packages/agent/fixtures/traces/', import.meta.url));
@@ -73,6 +73,42 @@ test('where the page cannot run code, the demo offers the recording, labelled, a
   await expect(recording).toContainText('Chrome, Edge or Arc');
   await expect(panel(page).getByRole('button', { name: 'Play the replay' })).toHaveCount(0);
   expect(ai).toEqual([]);
+});
+
+test('Play waits for the project to load, so a slow first sync is never refused as the wrong project', async ({
+  page,
+}) => {
+  // Hold everything the collab server sends until released, as a sleeping
+  // server does on a real first visit. Locally the first sync is instant, so
+  // without this the page never shows its state before the project arrives.
+  const held: { socket: WebSocketRoute; message: string | Buffer }[] = [];
+  let holding = true;
+  await page.routeWebSocket(/\/collab$/, (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((message) => {
+      if (holding) held.push({ socket, message });
+      else socket.send(message);
+    });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Watch a demo' }).click();
+  await page.waitForURL(/\/p\/[a-z0-9]+$/);
+  const play = panel(page).getByRole('button', { name: /^(Play the replay|Connecting…)$/ });
+  await expect(play).toBeVisible();
+  // Clicking before the project has arrived is what production refused with
+  // "this project is not from a template". Forced, since a disabled button
+  // would otherwise make Playwright wait.
+  await play.click({ force: true });
+  await expect(play).toHaveText('Connecting…');
+  await expect(play).toBeDisabled();
+  await expect(panel(page).getByRole('alert')).toHaveCount(0);
+
+  holding = false;
+  for (const { socket, message } of held.splice(0)) socket.send(message);
+  await waitForEditor(page);
+  await expect(play).toHaveText('Play the replay');
+  await expect(play).toBeEnabled();
 });
 
 test('"Open a trace…" shows a trace of any format as a timeline, and refuses what is not one', async ({
