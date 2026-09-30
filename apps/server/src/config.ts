@@ -48,9 +48,9 @@ const envSchema = z.object({
     .pipe(z.array(originSchema)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   /**
-   * Where a request's client IP comes from, for per-IP limits: `render` trusts
-   * the first X-Forwarded-For entry (Render sets it), `direct` uses the socket.
-   * See http/client-ip.ts.
+   * Where a request's client IP comes from, for per-IP limits: `render` takes
+   * CF-Connecting-IP when it is also the X-Forwarded-For entry Cloudflare
+   * appended, `direct` uses the socket. See http/client-ip.ts and ADR 015.
    */
   CLIENT_IP_SOURCE: z.enum(CLIENT_IP_SOURCES).default('render'),
   /**
