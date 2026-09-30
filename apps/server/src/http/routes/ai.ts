@@ -36,7 +36,7 @@ import type { ModelGateway, ModelTarget } from '@collabcode/model-gateway';
 import { sharedModelsFor, type SharedModels } from '../../ai/shared-models.js';
 import type { ProjectsRepo } from '../../db/projects-repo.js';
 import { streamAnswer, type ModelTargets } from '../ai-stream.js';
-import { clientKey, type ClientIpSource } from '../client-ip.js';
+import type { ClientKeyOf } from '../client-ip.js';
 import { sendApiError } from '../errors.js';
 
 /**
@@ -61,7 +61,8 @@ export type SharedTier = SharedModels & { apiKey: string };
 export type AiRouterDeps = {
   gateway: ModelGateway;
   repo: ProjectsRepo;
-  clientIpSource: ClientIpSource;
+  /** The per-IP rate-limit key for a request (http/client-ip.ts). */
+  clientKey: ClientKeyOf;
   /** Null when the server has no key, which turns the shared tier off. */
   sharedTier: SharedTier | null;
   limits: DailyLimits;
@@ -114,7 +115,7 @@ function readOwnKey(req: Request, byok: ByokChoice | undefined): OwnKey {
 export function createAiRouter({
   gateway,
   repo,
-  clientIpSource,
+  clientKey,
   sharedTier,
   limits,
   sharedTierPerMinute,
@@ -132,7 +133,7 @@ export function createAiRouter({
     limit: requestsPerMinute,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    keyGenerator: (req) => clientKey(req, clientIpSource),
+    keyGenerator: clientKey,
     handler: (_req, res) => {
       sendApiError(res, 'rate-limited', 'Too many AI requests. Wait a minute and try again.');
     },
@@ -182,7 +183,7 @@ export function createAiRouter({
         return;
       }
 
-      const ipKey = clientKey(req, clientIpSource);
+      const ipKey = clientKey(req);
       const tier: AgentTier = ownKey.key === null ? 'shared' : 'ownKey';
       if (toolUse) {
         const admission = admitAgentStep({

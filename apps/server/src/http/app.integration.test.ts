@@ -3,6 +3,7 @@
  * server*. Every request here goes through the real onRequest hook, so these
  * tests would fail if the mount broke, not just if a route broke.
  */
+import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import {
@@ -27,6 +28,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server.stop();
+});
+
+describe('the temporary proxy-header diagnostic', () => {
+  it('is gone: /debug/proxy-headers is an unknown endpoint', async () => {
+    const response = await fetch(`${server.httpUrl}/debug/proxy-headers`, {
+      headers: { 'x-forwarded-for': '203.0.113.1', 'cf-connecting-ip': '198.51.100.7' },
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: { code: 'not-found' } });
+  });
 });
 
 describe('GET /health', () => {
@@ -154,36 +165,87 @@ describe('rate limiting', () => {
     }
   });
 
-  const createFrom = (url: string, forwardedFor: string): Promise<Response> =>
+  const createFrom = (url: string, headers: Record<string, string>): Promise<Response> =>
     fetch(`${url}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-forwarded-for': forwardedFor },
+      headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify({ template: 'blank-node' }),
     });
 
-  it('behind Render, gives each visitor their own allowance, whatever proxies follow', async () => {
+  /**
+   * The headers Render's proxies deliver (measured 2026-09-30, ADR 015): the
+   * client's own X-Forwarded-For entries, then the client, then two hops.
+   */
+  const throughRender = (client: string, forged: Record<string, string> = {}) => ({
+    ...forged,
+    'x-forwarded-for': [forged['x-forwarded-for'], client, '172.70.1.2', '10.20.0.3']
+      .filter(Boolean)
+      .join(', '),
+    'cf-connecting-ip': client,
+  });
+
+  it('behind Render, gives each visitor their own allowance, whatever they forge', async () => {
     const limited = await startTestServer({
       projectCreateLimitPerMinute: 1,
       clientIpSource: 'render',
     });
     try {
-      expect((await createFrom(limited.httpUrl, '203.0.113.1, 172.68.0.1')).status).toBe(201);
-      // The same visitor through a longer proxy chain is still the same visitor.
-      expect((await createFrom(limited.httpUrl, '203.0.113.1, 172.68.0.9, 10.0.0.1')).status).toBe(
-        429,
-      );
+      expect((await createFrom(limited.httpUrl, throughRender('81.2.69.160'))).status).toBe(201);
+      // Forged X-Forwarded-For and True-Client-IP do not make the same visitor someone new.
+      const forgeries: Record<string, string>[] = [
+        { 'x-forwarded-for': '203.0.113.1' },
+        { 'x-forwarded-for': '203.0.113.1, 198.51.100.2' },
+        { 'true-client-ip': '192.0.2.9' },
+      ];
+      for (const forged of forgeries) {
+        expect(
+          (await createFrom(limited.httpUrl, throughRender('81.2.69.160', forged))).status,
+        ).toBe(429);
+      }
       // Someone else is not held back by the first visitor's use.
-      expect((await createFrom(limited.httpUrl, '198.51.100.7, 172.68.0.1')).status).toBe(201);
+      expect((await createFrom(limited.httpUrl, throughRender('81.2.69.161'))).status).toBe(201);
     } finally {
       await limited.stop();
     }
   });
 
-  it('with no proxy in front, ignores X-Forwarded-For so it cannot dodge the limit', async () => {
+  it('behind Render, keys untrustworthy headers by the shared proxy address, and warns once', async () => {
+    const lines: string[] = [];
+    const limited = await startTestServer({
+      projectCreateLimitPerMinute: 1,
+      clientIpSource: 'render',
+      logger: pino({ level: 'warn' }, { write: (line: string) => lines.push(line) }),
+    });
+    try {
+      // CF-Connecting-IP that is not what Cloudflare appended: two different
+      // forged values still share one allowance.
+      const forgedConnecting = (value: string) => ({
+        'x-forwarded-for': `${value}, 81.2.69.160, 172.70.1.2, 10.20.0.3`,
+        'cf-connecting-ip': value,
+      });
+      expect((await createFrom(limited.httpUrl, forgedConnecting('203.0.113.1'))).status).toBe(201);
+      expect((await createFrom(limited.httpUrl, forgedConnecting('198.51.100.7'))).status).toBe(
+        429,
+      );
+      const warnings = lines
+        .map((line) => JSON.parse(line) as { msg: string; reason?: string })
+        .filter((line) => line.msg.startsWith('client address headers not trusted'));
+      expect(warnings).toEqual([
+        expect.objectContaining({
+          reason: 'CF-Connecting-IP is not the address Cloudflare appended to X-Forwarded-For',
+        }),
+      ]);
+      expect(lines.join('\n')).not.toMatch(/203\.0\.113\.1|198\.51\.100\.7|81\.2\.69\.160/);
+    } finally {
+      await limited.stop();
+    }
+  });
+
+  it('with no proxy in front, ignores the forwarding headers so they cannot dodge the limit', async () => {
     const limited = await startTestServer({ projectCreateLimitPerMinute: 1 });
     try {
-      expect((await createFrom(limited.httpUrl, '203.0.113.1')).status).toBe(201);
-      expect((await createFrom(limited.httpUrl, '198.51.100.7')).status).toBe(429);
+      expect((await createFrom(limited.httpUrl, throughRender('203.0.113.1'))).status).toBe(201);
+      expect((await createFrom(limited.httpUrl, throughRender('198.51.100.7'))).status).toBe(429);
     } finally {
       await limited.stop();
     }

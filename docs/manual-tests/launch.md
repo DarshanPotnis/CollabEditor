@@ -37,10 +37,25 @@ than replacing its first entry, which is what `apps/server/src/http/client-ip.ts
 per-visitor limits (project creation, the shared AI tier's daily allowance) could be sidestepped.
 The global AI limits still held.
 
-Fix: `GET /debug/proxy-headers` (PR #6, temporary) shows which header or right-hand position
-Render's proxies set; the fix reads that, never the leftmost entry or a header the client can set.
-Then: the spoof check again with forged `X-Forwarded-For`, `CF-Connecting-IP` and `True-Client-IP`,
-and the check from a phone on mobile data.
+`GET /debug/proxy-headers` (PR #6, temporary, `58bc46b`) described the headers the server
+receives, every address reduced to its kind. Seven probes on 2026-09-30, with forged values from
+the documentation ranges:
+
+| Forged                                  | What arrived                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Nothing                                 | `X-Forwarded-For`: client, public hop, private hop. `CF-Connecting-IP` = `True-Client-IP` = the client |
+| `X-Forwarded-For`, one entry            | The forged entry, then the same three: the client still third from the right                           |
+| `X-Forwarded-For`, two entries          | Both forged entries, then the same three                                                               |
+| `CF-Connecting-IP`                      | Nothing: Cloudflare refused the request (403, "error code: 1000")                                      |
+| `True-Client-IP`                        | Overwritten with the client                                                                            |
+| `X-Real-IP`                             | Removed                                                                                                |
+| All together, plus `CF-Connecting-IPv6` | Refused by Cloudflare (for `CF-Connecting-IP`); `CF-Connecting-IPv6` alone is removed                  |
+
+Fix (ADR 015): `render` takes `CF-Connecting-IP` only when it is also the `X-Forwarded-For` entry
+third from the right, and otherwise the proxy's address, shared by everyone, with a warning logged
+once. It removes the diagnostic. To re-check once deployed: the README's client-IP checklist
+(forged `X-Forwarded-For` and `True-Client-IP`, Cloudflare refusing a forged `CF-Connecting-IP`,
+no warning in Render's logs) and the check from a phone on mobile data.
 
 ### 2.2 "Watch a demo" refused a Play clicked before the project loaded
 
@@ -50,12 +65,14 @@ document's first sync, and the replay checked the empty document. Clicking after
 live replay passed in 20 s: four checks verified again, no AI request.
 
 Fix: PR #7. Play reads "Connecting…" and is disabled until the first sync;
-`e2e/replay.spec.ts` delays the first sync to reproduce it.
+`e2e/replay.spec.ts` delays the first sync to reproduce it. Re-checked on `58bc46b`
+(2026-09-30): the unchanged live spec passed in 22.5 s.
 
 ## 3. Test projects in production
 
-The checks above, and one manual "Watch a demo", created these 15 projects on 2026-09-29 between
-23:25 and 23:31 UTC. They are test data; delete exactly these IDs.
+The checks above, and one manual "Watch a demo", created these 16 projects: 15 on 2026-09-29
+between 23:25 and 23:31 UTC, and one on 2026-09-30 re-checking the demo. They are test data;
+delete exactly these IDs.
 
 | IDs                                                                                            | Created by                                                             |
 | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -64,8 +81,10 @@ The checks above, and one manual "Watch a demo", created these 15 projects on 20
 | `wk9xnqusqxfv`                                                                                 | A manual "Watch a demo" (Demo — DELETE endpoint)                       |
 | `mzezn744yy6n`, `uiwttr67svpw`, `dm9akh2pqmei`, `eybzvr2jcpky`, `uiftyhxsy9xf`, `qdcgyiamzsr3` | The live-site Playwright run (4 `blank-node`, 1 `express-api`, 1 demo) |
 | `3npurgv8mwbr`                                                                                 | The demo replayed after the first sync (Demo — DELETE endpoint)        |
+| `kyeruumxz5xd`                                                                                 | The demo re-check on `58bc46b` (Demo — DELETE endpoint)                |
 
-In Neon's SQL editor, on the `production` branch. First check that the list matches 15 rows:
+In Neon's SQL editor, on the `production` branch. First check that the list matches 16 rows (or
+fewer, if some were deleted already):
 
 ```sql
 select id, name, template, created_at
@@ -73,7 +92,8 @@ from projects
 where id in (
   'c6xqmaa2atz5', '8rw379dhde68', '7bxnrsrs7n3z', 'k23jcukmuesz', 'cvxua8rjiyy2',
   'pzpqmxvyb7i7', 'sxgdctny3pe9', 'wk9xnqusqxfv', 'mzezn744yy6n', 'uiwttr67svpw',
-  'dm9akh2pqmei', 'eybzvr2jcpky', 'uiftyhxsy9xf', 'qdcgyiamzsr3', '3npurgv8mwbr'
+  'dm9akh2pqmei', 'eybzvr2jcpky', 'uiftyhxsy9xf', 'qdcgyiamzsr3', '3npurgv8mwbr',
+  'kyeruumxz5xd'
 )
 order by created_at;
 ```
@@ -85,7 +105,8 @@ delete from projects
 where id in (
   'c6xqmaa2atz5', '8rw379dhde68', '7bxnrsrs7n3z', 'k23jcukmuesz', 'cvxua8rjiyy2',
   'pzpqmxvyb7i7', 'sxgdctny3pe9', 'wk9xnqusqxfv', 'mzezn744yy6n', 'uiwttr67svpw',
-  'dm9akh2pqmei', 'eybzvr2jcpky', 'uiftyhxsy9xf', 'qdcgyiamzsr3', '3npurgv8mwbr'
+  'dm9akh2pqmei', 'eybzvr2jcpky', 'uiftyhxsy9xf', 'qdcgyiamzsr3', '3npurgv8mwbr',
+  'kyeruumxz5xd'
 )
 returning id;
 ```
