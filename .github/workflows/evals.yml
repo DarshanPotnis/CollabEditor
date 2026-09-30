@@ -21,6 +21,10 @@ on:
         description: Sessions per task
         type: string
         default: '1'
+      rpd:
+        description: Requests left today, when another run already spent some (optional; default the model's daily limit)
+        type: string
+        default: ''
       resume_run:
         description: To carry on a run that stopped early, its eval run id (optional)
         type: string
@@ -91,10 +95,12 @@ jobs:
           TASKS: ${{ inputs.tasks }}
           TRIALS: ${{ inputs.trials }}
           RESUME: ${{ inputs.resume_run }}
+          RPD: ${{ inputs.rpd }}
         run: >-
           npm run evals --
           --model "$MODEL" --tasks "$TASKS" --trials "$TRIALS"
           ${RESUME:+--resume "$RESUME"}
+          ${RPD:+--rpd "$RPD"}
           --key-file "$RUNNER_TEMP/eval-key"
 
       - name: Make sure the key file is gone

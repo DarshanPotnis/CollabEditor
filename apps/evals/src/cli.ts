@@ -27,7 +27,7 @@ import { RESULTS_FILE, RUNS_DIR, runSuite } from './harness/run-suite.js';
 import { GRADERS } from './graders/version.js';
 import { createGatewayModelClient } from './model/gateway-model-client.js';
 import { limitsFor } from './model/model-limits.js';
-import { createPacer } from './model/pacer.js';
+import { createPacer, pacedRpm } from './model/pacer.js';
 import { RequestLedger, pacificDay } from './model/request-ledger.js';
 import { RESULTS_DIR } from './results/readme.js';
 import { reportMarkdown } from './results/report.js';
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     model: options.model,
     key,
     tier: options.tier,
-    pacer: createPacer(limits.rpm, nodeClock),
+    pacer: createPacer(pacedRpm(limits.rpm), nodeClock),
     ledger,
     dailyLimit: limits.rpd,
   });
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   const runId = options.resume ?? `${pacificDay(nodeClock.now())}-${options.model}-${sha}`;
   const sessionBudget = AGENT_STEP_LIMITS[options.tier] + RETRY_ALLOWANCE;
   out(
-    `Eval run ${runId}: ${String(tasks.length)} task${tasks.length === 1 ? '' : 's'} × ${String(options.trials)} on ${options.model} (${String(limits.rpm)} a minute, ${String(limits.rpd)} a day; ${String(ledger.used(options.model))} used today).`,
+    `Eval run ${runId}: ${String(tasks.length)} task${tasks.length === 1 ? '' : 's'} × ${String(options.trials)} on ${options.model} (${String(limits.rpm)} a minute, paced at ${String(pacedRpm(limits.rpm))}; ${String(limits.rpd)} a day; ${String(ledger.used(options.model))} used today).`,
   );
 
   const results = await runSuite({
