@@ -20,7 +20,9 @@ Runs the eval tasks against a real model (docs/evals/README.md).
   --tier <shared|ownKey>    the step limit to run under (default shared: 15 steps)
   --key-file <path>         the key, in a file that is deleted once read (CI)
   --allow-local-real-run    run on this machine instead of in CI
-  --rpm <n>, --rpd <n>      the eval project's limits, if not the recorded ones
+  --rpm <n>, --rpd <n>      the eval project's limits, if not the recorded ones; the
+                            pacer keeps to 80% of --rpm. --rpd can also be what is left
+                            of today when another run has spent some
   --resume <run id>         carry on a run that stopped early
   --help                    this text
 
