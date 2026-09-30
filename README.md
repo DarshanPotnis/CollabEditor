@@ -366,28 +366,45 @@ deployment after every change to hosting:
 
 ### Launch checklist: client IPs behind Render
 
-Requests reach the server through Cloudflare and Render's load balancers, so per-IP limits use the
-first `X-Forwarded-For` entry, which Render sets to the real client address
-(`apps/server/src/http/client-ip.ts`). Check that Render still does this after every change to
-hosting:
+Requests reach the server through Cloudflare and two Render hops, and none of them removes what a
+client writes in `X-Forwarded-For`: they append to it. So per-IP limits use `CF-Connecting-IP` only
+when it is also the entry Cloudflare appended, third from the right, and otherwise the proxy's
+address, shared by everyone ([ADR 015](docs/decisions/015-client-ip-behind-render.md),
+`apps/server/src/http/client-ip.ts`). Check it after every change to hosting; each creation adds a
+test project.
 
-1. Send two project creations with different forged addresses and compare the remaining count
-   (`r=`) in the `RateLimit` header. It must go down by one, because Render replaces the forged
-   first entry with your real address and both requests land in your allowance:
+1. Create projects with forged `X-Forwarded-For` and `True-Client-IP` values and compare the
+   remaining count (`r=`) in the `RateLimit` header. It must go down by one each time, because
+   every request lands in your own allowance:
 
    ```bash
-   for ip in 203.0.113.1 198.51.100.7; do
+   for header in 'x-forwarded-for: 203.0.113.1' 'x-forwarded-for: 198.51.100.7, 192.0.2.5' \
+     'true-client-ip: 192.0.2.9'; do
      curl -s -o /dev/null -D - -X POST https://<your-server>/api/projects \
-       -H 'content-type: application/json' -H "x-forwarded-for: $ip" \
+       -H 'content-type: application/json' -H "$header" \
        -d '{"template":"blank-node"}' | grep -i '^ratelimit:'
    done
    ```
 
-   If the count starts over for the second request, the forged address is being trusted: stop
-   and fix `clientIp()` before launch.
+   If the count starts over, a forged address is being trusted: stop and fix `clientKey()`.
 
-2. From a different network (a phone on mobile data), the count starts at the full limit, so
-   visitors are not sharing one proxy address.
+2. A forged `CF-Connecting-IP`, even one matching a forged `X-Forwarded-For`, never reaches the
+   server:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<your-server>/api/projects \
+     -H 'content-type: application/json' -H 'cf-connecting-ip: 203.0.113.1' \
+     -H 'x-forwarded-for: 203.0.113.1' -d '{"template":"blank-node"}'
+   ```
+
+   It prints `403`: Cloudflare refuses it ("error code: 1000"). A `201` means Cloudflare is no
+   longer in front, so both headers can be forged: set `CLIENT_IP_SOURCE=direct` (one shared
+   allowance) until `clientKey()` is changed.
+
+3. From a different network (a phone on mobile data), the count starts at the full limit, so
+   visitors are not sharing the proxy's address.
+4. Render's logs have no `client address headers not trusted` line. One means per-IP limits are
+   using the shared proxy address; its `reason` says which check failed.
 
 ### Launch checklist: AI
 
