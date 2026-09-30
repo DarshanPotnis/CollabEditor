@@ -7,12 +7,11 @@ import express, { type ErrorRequestHandler, type Express, type RequestHandler } 
 import cors from 'cors';
 import type { Logger } from '../lib/logger.js';
 import type { ProjectsRepo } from '../db/projects-repo.js';
-import type { ClientIpSource } from './client-ip.js';
+import { clientKey, warnOnceUntrusted, type ClientIpSource, type IpRequest } from './client-ip.js';
 import { sendApiError } from './errors.js';
 import { requestLogging } from './request-logging.js';
 import { createAiRouter, type AiRouterDeps } from './routes/ai.js';
 import { createHealthRouter } from './routes/health.js';
-import { createProxyHeadersRouter } from './routes/proxy-headers.js';
 import { createProjectsRouter } from './routes/projects.js';
 
 /** Projects one IP may create per minute in production. */
@@ -25,7 +24,7 @@ export type CreateAppDeps = {
   /** Where per-IP limits read the client's address from (http/client-ip.ts). */
   clientIpSource: ClientIpSource;
   /** The model proxy: which gateway to call, the shared tier and its limits. */
-  ai: Omit<AiRouterDeps, 'repo' | 'clientIpSource'>;
+  ai: Omit<AiRouterDeps, 'repo' | 'clientKey'>;
   startedAt?: number;
   /**
    * Raised by the end-to-end harness, which creates many projects from one IP
@@ -74,25 +73,26 @@ export function createApp({
   const app = express();
 
   // 'trust proxy' stays unset: per-IP limits read the client address through
-  // clientIp() instead, because Render's proxy chain has no fixed length.
+  // clientKey() instead, which checks two proxy-written sources against each other.
   app.disable('x-powered-by');
+  const onUntrusted = warnOnceUntrusted(logger);
+  const keyOf = (req: IpRequest): string => clientKey(req, clientIpSource, onUntrusted);
 
   app.use(requestLogging(logger));
   app.use(createOriginGuard(allowedOrigins, logger));
   app.use(cors({ origin: allowedOrigins, credentials: false, maxAge: 600 }));
   // The AI route parses its own, larger bodies, so it comes before the 16 kB
   // parser the rest of the API uses.
-  app.use(createAiRouter({ ...ai, repo, clientIpSource }));
+  app.use(createAiRouter({ ...ai, repo, clientKey: keyOf }));
   app.use(express.json({ limit: '16kb' }));
 
   app.use(createHealthRouter(startedAt));
-  app.use(createProxyHeadersRouter());
   app.use(
     '/api',
     createProjectsRouter({
       repo,
       logger,
-      clientIpSource,
+      clientKey: keyOf,
       createLimitPerMinute: projectCreateLimitPerMinute,
     }),
   );

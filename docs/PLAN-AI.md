@@ -363,12 +363,13 @@ System prompt essentials:
   protects the free quota. The per-project limit is cheap but weak (projects are easy to
   create), so nothing relies on it.
 - **Client IPs behind Render.** Traffic reaches the app through Cloudflare and then Render's load
-  balancers, so the socket address is a proxy's. Render's stated contract is that it sets the
-  **first** `X-Forwarded-For` entry to the real client IP; how many entries follow depends on
-  what the client sent, so counting hops (`trust proxy: N`) does not fit. Both rate limiters
-  key on an explicit `clientIp()`: `CLIENT_IP_SOURCE=render` uses the first entry,
-  `direct` the socket address, and IPv6 addresses are grouped by /56. The launch checklist
-  verifies it on the deployed service.
+  balancers, so the socket address is a proxy's. Render's stated contract was that it sets the
+  **first** `X-Forwarded-For` entry to the real client IP; the launch check showed it only
+  appends, so the first entry is whatever the client sent (ADR 015). Both rate limiters key on an
+  explicit `clientKey()`: `CLIENT_IP_SOURCE=render` takes `CF-Connecting-IP` when it is also the
+  entry Cloudflare appended, third from the right, and otherwise the proxy's address; `direct`
+  the socket address. IPv6 addresses are grouped by /56. The launch checklist verifies it on the
+  deployed service.
 - **Logging:** metadata only (prompt id and version, provider, model, shared or own key, tokens,
   latency, outcome). Never prompts, code or keys.
 
@@ -390,7 +391,7 @@ using your own key avoids the shared free tier. Repeat this in the README.
 | `AI_GLOBAL_REQUESTS_PER_MINUTE` | server | Shared-tier requests in any 60 seconds, everyone together (12)                 |
 | `AI_AGENT_REQUESTS_PER_MINUTE`  | server | How many of those may be agent steps (6)                                       |
 | `AI_FALLBACK_MODEL`             | server | Optional Gemini model tried when the default is busy (helpers, first steps)    |
-| `CLIENT_IP_SOURCE`              | server | `render` (first `X-Forwarded-For` entry) or `direct` (socket address)          |
+| `CLIENT_IP_SOURCE`              | server | `render` (CF-Connecting-IP, checked; ADR 015) or `direct` (socket address)     |
 
 ### 6.4 Prompts
 
@@ -710,20 +711,20 @@ corrected in place above.
 
 **AI-1 (2026-09-27)**
 
-| Change                                                                                          | Reason                                                                                                                                                                                                 |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Provider layer is the Vercel AI SDK behind our own `ModelGateway`, with four guardrails (§6.1)  | Verified against `ai` 7: browser-executed tools, runtime JSON Schema tools and Gemini 3 thought signatures work; gateway fallback, default telemetry, default retries and error bodies needed guarding |
-| Streaming from the start; status committed on the first model event (§6.1)                      | Verified through the real Hocuspocus mount; early failures stay ordinary HTTP errors                                                                                                                   |
-| Default model `gemini-3.5-flash-lite` (§6.1)                                                    | About 500 free requests a day against about 20 for the Flash models; both support function calling                                                                                                     |
-| Server-owned, versioned prompts; the client sends `{ promptId, inputs }` (§6.4)                 | A client-supplied system prompt would make the shared key a general-purpose relay; evals and the app must run the same prompt versions                                                                 |
-| Client IP is the first `X-Forwarded-For` entry on Render, not a hop count (§6.1)                | Cloudflare and Render's load balancers both sit in front; Render guarantees only the first entry. The old `trust proxy: 1` keyed limits on a proxy address                                             |
-| AI routes require `Origin`; per-project limit kept but not relied on (§6.1)                     | The origin guard lets requests without `Origin` through; projects are easy to create                                                                                                                   |
-| `GEMINI_API_KEY` optional (§6.1, §6.3)                                                          | CI and local development should not need a key                                                                                                                                                         |
-| Apply goes through the Monaco model; stale selections refuse to apply (AI-1)                    | Undo tracks the editor binding, not a user origin; a collaborator's concurrent edit must not be overwritten                                                                                            |
-| Run \| AI switch in AI-1, layout revisited in AI-2                                              | One pane is enough for one-shot helpers; the agent needs its panel and the terminal together                                                                                                           |
-| Evals get their own key and pick the default model by numbers (AI-4)                            | Limits are per Google Cloud project; one eval run would spend the app's free day                                                                                                                       |
-| "Watch a demo" replay mode (AI-5)                                                               | A zero-cost demo that works when the quota is gone, clearly labelled as a replay                                                                                                                       |
-| `explain-error` v2: the crash line is optional, and an ES module is sent whole (§7 AI-1)        | WebContainer shifts ES-module stack-trace lines by an amount that depends on the module (+11 and +13 measured); an excerpt centred on a shifted line would point the model at the wrong code           |
-| Stack traces marked untrusted for AI-2's tools and prompt (§4, §5, AI-2)                        | The same finding: the agent must locate code by content                                                                                                                                                |
-| A crash before the server listens is read from the watcher's output (§7 AI-1)                   | Under `node --watch` the dev process does not exit and no port ever closes, so such a run looked like one still starting and Explain with AI never appeared                                            |
-| Global per-minute limit for the shared tier; refunds for up-front rate or quota refusals (§6.1) | The per-visitor minute limit cannot keep the whole deployment under Google's 15 RPM; a request Google refused up front cost nothing, so it should not spend anyone's day                               |
+| Change                                                                                          | Reason                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Provider layer is the Vercel AI SDK behind our own `ModelGateway`, with four guardrails (§6.1)  | Verified against `ai` 7: browser-executed tools, runtime JSON Schema tools and Gemini 3 thought signatures work; gateway fallback, default telemetry, default retries and error bodies needed guarding                               |
+| Streaming from the start; status committed on the first model event (§6.1)                      | Verified through the real Hocuspocus mount; early failures stay ordinary HTTP errors                                                                                                                                                 |
+| Default model `gemini-3.5-flash-lite` (§6.1)                                                    | About 500 free requests a day against about 20 for the Flash models; both support function calling                                                                                                                                   |
+| Server-owned, versioned prompts; the client sends `{ promptId, inputs }` (§6.4)                 | A client-supplied system prompt would make the shared key a general-purpose relay; evals and the app must run the same prompt versions                                                                                               |
+| Client IP on Render is CF-Connecting-IP checked against X-Forwarded-For, not a hop count (§6.1) | Cloudflare and Render's hops both sit in front and only append to X-Forwarded-For, so its first entry is the client's to write (ADR 015, which replaced "the first entry"). The old `trust proxy: 1` keyed limits on a proxy address |
+| AI routes require `Origin`; per-project limit kept but not relied on (§6.1)                     | The origin guard lets requests without `Origin` through; projects are easy to create                                                                                                                                                 |
+| `GEMINI_API_KEY` optional (§6.1, §6.3)                                                          | CI and local development should not need a key                                                                                                                                                                                       |
+| Apply goes through the Monaco model; stale selections refuse to apply (AI-1)                    | Undo tracks the editor binding, not a user origin; a collaborator's concurrent edit must not be overwritten                                                                                                                          |
+| Run \| AI switch in AI-1, layout revisited in AI-2                                              | One pane is enough for one-shot helpers; the agent needs its panel and the terminal together                                                                                                                                         |
+| Evals get their own key and pick the default model by numbers (AI-4)                            | Limits are per Google Cloud project; one eval run would spend the app's free day                                                                                                                                                     |
+| "Watch a demo" replay mode (AI-5)                                                               | A zero-cost demo that works when the quota is gone, clearly labelled as a replay                                                                                                                                                     |
+| `explain-error` v2: the crash line is optional, and an ES module is sent whole (§7 AI-1)        | WebContainer shifts ES-module stack-trace lines by an amount that depends on the module (+11 and +13 measured); an excerpt centred on a shifted line would point the model at the wrong code                                         |
+| Stack traces marked untrusted for AI-2's tools and prompt (§4, §5, AI-2)                        | The same finding: the agent must locate code by content                                                                                                                                                                              |
+| A crash before the server listens is read from the watcher's output (§7 AI-1)                   | Under `node --watch` the dev process does not exit and no port ever closes, so such a run looked like one still starting and Explain with AI never appeared                                                                          |
+| Global per-minute limit for the shared tier; refunds for up-front rate or quota refusals (§6.1) | The per-visitor minute limit cannot keep the whole deployment under Google's 15 RPM; a request Google refused up front cost nothing, so it should not spend anyone's day                                                             |
