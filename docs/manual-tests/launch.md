@@ -14,7 +14,7 @@ it, what failed, and the test data the checks left in production.
 | Isolation headers on the page                     | `curl -sI /`                                                                                         | Pass: `same-origin` / `require-corp`                |
 | Isolation headers on the workers                  | `curl -sI` on `editor.worker`, `json.worker`, `ts.worker`                                            | Pass                                                |
 | `crossOriginIsolated`, workers running            | `e2e/isolation.spec.ts` against the live site                                                        | Pass (3 tests)                                      |
-| Client IPs behind Render                          | Two project creations with different forged `X-Forwarded-For` addresses                              | **Fail**: see 2.1                                   |
+| Client IPs behind Render                          | Two project creations with different forged `X-Forwarded-For` addresses                              | **Fail**, then fixed and passed: see 2.1            |
 | AI answers stream through Render                  | One `explain-selection` request, each `data:` line timed                                             | Pass: 6 chunks from 0.87 s to 1.40 s, not buffered  |
 | No `Origin` on the AI route                       | `POST /api/ai/step` without `Origin`                                                                 | Pass: 403                                           |
 | Foreign `Origin`                                  | Project creation and AI step from `https://example.com`                                              | Pass: 403 both                                      |
@@ -53,9 +53,28 @@ the documentation ranges:
 
 Fix (ADR 015): `render` takes `CF-Connecting-IP` only when it is also the `X-Forwarded-For` entry
 third from the right, and otherwise the proxy's address, shared by everyone, with a warning logged
-once. It removes the diagnostic. To re-check once deployed: the README's client-IP checklist
-(forged `X-Forwarded-For` and `True-Client-IP`, Cloudflare refusing a forged `CF-Connecting-IP`,
-no warning in Render's logs) and the check from a phone on mobile data.
+once. It removes the diagnostic.
+
+Re-checked on `874817a` (PR #11), where `/debug/proxy-headers` answers 404:
+
+| Check                                                                                                        | Result                                      |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| Creations with nothing forged, then forged `X-Forwarded-For` (one entry, two), `True-Client-IP`, `X-Real-IP` | Pass: one allowance, `r=19, 18, 17, 16, 15` |
+| Forged `CF-Connecting-IP` with a matching forged `X-Forwarded-For`                                           | Pass: 403 from Cloudflare                   |
+| A second network: a GitHub Actions runner                                                                    | Pass: see below                             |
+| No `client address headers not trusted` line in Render's logs                                                | By the owner, in Render's dashboard         |
+
+The second network replaced the phone check. A temporary workflow on a branch of its own
+(never merged, then deleted; Actions run `36801382393`) waited for an agreed second and created two
+projects from a GitHub-hosted runner, while this machine created projects either side of it:
+
+| Time (UTC, 2026-10-01) | From                    | `RateLimit` `r=`           |
+| ---------------------- | ----------------------- | -------------------------- |
+| 01:35:12–13            | This machine, 4 created | 19, 18, 17, 16             |
+| 01:35:41               | The runner, 2 created   | **19, 18**: its own, fresh |
+| 01:35:55               | This machine, 1 created | 15, in the same minute     |
+
+Had either side fallen back to the proxy's shared address, the runner would have started near 15.
 
 ### 2.2 "Watch a demo" refused a Play clicked before the project loaded
 
@@ -70,9 +89,9 @@ Fix: PR #7. Play reads "Connecting…" and is disabled until the first sync;
 
 ## 3. Test projects in production
 
-The checks above, and one manual "Watch a demo", created these 16 projects: 15 on 2026-09-29
-between 23:25 and 23:31 UTC, and one on 2026-09-30 re-checking the demo. They are test data;
-delete exactly these IDs.
+The checks above, and one manual "Watch a demo", created these 28 projects: 15 on 2026-09-29
+between 23:25 and 23:31 UTC, one on 2026-09-30 re-checking the demo, and 12 re-checking the
+client-IP fix (2026-09-30 and 2026-10-01). They are test data; delete exactly these IDs.
 
 | IDs                                                                                            | Created by                                                             |
 | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -82,8 +101,11 @@ delete exactly these IDs.
 | `mzezn744yy6n`, `uiwttr67svpw`, `dm9akh2pqmei`, `eybzvr2jcpky`, `uiftyhxsy9xf`, `qdcgyiamzsr3` | The live-site Playwright run (4 `blank-node`, 1 `express-api`, 1 demo) |
 | `3npurgv8mwbr`                                                                                 | The demo replayed after the first sync (Demo — DELETE endpoint)        |
 | `kyeruumxz5xd`                                                                                 | The demo re-check on `58bc46b` (Demo — DELETE endpoint)                |
+| `thkk2be5xmj8`, `xdy5rv7bbfaa`, `nye9gdbgqkhi`, `ysnvfhy7yx2y`, `ta9ygwbgg2tn`                 | The README's client-IP checklist on `874817a` (`blank-node`)           |
+| `fuecvb4isymy`, `peeqmxietdek`, `zyiieaev366a`, `8qnn6ccp8nax`, `upa9z54kemng`                 | The second-network check, this machine's side (`blank-node`)           |
+| `wr2vrqc4yzkg`, `zm8mxsz5ccja`                                                                 | The second-network check, the runner's side (`blank-node`)             |
 
-In Neon's SQL editor, on the `production` branch. First check that the list matches 16 rows (or
+In Neon's SQL editor, on the `production` branch. First check that the list matches 28 rows (or
 fewer, if some were deleted already):
 
 ```sql
@@ -93,7 +115,9 @@ where id in (
   'c6xqmaa2atz5', '8rw379dhde68', '7bxnrsrs7n3z', 'k23jcukmuesz', 'cvxua8rjiyy2',
   'pzpqmxvyb7i7', 'sxgdctny3pe9', 'wk9xnqusqxfv', 'mzezn744yy6n', 'uiwttr67svpw',
   'dm9akh2pqmei', 'eybzvr2jcpky', 'uiftyhxsy9xf', 'qdcgyiamzsr3', '3npurgv8mwbr',
-  'kyeruumxz5xd'
+  'kyeruumxz5xd', 'thkk2be5xmj8', 'xdy5rv7bbfaa', 'nye9gdbgqkhi', 'ysnvfhy7yx2y',
+  'ta9ygwbgg2tn', 'fuecvb4isymy', 'peeqmxietdek', 'zyiieaev366a', '8qnn6ccp8nax',
+  'upa9z54kemng', 'wr2vrqc4yzkg', 'zm8mxsz5ccja'
 )
 order by created_at;
 ```
@@ -106,7 +130,9 @@ where id in (
   'c6xqmaa2atz5', '8rw379dhde68', '7bxnrsrs7n3z', 'k23jcukmuesz', 'cvxua8rjiyy2',
   'pzpqmxvyb7i7', 'sxgdctny3pe9', 'wk9xnqusqxfv', 'mzezn744yy6n', 'uiwttr67svpw',
   'dm9akh2pqmei', 'eybzvr2jcpky', 'uiftyhxsy9xf', 'qdcgyiamzsr3', '3npurgv8mwbr',
-  'kyeruumxz5xd'
+  'kyeruumxz5xd', 'thkk2be5xmj8', 'xdy5rv7bbfaa', 'nye9gdbgqkhi', 'ysnvfhy7yx2y',
+  'ta9ygwbgg2tn', 'fuecvb4isymy', 'peeqmxietdek', 'zyiieaev366a', '8qnn6ccp8nax',
+  'upa9z54kemng', 'wr2vrqc4yzkg', 'zm8mxsz5ccja'
 )
 returning id;
 ```
