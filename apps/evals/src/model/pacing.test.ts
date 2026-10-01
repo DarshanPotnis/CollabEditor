@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createFakeClock, createStopSource } from '@collabcode/agent';
 import { afterEach, describe, expect, it } from 'vitest';
 import { limitsFor } from './model-limits.js';
-import { createPacer } from './pacer.js';
+import { createPacer, pacedRpm } from './pacer.js';
 import { DailyLimitReached, RequestLedger, pacificDay } from './request-ledger.js';
 
 const dirs: string[] = [];
@@ -33,6 +33,31 @@ describe('the pacer', () => {
     clock.advance(49_999);
     await Promise.resolve();
     expect(third).toBe(false);
+    clock.advance(1);
+    await waiting;
+    expect(clock.now()).toBe(60_000);
+  });
+
+  it('keeps 20% under the per-minute limit, and always allows one', () => {
+    expect(pacedRpm(15)).toBe(12);
+    expect(pacedRpm(5)).toBe(4);
+    expect(pacedRpm(2)).toBe(1);
+    expect(pacedRpm(1)).toBe(1);
+  });
+
+  it("paced for Flash-Lite's 15, starts at most 12 in any minute", async () => {
+    const clock = createFakeClock(0);
+    const pacer = createPacer(pacedRpm(limitsFor('gemini-3.5-flash-lite').rpm), clock);
+    const signal = createStopSource().signal;
+    for (let i = 0; i < 12; i += 1) {
+      await pacer.wait(signal);
+      clock.advance(1_000);
+    }
+    let thirteenth = false;
+    const waiting = pacer.wait(signal).then(() => (thirteenth = true));
+    clock.advance(47_999);
+    await Promise.resolve();
+    expect(thirteenth).toBe(false);
     clock.advance(1);
     await waiting;
     expect(clock.now()).toBe(60_000);

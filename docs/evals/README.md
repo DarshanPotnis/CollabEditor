@@ -70,6 +70,12 @@ can start from the same commit. To resume, pass the same inputs again, plus the 
 run id (`resume_run`) and the number of the workflow run that holds it (`resume_from`, the id in
 its URL).
 
+The pacer starts at most 80% of a model's requests a minute (12 of Flash-Lite's 15). Google counts
+a request when it arrives, and pacing at the limit itself once drew a 429 and showed 18 in a
+minute on AI Studio's chart. A CI run's request ledger starts at zero unless it resumes, so it does
+not know what another run spent the same day: start a second run the next day, or pass what is
+left of the day as the `rpd` input.
+
 A finished run is recorded in `docs/evals/results/<run id>.json` and `.md`; commit the ones worth
 keeping and run `npm run evals:readme` to update the README's table. Traces stay in
 `apps/evals/runs/<run id>` (git-ignored).
