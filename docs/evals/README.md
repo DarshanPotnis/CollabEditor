@@ -128,13 +128,21 @@ steps, requests, tokens and time.
 ## Headline and iteration runs
 
 A pass rate goes in the README's headline only from runs of three sessions per task (`--trials 3`,
-or the workflow's trials input), reported with how consistently each task passed: every time,
-sometimes or never. Such a run takes about 380 Flash-Lite requests, so it spreads over two days of
-the eval project's quota with resume. Runs made while iterating on the agent have one session per
+or the workflow's trials input), reported with how consistently each task passed: how many tasks
+passed 3, 2, 1 and 0 of their sessions, and each task's count in a folded table. Such a run takes
+330 to 380 Flash-Lite requests, inside one day's 500; start it on a fresh day, or resume it the
+next. Runs made while iterating on the agent have one session per
 task and are listed apart, as iteration runs: two agent@3 runs on the same day differed by three
 tasks, so a task or two either way says nothing. Claims about the agent's behaviour (checks made,
 checks verified) come from the measures, which one run already shows well; a claim that one
 version passes more tasks needs the three-session runs.
+
+The first pair, agent@3 against agent@5, is in
+[`results/compare-agent-3-vs-agent-5-three-sessions.md`](results/compare-agent-3-vs-agent-5-three-sessions.md):
+49 and 53 of 63 sessions passed, a difference no larger than reruns vary by (better on 5 tasks,
+worse on 2; a paired permutation test over tasks gives p = 0.47), while checks after the last
+change rose from 1.9 to 2.8 per session (a permutation within each task, p < 0.001). No session
+was left out: the model answered every one.
 
 ## Comparing runs
 
