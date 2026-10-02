@@ -102,8 +102,17 @@ export type RunSummary = {
   sessions: number;
   passed: number;
   passRate: number;
-  /** Tasks passed in every one of their sessions, in some, and in none. */
-  byTask: { tasks: number; every: number; some: number; none: number };
+  /**
+   * Tasks passed in every one of their sessions, in some, and in none; and each
+   * task's passes out of its answered sessions, in the order tasks first appear.
+   */
+  byTask: {
+    tasks: number;
+    every: number;
+    some: number;
+    none: number;
+    perTask: Array<{ task: string; passed: number; sessions: number }>;
+  };
   /** Null when a session was recorded before this was measured. */
   checksAfterLastChangePerTask: number | null;
   /** Sessions the model never answered: left out of everything above, as not the agent's failure. */
@@ -154,6 +163,11 @@ export function summarize(all: readonly TaskResult[]): RunSummary {
       every: perTask.filter((each) => each.every(Boolean)).length,
       some: perTask.filter((each) => each.some(Boolean) && !each.every(Boolean)).length,
       none: perTask.filter((each) => !each.some(Boolean)).length,
+      perTask: [...passes].map(([task, each]) => ({
+        task,
+        passed: each.filter(Boolean).length,
+        sessions: each.length,
+      })),
     },
     checksAfterLastChangePerTask: checks.every((value) => value !== undefined)
       ? mean(checks)
