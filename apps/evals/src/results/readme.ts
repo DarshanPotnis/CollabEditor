@@ -8,7 +8,7 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runResultsSchema, summarize, type RunResults } from './run-results.js';
+import { runResultsSchema, summarize, type RunResults, type RunSummary } from './run-results.js';
 
 export const RESULTS_DIR = fileURLToPath(
   new URL('../../../../docs/evals/results/', import.meta.url),
@@ -37,22 +37,65 @@ const checks = (value: number | null): string => (value === null ? '—' : oneDe
 const report = (run: RunResults): string => `[${run.run.id}](docs/evals/results/${run.run.id}.md)`;
 
 /** Several sessions per task: the pass rate, and how consistently each task passed. */
+/**
+ * How many tasks passed in each possible number of their `trials` sessions,
+ * most first ("13 · 4 · 2 · 2" for 3, 2, 1 and 0 of 3). A task the model left
+ * a session of unanswered is counted apart, so it never reads as a failure.
+ */
+function passCounts(perTask: RunSummary['byTask']['perTask'], trials: number): string {
+  const counts = Array.from({ length: trials + 1 }, () => 0);
+  for (const { passed, sessions } of perTask) {
+    if (sessions === trials) counts[trials - passed] = (counts[trials - passed] ?? 0) + 1;
+  }
+  const short = perTask.filter(({ sessions }) => sessions < trials).length;
+  return `${counts.join(' · ')}${short === 0 ? '' : ` (+${String(short)} with a session left out)`}`;
+}
+
 function headlineTable(runs: readonly RunResults[]): string[] {
   if (runs.length === 0) {
     return [
       `No run with ${String(HEADLINE_TRIALS)} sessions per task is recorded yet, so there is no headline pass rate.`,
     ];
   }
+  const trials = Math.max(...runs.map((run) => run.run.trials));
+  const scale = Array.from({ length: trials + 1 }, (_, index) => String(trials - index)).join(
+    ' · ',
+  );
   return [
-    `| Model | Prompt | Graders | Sessions passed | Tasks passed every time · some · never | Checks after the last change, per session | Requests per session | Report |`,
+    `| Model | Prompt | Graders | Sessions passed | Tasks passing ${scale} of ${String(trials)} sessions | Checks after the last change, per session | Requests per session | Report |`,
     '| --- | --- | --- | --: | --: | --: | --: | --- |',
     ...runs.map((run) => {
       const summary = summarize(run.results);
-      const { every, some, none } = summary.byTask;
       const left = summary.unavailable.length;
       const leftOut = left === 0 ? '' : `, ${String(left)} left out (model never answered)`;
-      return `| ${run.run.model.id} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.sessions)} (${String(Math.round(summary.passRate * 100))}%)${leftOut} | ${String(every)} · ${String(some)} · ${String(none)} | ${checks(summary.checksAfterLastChangePerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${report(run)} |`;
+      return `| ${run.run.model.id} | ${run.run.prompt} | ${run.run.graders} | ${String(summary.passed)} of ${String(summary.sessions)} (${String(Math.round(summary.passRate * 100))}%)${leftOut} | ${passCounts(summary.byTask.perTask, run.run.trials)} | ${checks(summary.checksAfterLastChangePerTask)} | ${oneDecimal(summary.requestsPerTask)} | ${report(run)} |`;
     }),
+    '',
+    ...perTaskTable(runs),
+  ];
+}
+
+/** Each headline run's sessions passed, task by task, folded away under the headline. */
+function perTaskTable(runs: readonly RunResults[]): string[] {
+  const perRun = runs.map(
+    (run) => new Map(summarize(run.results).byTask.perTask.map((entry) => [entry.task, entry])),
+  );
+  const tasks = [...new Set(perRun.flatMap((byTask) => [...byTask.keys()]))];
+  return [
+    '<details>',
+    '<summary>Sessions passed, task by task</summary>',
+    '',
+    `| Task | ${runs.map((run) => `${run.run.prompt}, ${run.run.graders}`).join(' | ')} |`,
+    `| --- | ${runs.map(() => '--:').join(' | ')} |`,
+    ...tasks.map((task) => {
+      const cells = perRun.map((byTask) => {
+        const entry = byTask.get(task);
+        return entry === undefined ? '—' : `${String(entry.passed)} of ${String(entry.sessions)}`;
+      });
+      return `| ${task} | ${cells.join(' | ')} |`;
+    }),
+    '',
+    '</details>',
   ];
 }
 

@@ -207,7 +207,17 @@ describe('a run summary and its report', () => {
     expect(summarize(three)).toMatchObject({
       sessions: 9,
       passed: 5,
-      byTask: { tasks: 3, every: 1, some: 1, none: 1 },
+      byTask: {
+        tasks: 3,
+        every: 1,
+        some: 1,
+        none: 1,
+        perTask: [
+          { task: 'a', passed: 3, sessions: 3 },
+          { task: 'b', passed: 2, sessions: 3 },
+          { task: 'c', passed: 0, sessions: 3 },
+        ],
+      },
     });
     const report = reportMarkdown({
       ...run('r3', 'gemini-3.5-flash-lite', '2026-09-30T10:00:00.000Z', three),
@@ -231,7 +241,16 @@ describe('a run summary and its report', () => {
     expect(summarize(sessions)).toMatchObject({
       sessions: 5,
       passed: 5,
-      byTask: { tasks: 2, every: 2, some: 0, none: 0 },
+      byTask: {
+        tasks: 2,
+        every: 2,
+        some: 0,
+        none: 0,
+        perTask: [
+          { task: 'a', passed: 3, sessions: 3 },
+          { task: 'b', passed: 2, sessions: 2 },
+        ],
+      },
       unavailable: [{ task: 'b', trial: 2 }],
       categories: {},
     });
@@ -330,9 +349,15 @@ describe('the README table', () => {
     ]);
     const three = run('three', 'gemini-3.5-flash-lite', '2026-10-01T10:00:00.000Z', sessions);
     const table = readmeTable([{ ...three, run: { ...three.run, trials: 3, tasks: ['a', 'b'] } }]);
+    expect(table).toContain('Tasks passing 3 · 2 · 1 · 0 of 3 sessions');
     expect(table).toContain(
-      '| gemini-3.5-flash-lite | agent@3 | graders@1 | 5 of 6 (83%) | 1 · 1 · 0 | — |',
+      '| gemini-3.5-flash-lite | agent@3 | graders@1 | 5 of 6 (83%) | 1 · 1 · 0 · 0 | — |',
     );
+    // Task by task, folded away under the headline.
+    expect(table).toContain('<summary>Sessions passed, task by task</summary>');
+    expect(table).toContain('| Task | agent@3, graders@1 |');
+    expect(table).toContain('| a | 3 of 3 |');
+    expect(table).toContain('| b | 2 of 3 |');
     expect(table).not.toContain('Iteration runs');
     const busy = [
       ...sessions.slice(0, 5),
@@ -341,6 +366,8 @@ describe('the README table', () => {
     const withBusy = run('busy', 'gemini-3.5-flash-lite', '2026-10-02T10:00:00.000Z', busy);
     expect(
       readmeTable([{ ...withBusy, run: { ...withBusy.run, trials: 3, tasks: ['a', 'b'] } }]),
-    ).toContain('| 5 of 5 (100%), 1 left out (model never answered) | 2 · 0 · 0 |');
+    ).toContain(
+      '| 5 of 5 (100%), 1 left out (model never answered) | 1 · 0 · 0 · 0 (+1 with a session left out) |',
+    );
   });
 });
