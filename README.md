@@ -1,176 +1,91 @@
 # CollabCode
 
-A multiplayer code workspace in the browser. Several people open the same project, work in the
-same or different files at the same time, and see each other's named cursors and where everyone
-is in the file tree. Anyone can run the project's Node backend in their own browser tab and call
-its endpoints while everyone keeps editing. Nothing is lost when someone joins late, drops
-offline, or closes the tab mid-keystroke.
+**A multiplayer code workspace where an AI teammate joins the room as a collaborator.** It types
+its edits live with its own cursor, runs the project's Node backend in your browser, checks what it
+changed, and one click undoes its work.
 
-It runs entirely on free infrastructure: Vercel for the web app, Render for the sync server, Neon
-for Postgres.
+**[Open the live app](https://collab-editor-chi.vercel.app)** and press **Watch a demo**: a recorded
+session replays into a fresh project, live in your browser, with no account and no AI key. (The free
+server sleeps when idle, so the first visit can take up to a minute.)
 
-**Status: Phase 3, AI-1 and AI-2 complete.** Projects are multi-file workspaces (a file tree with
-presence, drag-and-drop moves and a Recently deleted bin, tabs, per-person undo, following a
-collaborator to their cursor), and each person can run the backend in their browser with
-WebContainers: run output, a shell, an API console and a preview. AI helpers explain or edit a
-selection and explain a crashed run, and an **AI teammate** joins the room as its own peer: it
-types its edits in live, runs the project and calls its API, and one click undoes its work. It
-runs on a free shared tier or your own key. The plans are
-[`docs/PLAN.md`](docs/PLAN.md) and [`docs/PLAN-AI.md`](docs/PLAN-AI.md).
+![The AI teammate at work: on the left the person who pressed Play, on the right a collaborator watching it type a DELETE endpoint into routes/users.js while the project runs](docs/media/demo.gif)
 
----
+_Left: the person who pressed Play. Right: a collaborator in `routes/users.js` sees the AI teammate
+type its change, while the project runs in the browser and the AI checks every case._
 
-## The problem this solves
+## What it is
 
-The first version of this project did what a lot of "real-time collaborative editor" tutorials
-do: on every keystroke it sent the **entire document** over a WebSocket, and every other client
-replaced its whole buffer with whatever arrived last.
+CollabCode is a real-time collaborative code editor built to production standards on $0 of
+infrastructure (Vercel, Render and Neon free tiers). Several people edit a whole project at once
+and every edit merges, because the project is a CRDT. Anyone can run the project's Node.js backend
+inside their own browser tab, and an AI teammate joins as one more peer in the same document, so
+its edits appear live, merge with everyone else's and undo without touching theirs. What the agent
+says it checked is verified against what it actually did, and the agent is measured by a 21-task
+eval suite that runs model-written code in a locked-down sandbox. TypeScript strict throughout, 14
+architecture decision records.
 
-That looks like collaboration in a demo with one person. With two, it loses work:
+## Architecture
 
-- Two people typing at once did not merge — one person's message overwrote the other's text, and
-  neither of them could tell.
-- A late joiner had no way to receive the current state, so their first keystroke broadcast their
-  empty starting buffer and wiped the room.
-- Remote cursors were absolute line/column numbers, so someone typing above you moved your caret.
-
-Tag [`v0-baseline`](../../tree/v0-baseline) is that version.
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) documents all fourteen defects, each reproducible.
-
-The rewrite replaces whole-document replacement with a **CRDT**. The unit of sync becomes the
-operation — "insert this character after that one" — and operations commute, so every client that
-has seen the same edits computes the same document no matter what order they arrive in. Cursors
-are anchored to characters rather than offsets, so they stay put while other people type around
-them.
-
-The analogy: the old version emailed the whole file on every keystroke and the last email won.
-The new one sends individual edits that every copy can apply in any order and still agree.
-
-A file tree has conflicts of its own. Two people can create `utils.js` in the same folder before
-either sees the other's, or move two folders into each other at the same moment. Files are
-identified by stable IDs rather than paths, so a rename never disturbs someone typing in the file,
-and every browser runs the same pure function over the same data to draw the tree: both
-`utils.js` files survive, one shown as `utils (2).js`, identically on every screen. Undo is per
-person, so undoing never removes a collaborator's work.
-
-## How it works
-
-```
-Browser                                  Render                       Neon
-┌─────────────────────────┐   REST      ┌──────────────────────┐    ┌──────────┐
-│ Monaco ── y-monaco ──┐  │  ────────►  │ Hocuspocus owns the  │───►│ projects │
-│                      ▼  │             │ HTTP server:         │    │  .ydoc   │
-│ React UI ──────► Y.Doc ─┼─ WebSocket ►│  onRequest → Express │    │  (bytea) │
-│                   │  ▲  │  /collab    │  onUpgrade → /collab │    └──────────┘
-│ Awareness ────────┼──┘  │             │  extensions → guard, │
-│                   ▼     │             │    database, logging │
-│ WebContainer (on Run):  │             └──────────────────────┘
-│ Node, npm, your server  │
-└─────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph browser["Each person's browser"]
+    direction TB
+    ui["Monaco editor<br/>(y-monaco)"] <--> doc["Y.Doc<br/>files, tree, text"]
+    agent["AI teammate<br/>its own CRDT peer"]
+    doc -->|"on Run, one way"| wc["WebContainer<br/>runs the project's server"]
+    agent -->|"edit, run, call the API"| wc
+  end
+  subgraph render["Render"]
+    direction TB
+    sync["Hocuspocus + Express<br/>sync and REST"]
+    proxy["Model proxy<br/>stateless"]
+  end
+  doc <-->|"Yjs over WebSocket"| sync
+  agent <-->|"its own WebSocket"| sync
+  agent -->|"one step per request"| proxy
+  sync --> db[("Neon Postgres<br/>snapshots")]
+  proxy --> llm["Gemini, or<br/>your own key"]
 ```
 
-The server syncs and stores. It never runs or interprets user code: running happens only in the
-browser of the person who clicks Run, in a WebContainer that the project's files are copied into,
-one way.
+The server syncs, stores and relays model calls; it never runs user code. Running happens only in
+the browser of whoever clicks Run. The model is the brain and the browser is the hands: each agent
+step is one stateless request, and the tools run in the page.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the whole system.
 
-Eight decisions are written up in full:
+## What is technically interesting
 
-- [001 — a CRDT instead of last-write-wins, and why not operational transformation](docs/decisions/001-crdt-over-last-write-wins.md)
-- [002 — Hocuspocus with whole-document Postgres snapshots](docs/decisions/002-persistence.md)
-- [003 — Hocuspocus owns the HTTP server, Express is mounted inside it](docs/decisions/003-hocuspocus-owns-the-http-server.md)
-- [004 — stable node IDs and deterministic read-time resolution of the file tree](docs/decisions/004-stable-ids-and-read-time-resolution.md)
-- [005 — one-way sync from the document into the WebContainer](docs/decisions/005-one-way-yjs-to-webcontainer-sync.md)
-- [006 — running projects in the browser with WebContainers](docs/decisions/006-in-browser-execution-with-webcontainers.md)
-- [007 — the model as the brain, the browser as the hands, and a stateless model proxy](docs/decisions/007-brain-and-hands-model-proxy.md)
-- [008 — the AI agent as a separate CRDT peer](docs/decisions/008-agent-as-a-crdt-peer.md)
+- **CRDT sync, file tree included.** Edits are Yjs operations that merge in any order, cursors are
+  anchored to characters, and concurrent tree edits (two people creating `utils.js`, two folders
+  moved into each other) are resolved by one pure function every browser runs the same way. Undo
+  is per person. ([ADR 001](docs/decisions/001-crdt-over-last-write-wins.md),
+  [004](docs/decisions/004-stable-ids-and-read-time-resolution.md))
+- **Backends run in the browser.** Run boots a WebContainer, copies the project in one way and
+  starts the server; collaborators' edits restart it, and an API console and preview call it. The
+  page is cross-origin isolated so this works.
+  ([ADR 005](docs/decisions/005-one-way-yjs-to-webcontainer-sync.md),
+  [006](docs/decisions/006-in-browser-execution-with-webcontainers.md))
+- **The AI is a CRDT peer, not a chat box.** It has its own connection, presence and caret, types
+  its edits live, leaves files other people are typing in alone, and **Undo AI changes** removes
+  only its edits, even inside text others changed since.
+  ([ADR 008](docs/decisions/008-agent-as-a-crdt-peer.md))
+- **Its check list is verified.** When it finishes, the agent lists the requests and commands it
+  checked; the agent core holds each against the session's actual tool calls and refuses a finish
+  that lists one it never made. ([ADR 012](docs/decisions/012-agent-4-verified-finish.md))
+- **Evals grade the result, not the agent's word.** 21 tasks, model-written code in a Docker
+  sandbox with no network, graders that must pass every reference solution and fail deliberately
+  bad sessions, and real-model runs only in CI. ([docs/evals](docs/evals/README.md),
+  [ADR 010](docs/decisions/010-evals.md))
+- **Production details on a free tier.** Validated configuration, per-visitor limits keyed on a
+  client address that cannot be forged behind Cloudflare and Render
+  ([ADR 015](docs/decisions/015-client-ip-behind-render.md)), migrations in the build
+  ([ADR 014](docs/decisions/014-migrations-in-the-render-build.md)), and tests that keys never
+  reach logs or traces.
 
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the system as it stands today,
-including the trust boundaries and what is deliberately missing.
+## Screenshots
 
-## Running a project in your browser
-
-Click **Run** in a project. The first Run boots a [WebContainer](https://webcontainers.io), a
-Node runtime by StackBlitz that runs inside the browser, copies the project into it, runs
-`npm install` when the dependencies changed, then `npm run dev`. The Run panel has the output, an
-interactive shell, an **API console** that calls your server from inside the container (no CORS
-set-up), and a sandboxed **preview**. Collaborators' edits restart your server; if it crashes, the
-next file change restarts it.
-
-- **Nothing runs until you click Run**, and your run is yours alone. The code may include edits
-  from anyone in the project; it runs in StackBlitz's sandbox in your browser, which cannot reach
-  this page, your storage or the project's server. [ADR 006](docs/decisions/006-in-browser-execution-with-webcontainers.md)
-  lists what the sandbox does and does not protect.
-- **Browsers:** Chrome, Edge and other Chromium browsers are fully supported. Safari 16.4+ (beta)
-  and Firefox (alpha) may work, with a notice. Without cross-origin isolation Run is disabled and
-  editing still works. If your browser blocks third-party cookies, allow them for
-  `stackblitz.com`; the runtime lives in an iframe from there.
-- **Node 22.** The container runs Node 22, not the Node 24 this repository uses, so templates
-  declare `engines: { node: ">=22" }`.
-- **Privacy:** running sends nothing to this project's server, but the runtime is served by
-  StackBlitz and `npm install` goes through their infrastructure.
-
-**Licence.** The WebContainer API's npm package is MIT, but using it means accepting
-[StackBlitz's Terms of Service](https://stackblitz.com/terms-of-service). Their
-[commercial usage page](https://webcontainers.io/enterprise) says a licence is required "for
-production usage of the API in a commercial, for-profit setting", and that prototypes do not need
-one. CollabCode is a non-commercial open-source project and uses no API key; a commercial fork
-would need a licence first.
-
-## AI helpers
-
-- **Explain with AI** and **Edit with AI…**: select code, right-click, and choose one. An
-  explanation streams into the **AI** panel, above the Run views. An edit asks what to change,
-  then shows the suggestion as a diff over the editor with **Apply** and **Discard**. An applied
-  edit reaches everyone like your own typing, and one undo takes it back. If a collaborator
-  changes the selected code before you apply, Apply refuses instead of overwriting their work.
-- **Explain with AI** on a run: when your run crashes or fails, the Run view offers it. It sends
-  the end of the output and the code of the file the crash points at.
-- **Who pays.** By default requests use a shared free tier on Google Gemini, with a daily limit
-  for everyone and per visitor; the app says how many you have left. In **AI settings** you can
-  use your own Gemini, Anthropic or OpenAI key instead. It is kept in that browser tab only, sent
-  with each request, used by the server for that one call and never stored or logged.
-- **Privacy.** Before your first request the app shows a one-time notice: your request and the
-  code or output it is about go through this project's server to the AI provider, and on the
-  free tier Google may use what you send to improve its products. Leave out secrets and code you
-  cannot share; your own key avoids the shared tier. This project's server does not store or log
-  what you send.
-
-How it works, and why, is in [ADR 007](docs/decisions/007-brain-and-hands-model-proxy.md).
-
-## The AI teammate
-
-Tell it what to do in the AI panel ("Add a DELETE /users/:id endpoint with validation") and press
-**Start**. An **AI teammate** appears in everyone's presence bar, working for you. It reads the
-code, types its edits in live with its own caret, runs the project in your browser, calls the
-endpoints it changed, reads the errors and fixes them, then says what it did. Your editor follows
-it into its files until you type or open another file (**Follow AI** resumes).
-
-- **It works around people.** A file someone else is typing in is left alone: it says what it
-  would have changed there instead. Your own open files are fair game.
-- **Everything is reversible.** **Undo AI changes** removes its edits and nothing anyone else
-  wrote, even inside its text; files it created go to Recently deleted. If someone has edited
-  those files since, it asks first. Undo is there until you click **Done**.
-- **It is bounded.** Up to 15 steps on the shared free tier (25 with your own key) and 5 minutes;
-  **Stop** ends it at once. A shared-tier session needs 15 of your 30 free requests a day, so
-  your own key is the way to use it often. When Gemini is busy it waits and tries twice more. It
-  is told to make the smallest change the goal needs and to finish once it has checked it; if it
-  ends without finishing, the panel lists the files it changed.
-- **No sandbox, no guessing.** If this page can't run code, the Run panel says why, and the AI
-  teammate makes its change without running it and tells you to click Run yourself.
-- **It is recorded.** **Download trace** saves the session as JSON: every model answer and tool
-  call, for replaying or for evals. It never contains your key. The AI panel shows a finished
-  session, or any trace you open, as a timeline: each model call with its tokens and latency, each
-  tool call with its input and output, and the checks it made.
-- **Watch a demo.** On the home page, **Watch a demo** replays a recorded session into a fresh
-  project: the AI adds a DELETE endpoint, runs the project and checks every case. No AI runs and
-  nothing is sent to a model; the edits, the runs and the checks happen live in your browser, and
-  everything says it is a replay. Where the browser cannot run the project, you get the recording
-  as a timeline instead.
-- **Prompt injection.** Files, output and responses may have been written by anyone in the
-  project. The agent treats them as data, and its tools cannot do more than a collaborator could:
-  edit or soft-delete this project's files, and run code in your own sandbox.
-
-[ADR 008](docs/decisions/008-agent-as-a-crdt-peer.md) explains the design.
+| The AI types into a file a collaborator has open                                                                             | It finishes, with what it checked                                                                                                                                                | No sandbox: it says it did not test                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![The AI teammate's caret, labelled AI teammate, typing a DELETE route in a collaborator's editor](docs/media/ai-typing.png) | ![The finished session: a summary saying it verified the endpoint with HTTP requests, Undo AI changes, and the project's server running](docs/media/ai-finished-and-checked.png) | ![A session where the page could not run code: the summary says the change is not tested and asks the person to click Run](docs/media/ai-says-untested.png) |
 
 ## Evals
 
@@ -196,6 +111,10 @@ What the evals show so far, on `gemini-3.5-flash-lite`:
   agent@3 runs on the same day differed by three tasks. The headline will come from three sessions
   per task for agent@3 and the current agent, and a pass-rate difference is claimed only if those
   runs support it.
+
+> **Headline numbers: placeholder.** The headline table below fills in from the three-session
+> runs (three sessions per task, agent@3 against the current agent). Until both are in, it says
+> so, and no pass-rate improvement is claimed.
 
 <!-- prettier-ignore-start -->
 <!-- evals:start -->
@@ -433,6 +352,174 @@ A free Render instance sleeps when idle, so the first connection after a quiet p
 to a minute. The app expects this: the landing page pings `/health` on load to start the wake
 early, and the workspace explains the wait instead of showing a spinner.
 
+## In depth
+
+### The problem this solves
+
+The first version of this project did what a lot of "real-time collaborative editor" tutorials
+do: on every keystroke it sent the **entire document** over a WebSocket, and every other client
+replaced its whole buffer with whatever arrived last.
+
+That looks like collaboration in a demo with one person. With two, it loses work:
+
+- Two people typing at once did not merge — one person's message overwrote the other's text, and
+  neither of them could tell.
+- A late joiner had no way to receive the current state, so their first keystroke broadcast their
+  empty starting buffer and wiped the room.
+- Remote cursors were absolute line/column numbers, so someone typing above you moved your caret.
+
+Tag [`v0-baseline`](../../tree/v0-baseline) is that version.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) documents all fourteen defects, each reproducible.
+
+The rewrite replaces whole-document replacement with a **CRDT**. The unit of sync becomes the
+operation — "insert this character after that one" — and operations commute, so every client that
+has seen the same edits computes the same document no matter what order they arrive in. Cursors
+are anchored to characters rather than offsets, so they stay put while other people type around
+them.
+
+The analogy: the old version emailed the whole file on every keystroke and the last email won.
+The new one sends individual edits that every copy can apply in any order and still agree.
+
+A file tree has conflicts of its own. Two people can create `utils.js` in the same folder before
+either sees the other's, or move two folders into each other at the same moment. Files are
+identified by stable IDs rather than paths, so a rename never disturbs someone typing in the file,
+and every browser runs the same pure function over the same data to draw the tree: both
+`utils.js` files survive, one shown as `utils (2).js`, identically on every screen. Undo is per
+person, so undoing never removes a collaborator's work.
+
+### How it works
+
+```
+Browser                                  Render                       Neon
+┌─────────────────────────┐   REST      ┌──────────────────────┐    ┌──────────┐
+│ Monaco ── y-monaco ──┐  │  ────────►  │ Hocuspocus owns the  │───►│ projects │
+│                      ▼  │             │ HTTP server:         │    │  .ydoc   │
+│ React UI ──────► Y.Doc ─┼─ WebSocket ►│  onRequest → Express │    │  (bytea) │
+│                   │  ▲  │  /collab    │  onUpgrade → /collab │    └──────────┘
+│ Awareness ────────┼──┘  │             │  extensions → guard, │
+│                   ▼     │             │    database, logging │
+│ WebContainer (on Run):  │             └──────────────────────┘
+│ Node, npm, your server  │
+└─────────────────────────┘
+```
+
+The server syncs and stores. It never runs or interprets user code: running happens only in the
+browser of the person who clicks Run, in a WebContainer that the project's files are copied into,
+one way.
+
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the system as it stands today,
+including the trust boundaries and what is deliberately missing.
+
+### Running a project in your browser
+
+Click **Run** in a project. The first Run boots a [WebContainer](https://webcontainers.io), a
+Node runtime by StackBlitz that runs inside the browser, copies the project into it, runs
+`npm install` when the dependencies changed, then `npm run dev`. The Run panel has the output, an
+interactive shell, an **API console** that calls your server from inside the container (no CORS
+set-up), and a sandboxed **preview**. Collaborators' edits restart your server; if it crashes, the
+next file change restarts it.
+
+- **Nothing runs until you click Run**, and your run is yours alone. The code may include edits
+  from anyone in the project; it runs in StackBlitz's sandbox in your browser, which cannot reach
+  this page, your storage or the project's server. [ADR 006](docs/decisions/006-in-browser-execution-with-webcontainers.md)
+  lists what the sandbox does and does not protect.
+- **Browsers:** Chrome, Edge and other Chromium browsers are fully supported. Safari 16.4+ (beta)
+  and Firefox (alpha) may work, with a notice. Without cross-origin isolation Run is disabled and
+  editing still works. If your browser blocks third-party cookies, allow them for
+  `stackblitz.com`; the runtime lives in an iframe from there.
+- **Node 22.** The container runs Node 22, not the Node 24 this repository uses, so templates
+  declare `engines: { node: ">=22" }`.
+- **Privacy:** running sends nothing to this project's server, but the runtime is served by
+  StackBlitz and `npm install` goes through their infrastructure.
+
+**Licence.** The WebContainer API's npm package is MIT, but using it means accepting
+[StackBlitz's Terms of Service](https://stackblitz.com/terms-of-service). Their
+[commercial usage page](https://webcontainers.io/enterprise) says a licence is required "for
+production usage of the API in a commercial, for-profit setting", and that prototypes do not need
+one. CollabCode is a non-commercial open-source project and uses no API key; a commercial fork
+would need a licence first.
+
+### AI helpers
+
+- **Explain with AI** and **Edit with AI…**: select code, right-click, and choose one. An
+  explanation streams into the **AI** panel, above the Run views. An edit asks what to change,
+  then shows the suggestion as a diff over the editor with **Apply** and **Discard**. An applied
+  edit reaches everyone like your own typing, and one undo takes it back. If a collaborator
+  changes the selected code before you apply, Apply refuses instead of overwriting their work.
+- **Explain with AI** on a run: when your run crashes or fails, the Run view offers it. It sends
+  the end of the output and the code of the file the crash points at.
+- **Who pays.** By default requests use a shared free tier on Google Gemini, with a daily limit
+  for everyone and per visitor; the app says how many you have left. In **AI settings** you can
+  use your own Gemini, Anthropic or OpenAI key instead. It is kept in that browser tab only, sent
+  with each request, used by the server for that one call and never stored or logged.
+- **Privacy.** Before your first request the app shows a one-time notice: your request and the
+  code or output it is about go through this project's server to the AI provider, and on the
+  free tier Google may use what you send to improve its products. Leave out secrets and code you
+  cannot share; your own key avoids the shared tier. This project's server does not store or log
+  what you send.
+
+How it works, and why, is in [ADR 007](docs/decisions/007-brain-and-hands-model-proxy.md).
+
+### The AI teammate
+
+Tell it what to do in the AI panel ("Add a DELETE /users/:id endpoint with validation") and press
+**Start**. An **AI teammate** appears in everyone's presence bar, working for you. It reads the
+code, types its edits in live with its own caret, runs the project in your browser, calls the
+endpoints it changed, reads the errors and fixes them, then says what it did. Your editor follows
+it into its files until you type or open another file (**Follow AI** resumes).
+
+- **It works around people.** A file someone else is typing in is left alone: it says what it
+  would have changed there instead. Your own open files are fair game.
+- **Everything is reversible.** **Undo AI changes** removes its edits and nothing anyone else
+  wrote, even inside its text; files it created go to Recently deleted. If someone has edited
+  those files since, it asks first. Undo is there until you click **Done**.
+- **It is bounded.** Up to 15 steps on the shared free tier (25 with your own key) and 5 minutes;
+  **Stop** ends it at once. A shared-tier session needs 15 of your 30 free requests a day, so
+  your own key is the way to use it often. When Gemini is busy it waits and tries twice more. It
+  is told to make the smallest change the goal needs and to finish once it has checked it; if it
+  ends without finishing, the panel lists the files it changed.
+- **No sandbox, no guessing.** If this page can't run code, the Run panel says why, and the AI
+  teammate makes its change without running it and tells you to click Run yourself.
+- **It is recorded.** **Download trace** saves the session as JSON: every model answer and tool
+  call, for replaying or for evals. It never contains your key. The AI panel shows a finished
+  session, or any trace you open, as a timeline: each model call with its tokens and latency, each
+  tool call with its input and output, and the checks it made.
+- **Watch a demo.** On the home page, **Watch a demo** replays a recorded session into a fresh
+  project: the AI adds a DELETE endpoint, runs the project and checks every case. No AI runs and
+  nothing is sent to a model; the edits, the runs and the checks happen live in your browser, and
+  everything says it is a replay. Where the browser cannot run the project, you get the recording
+  as a timeline instead.
+- **Prompt injection.** Files, output and responses may have been written by anyone in the
+  project. The agent treats them as data, and its tools cannot do more than a collaborator could:
+  edit or soft-delete this project's files, and run code in your own sandbox.
+
+[ADR 008](docs/decisions/008-agent-as-a-crdt-peer.md) explains the design.
+
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the system works today, including the trust
+  boundaries and what is deliberately missing.
+- [`docs/PLAN.md`](docs/PLAN.md) and [`docs/PLAN-AI.md`](docs/PLAN-AI.md): the engineering plans,
+  phase by phase.
+- [`docs/evals`](docs/evals/README.md): the eval suite, how to run it, and every recorded run.
+- [`docs/manual-tests`](docs/manual-tests): the browser test script for each phase, and the
+  launch's live checks ([`launch.md`](docs/manual-tests/launch.md)).
+- Decisions:
+  - [001: a CRDT instead of last-write-wins, and why not operational transformation](docs/decisions/001-crdt-over-last-write-wins.md)
+  - [002: Hocuspocus with whole-document Postgres snapshots](docs/decisions/002-persistence.md)
+  - [003: Hocuspocus owns the HTTP server, Express is mounted inside it](docs/decisions/003-hocuspocus-owns-the-http-server.md)
+  - [004: stable node IDs and deterministic read-time resolution of the file tree](docs/decisions/004-stable-ids-and-read-time-resolution.md)
+  - [005: one-way sync from the document into the WebContainer](docs/decisions/005-one-way-yjs-to-webcontainer-sync.md)
+  - [006: running projects in the browser with WebContainers](docs/decisions/006-in-browser-execution-with-webcontainers.md)
+  - [007: the model as the brain, the browser as the hands, and a stateless model proxy](docs/decisions/007-brain-and-hands-model-proxy.md)
+  - [008: the AI agent as a separate CRDT peer](docs/decisions/008-agent-as-a-crdt-peer.md)
+  - [010: evals for the AI teammate](docs/decisions/010-evals.md)
+  - [011: graders versions, and grading a run again from its traces](docs/decisions/011-grader-versions-and-regrading.md)
+  - [012: a finish whose checks are verified](docs/decisions/012-agent-4-verified-finish.md)
+  - [013: the context engine is deferred until an eval shows retrieval failures](docs/decisions/013-context-engine-deferred.md)
+  - [014: migrations run in Render's build step](docs/decisions/014-migrations-in-the-render-build.md)
+  - [015: the client's address behind Render](docs/decisions/015-client-ip-behind-render.md)
+
 ## Layout
 
 ```
@@ -449,7 +536,7 @@ packages/agent/    The AI teammate's core, with no browser or Node dependency: t
 packages/model-gateway/  Model calls through the Vercel AI SDK, for the server and the evals
 apps/evals/        The evals: tasks, graders, the Docker sandbox and the eval runner
 e2e/               Playwright specs
-docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/, evals/
+docs/              PLAN.md, ARCHITECTURE.md, decisions/, manual-tests/, evals/, media/
 ```
 
 ## Roadmap

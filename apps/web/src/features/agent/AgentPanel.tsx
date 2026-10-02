@@ -339,7 +339,10 @@ function EndedView({
           ))}
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
+      {/* Sticks to the bottom of the AI panel while the session is in view: the panel shares
+          the column with the Run panel, and at laptop heights the summary and checks above
+          would otherwise push these below its edge. */}
+      <div className="sticky bottom-0 z-10 -mx-3 flex flex-wrap gap-2 border-t border-zinc-800 bg-zinc-950 px-3 py-2">
         {undo.kind === 'available' && (
           <Button onClick={controls.requestUndo}>Undo AI changes</Button>
         )}
